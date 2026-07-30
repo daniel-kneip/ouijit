@@ -10,6 +10,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import { isPtyActive } from './ptyManager';
@@ -1128,7 +1129,9 @@ export function installWrapper(): void {
     const kiroHookCmd = path.join(binDir, 'ouijit-hook');
     const kiroAgentPath = getKiroAgentPath();
     fs.mkdirSync(path.dirname(kiroAgentPath), { recursive: true });
-    fs.writeFileSync(kiroAgentPath, buildKiroAgentConfig(kiroHookCmd, `file://${getCliReferencePath()}`), {
+    // pathToFileURL percent-encodes spaces/unicode so the prompt URI stays
+    // valid on any homedir path.
+    fs.writeFileSync(kiroAgentPath, buildKiroAgentConfig(kiroHookCmd, pathToFileURL(getCliReferencePath()).href), {
       mode: 0o644,
     });
     const kiroHooksPath = getKiroHooksPath();

@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import * as ts from 'typescript';
 import type { BrowserWindow } from 'electron';
@@ -471,7 +472,7 @@ describe('installWrapper', () => {
     const agentPath = path.join(tmpHome, '.kiro', 'agents', 'ouijit.json');
     const agent = JSON.parse(fs.readFileSync(agentPath, 'utf-8')) as Record<string, unknown>;
     expect(agent.name).toBe('ouijit');
-    expect(agent.prompt).toBe(`file://${path.join(tmpHome, '.config', 'Ouijit', 'ouijit-cli-reference.md')}`);
+    expect(agent.prompt).toBe(pathToFileURL(path.join(tmpHome, '.config', 'Ouijit', 'ouijit-cli-reference.md')).href);
     expect(agent.tools).toEqual(['*']);
     expect(agent.includeMcpJson).toBe(true);
     const hooks = agent.hooks as Record<string, Array<{ command: string }>>;
@@ -1806,7 +1807,9 @@ describe('KIRO_WRAPPER', () => {
     });
 
     test('still selects the ouijit agent when OUIJIT_API_URL is unset (CLI awareness, inert hooks)', () => {
-      const { argv } = runWrapper(['chat'], { OUIJIT_API_URL: '' });
+      // runWrapper does not inherit process.env, so passing no extra env
+      // leaves OUIJIT_API_URL genuinely unset.
+      const { argv } = runWrapper(['chat']);
       expect(argv).toEqual(['chat', '--agent', 'ouijit']);
     });
   });
