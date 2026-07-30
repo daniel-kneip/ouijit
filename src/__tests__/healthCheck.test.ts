@@ -60,6 +60,7 @@ describe('healthCheck', () => {
       codex: true,
       pi: true,
       opencode: true,
+      kiro: true,
       lima: true,
       nono: true,
       gitVersion: '2.39.5',
@@ -82,6 +83,7 @@ describe('healthCheck', () => {
       codex: false,
       pi: false,
       opencode: false,
+      kiro: false,
       lima: false,
       nono: false,
       gitVersion: undefined,
@@ -105,6 +107,7 @@ describe('healthCheck', () => {
       codex: true,
       pi: false,
       opencode: false,
+      kiro: false,
       lima: false,
       nono: false,
       gitVersion: '2.41.0',
@@ -128,6 +131,7 @@ describe('healthCheck', () => {
       codex: false,
       pi: true,
       opencode: false,
+      kiro: false,
       lima: false,
       nono: false,
       gitVersion: '2.42.0',
@@ -151,9 +155,34 @@ describe('healthCheck', () => {
       codex: false,
       pi: false,
       opencode: true,
+      kiro: false,
       lima: false,
       nono: false,
       gitVersion: '2.43.0',
+    });
+  });
+
+  test('detects kiro-cli independently of the other agents', async () => {
+    execFileMock.mockImplementation((cmd: string, args: string[], cb: Function) => {
+      if (cmd === 'git') cb(null, 'git version 2.45.0\n', '');
+      else if (cmd === 'which' && args[0] === 'kiro-cli') cb(null, '/opt/homebrew/bin/kiro-cli\n', '');
+      else if (cmd === 'which') cb(new Error('not found'));
+      else cb(new Error(`unexpected ${cmd}`));
+    });
+    isLimaInstalledMock.mockResolvedValue(false);
+
+    const { checkHealth } = await import('../healthCheck');
+    const status = await checkHealth();
+    expect(status).toEqual({
+      git: true,
+      claude: false,
+      codex: false,
+      pi: false,
+      opencode: false,
+      kiro: true,
+      lima: false,
+      nono: false,
+      gitVersion: '2.45.0',
     });
   });
 
@@ -174,6 +203,7 @@ describe('healthCheck', () => {
       codex: false,
       pi: false,
       opencode: false,
+      kiro: false,
       lima: true,
       nono: false,
       gitVersion: '2.40.0',

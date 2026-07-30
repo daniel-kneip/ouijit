@@ -577,7 +577,7 @@ export interface ElectronAPI {
   tags: TagsAPI;
   /** Ad-hoc scripts API */
   scripts: ScriptsAPI;
-  /** CLI agent hook events (claude/codex/pi/opencode) */
+  /** CLI agent hook events (claude/codex/pi/opencode/kiro) */
   agentHooks: AgentHooksAPI;
   /** Plan file detection and viewing */
   plan: PlanAPI;
@@ -648,7 +648,7 @@ export interface CaptureAPI {
 }
 
 /**
- * CLI agent hook events API exposed to the renderer. Shared by claude / codex / pi / opencode.
+ * CLI agent hook events API exposed to the renderer. Shared by claude / codex / pi / opencode / kiro.
  */
 export interface AgentHooksAPI {
   onStatus(callback: (ptyId: PtyId, status: HookStatus) => void): () => void;

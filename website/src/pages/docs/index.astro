@@ -251,7 +251,7 @@ git branch --show-current</code></pre>
         <p>Tag terminals to organize them. Tags appear on terminal cards, and the home view can group by tag.</p>
 
         <h2>Working with harnesses</h2>
-        <p>Each terminal is a normal shell, so any CLI tool runs in it. <a href="#harnesses">Claude Code, Codex, Pi, and OpenCode</a> get live status indicators and can drive Ouijit through the <a href="#cli">CLI</a>.</p>
+        <p>Each terminal is a normal shell, so any CLI tool runs in it. <a href="#harnesses">Claude Code, Codex, Pi, OpenCode, and Kiro CLI</a> get live status indicators and can drive Ouijit through the <a href="#cli">CLI</a>.</p>
       </section>
 
       <section id="sandbox">
@@ -395,10 +395,10 @@ OUIJIT_HOOK_TYPE=start</code></pre>
 
       <section id="harnesses">
         <h1>Harnesses</h1>
-        <p class="lead">Claude Code, Codex, Pi, and OpenCode get live status indicators and can drive Ouijit through its CLI. No configuration required.</p>
+        <p class="lead">Claude Code, Codex, Pi, OpenCode, and Kiro CLI get live status indicators and can drive Ouijit through its CLI. No configuration required.</p>
 
         <h2>What you get</h2>
-        <p>Run <code>claude</code>, <code>codex</code>, <code>pi</code>, or <code>opencode</code> in any Ouijit terminal and two things happen automatically:</p>
+        <p>Run <code>claude</code>, <code>codex</code>, <code>pi</code>, <code>opencode</code>, or <code>kiro-cli</code> in any Ouijit terminal and two things happen automatically:</p>
         <ul>
           <li>
             <strong>Live status</strong>. The terminal card shows whether the agent is thinking or idle, visible across the
@@ -442,14 +442,20 @@ OUIJIT_HOOK_TYPE=start</code></pre>
               <td>Status plugin loaded from opencode's auto-load dir, reporting off the <code>session.status</code> event</td>
               <td>CLI reference injected via <code>OPENCODE_CONFIG_CONTENT</code> (opencode has no system-prompt CLI flag)</td>
             </tr>
+            <tr>
+              <td><strong>Kiro CLI</strong></td>
+              <td>Auto-installed <code>ouijit</code> agent (selected via <code>--agent ouijit</code>) carrying <code>userPromptSubmit</code> / <code>postToolUse</code> / <code>stop</code> hooks; v3 sessions load a global hooks file from <code>~/.kiro/hooks/</code> instead</td>
+              <td>The <code>ouijit</code> agent's prompt points at the CLI reference file (Kiro has no system-prompt CLI flag; not injected on v3)</td>
+            </tr>
           </tbody>
         </table>
         <p>When <code>OUIJIT_API_URL</code> is unset (i.e. the harness runs outside an Ouijit terminal), the wrappers exec the real binary unmodified.</p>
+        <p><strong>Kiro CLI v3.</strong> Kiro's CLI 3.0 early-access engine is opt-in per invocation: run <code>kiro-cli --v3</code> yourself, or set <code>OUIJIT_KIRO_V3=1</code> in a hook command's environment to have the wrapper add the flag for you. Status indicators work on both engines; the CLI reference is currently v2-only (v3 replaces the JSON agent format the reference rides on).</p>
 
         <h2>Sandboxed terminals</h2>
         <p>Status indicators work inside both <a href="#sandbox">sandbox backends</a>.</p>
         <ul>
-          <li><strong>Lima VM</strong>. Claude settings, Codex config, the Pi extension, and the opencode plugin are written into the VM's home directory, and their hooks reach back over <code>host.lima.internal</code>. The <code>ouijit</code> CLI isn't installed in the VM, and the <code>/api/*</code> routes reject sandbox-scoped tokens.</li>
+          <li><strong>Lima VM</strong>. Claude settings, Codex config, the Pi extension, the opencode plugin, and the Kiro agent config and hooks file are written into the VM's home directory, and their hooks reach back over <code>host.lima.internal</code>. The <code>ouijit</code> CLI isn't installed in the VM, and the <code>/api/*</code> routes reject sandbox-scoped tokens. (Kiro v2 sessions in the VM opt in with <code>kiro-cli chat --agent ouijit</code>; v3 picks the hooks up automatically.)</li>
           <li><strong>nono</strong>. Terminals run on the host, so the agent uses your real config and hooks reach the hook server over localhost. The <code>ouijit</code> CLI shim stays on <code>PATH</code> with access scoped to the task's own data.</li>
         </ul>
 

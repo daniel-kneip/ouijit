@@ -51,6 +51,11 @@ import {
   PI_EXTENSION,
   OPENCODE_WRAPPER,
   OPENCODE_PLUGIN,
+  KIRO_WRAPPER,
+  buildKiroAgentConfig,
+  buildKiroHooksFile,
+  buildVmKiroAgentConfig,
+  buildVmKiroHooksFile,
   NONO_SHIM,
 } from '../hookServer';
 import { issueToken, revokeAllTokens } from '../apiAuth';
@@ -447,6 +452,48 @@ describe('installWrapper', () => {
     expect(plugin).toContain('OUIJIT_HOOK_BIN');
   });
 
+  test('creates kiro-cli wrapper, the ouijit v2 agent, and the v3 hooks file on first install', () => {
+    installWrapper();
+
+    const wrapperPath = path.join(tmpHome, '.config', 'Ouijit', 'bin', 'kiro-cli');
+    const wrapper = fs.readFileSync(wrapperPath, 'utf-8');
+    expect(wrapper).toContain('#!/bin/bash');
+    expect(wrapper).toContain('REAL_BIN=');
+    expect(wrapper).toContain('export PATH="$WRAPPER_DIR:$CLEAN_PATH"');
+    // v2 sessions get the ouijit agent (hooks + CLI reference live in it).
+    expect(wrapper).toContain('exec "$REAL_BIN" "$@" --agent ouijit');
+    // v3 opt-in via --v3 or OUIJIT_KIRO_V3.
+    expect(wrapper).toContain('--v3');
+    expect(wrapper).toContain('OUIJIT_KIRO_V3');
+
+    // v2 agent config: absolute hook command paths and the CLI reference as
+    // a file:// prompt URI (Kiro resolves it itself — no shell expansion).
+    const agentPath = path.join(tmpHome, '.kiro', 'agents', 'ouijit.json');
+    const agent = JSON.parse(fs.readFileSync(agentPath, 'utf-8')) as Record<string, unknown>;
+    expect(agent.name).toBe('ouijit');
+    expect(agent.prompt).toBe(`file://${path.join(tmpHome, '.config', 'Ouijit', 'ouijit-cli-reference.md')}`);
+    expect(agent.tools).toEqual(['*']);
+    expect(agent.includeMcpJson).toBe(true);
+    const hooks = agent.hooks as Record<string, Array<{ command: string }>>;
+    const hookBin = path.join(tmpHome, '.config', 'Ouijit', 'bin', 'ouijit-hook');
+    expect(hooks.userPromptSubmit[0].command).toBe(`${hookBin} status status=thinking`);
+    expect(hooks.postToolUse[0].command).toBe(`${hookBin} status status=thinking`);
+    expect(hooks.stop[0].command).toBe(`${hookBin} status status=ready`);
+
+    // v3 global hooks file: PascalCase triggers, command actions.
+    const hooksPath = path.join(tmpHome, '.kiro', 'hooks', 'ouijit.json');
+    const hooksFile = JSON.parse(fs.readFileSync(hooksPath, 'utf-8')) as {
+      version: string;
+      hooks: Array<{ trigger: string; action: { type: string; command: string } }>;
+    };
+    expect(hooksFile.version).toBe('v1');
+    expect(hooksFile.hooks.map((h) => h.trigger)).toEqual(['UserPromptSubmit', 'PostToolUse', 'Stop']);
+    for (const hook of hooksFile.hooks) {
+      expect(hook.action.type).toBe('command');
+      expect(hook.action.command).toContain(hookBin);
+    }
+  });
+
   test('creates nono shim preferring OUIJIT_NONO_PATH with a PATH fallthrough', () => {
     installWrapper();
 
@@ -519,6 +566,7 @@ describe('wrapper resolver (shared)', () => {
     ['claude', CLAUDE_WRAPPER, 'claude', /--append-system-prompt-file/],
     ['codex', CODEX_WRAPPER, 'codex', /developer_instructions=/],
     ['pi', PI_WRAPPER, 'pi', /--append-system-prompt/],
+    ['kiro-cli', KIRO_WRAPPER, 'kiro-cli', /--agent/],
   ];
 
   for (const [label, wrapper, bin, injectedSentinel] of wrappers) {
@@ -1675,5 +1723,161 @@ describe('buildVmOpencodePlugin', () => {
     const plugin = buildVmOpencodePlugin();
     expect(plugin).not.toContain('ouijit-cli-reference');
     expect(plugin).not.toContain('.config/Ouijit');
+  });
+});
+
+// ── KIRO_WRAPPER constant ────────────────────────────────────────────
+
+describe('KIRO_WRAPPER', () => {
+  test('resolves real kiro-cli and re-exports wrapper dir on PATH', () => {
+    expect(KIRO_WRAPPER).toContain('WRAPPER_DIR=');
+    expect(KIRO_WRAPPER).toContain('REAL_BIN=');
+    expect(KIRO_WRAPPER).toContain('export PATH="$WRAPPER_DIR:$CLEAN_PATH"');
+  });
+
+  describe('agent selection and v3 passthrough', () => {
+    // Render KIRO_WRAPPER to a temp wrapper dir, plant a stub `kiro-cli` in
+    // a separate dir so CLEAN_PATH (which strips the wrapper dir) can still
+    // resolve it. The stub appends its argv to a log file, one per line.
+    const runWrapper = (args: string[], extraEnv: Record<string, string> = {}) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-wrapper-test-'));
+      const wrapperDir = path.join(root, 'wrapper');
+      const stubDir = path.join(root, 'stub');
+      fs.mkdirSync(wrapperDir);
+      fs.mkdirSync(stubDir);
+      const argvLog = path.join(root, 'argv.log');
+      fs.writeFileSync(path.join(wrapperDir, 'kiro-cli'), KIRO_WRAPPER, { mode: 0o755 });
+      fs.writeFileSync(
+        path.join(stubDir, 'kiro-cli'),
+        `#!/bin/bash\nfor a in "$@"; do printf '%s\\n' "$a" >> "${argvLog}"; done\n`,
+        { mode: 0o755 },
+      );
+      try {
+        execFileSync(path.join(wrapperDir, 'kiro-cli'), args, {
+          env: {
+            PATH: `${wrapperDir}:${stubDir}:/usr/bin:/bin`,
+            HOME: root,
+            ...extraEnv,
+          },
+          encoding: 'utf8',
+        });
+        const argv = fs.existsSync(argvLog) ? fs.readFileSync(argvLog, 'utf8').replace(/\n$/, '').split('\n') : [];
+        return { argv };
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    };
+
+    test('bare `kiro-cli` gets --agent ouijit appended', () => {
+      const { argv } = runWrapper([], { OUIJIT_API_URL: 'http://stub' });
+      expect(argv).toEqual(['--agent', 'ouijit']);
+    });
+
+    test('`kiro-cli chat <message>` appends --agent after the positional', () => {
+      const { argv } = runWrapper(['chat', 'fix the login bug'], { OUIJIT_API_URL: 'http://stub' });
+      expect(argv).toEqual(['chat', 'fix the login bug', '--agent', 'ouijit']);
+    });
+
+    test('utility subcommands pass through with no --agent injection', () => {
+      for (const sub of [['login'], ['settings', 'list'], ['mcp', 'list'], ['agent', 'list']]) {
+        const { argv } = runWrapper(sub, { OUIJIT_API_URL: 'http://stub' });
+        expect(argv).toEqual(sub);
+      }
+    });
+
+    test('a user-picked --agent is respected (no ouijit override)', () => {
+      const { argv } = runWrapper(['chat', '--agent', 'my-agent'], { OUIJIT_API_URL: 'http://stub' });
+      expect(argv).toEqual(['chat', '--agent', 'my-agent']);
+    });
+
+    test('`--v3` passes through untouched (v3 loads the global hooks file itself)', () => {
+      const { argv } = runWrapper(['--v3', 'chat', 'hello'], { OUIJIT_API_URL: 'http://stub' });
+      expect(argv).toEqual(['--v3', 'chat', 'hello']);
+    });
+
+    test('OUIJIT_KIRO_V3=1 prepends --v3 and skips the v2 agent', () => {
+      const { argv } = runWrapper(['chat', 'hello'], { OUIJIT_API_URL: 'http://stub', OUIJIT_KIRO_V3: '1' });
+      expect(argv).toEqual(['--v3', 'chat', 'hello']);
+    });
+
+    test('OUIJIT_KIRO_V3=1 with an explicit --v3 does not double the flag', () => {
+      const { argv } = runWrapper(['--v3', 'chat'], { OUIJIT_API_URL: 'http://stub', OUIJIT_KIRO_V3: '1' });
+      expect(argv).toEqual(['--v3', 'chat']);
+    });
+
+    test('still selects the ouijit agent when OUIJIT_API_URL is unset (CLI awareness, inert hooks)', () => {
+      const { argv } = runWrapper(['chat'], { OUIJIT_API_URL: '' });
+      expect(argv).toEqual(['chat', '--agent', 'ouijit']);
+    });
+  });
+});
+
+// ── Kiro agent config + hooks file builders ──────────────────────────
+
+describe('buildKiroAgentConfig', () => {
+  test('maps userPromptSubmit/postToolUse to thinking and stop to ready', () => {
+    const agent = JSON.parse(buildKiroAgentConfig('/x/ouijit-hook')) as {
+      hooks: Record<string, Array<{ command: string }>>;
+    };
+    expect(agent.hooks.userPromptSubmit[0].command).toBe('/x/ouijit-hook status status=thinking');
+    expect(agent.hooks.postToolUse[0].command).toBe('/x/ouijit-hook status status=thinking');
+    expect(agent.hooks.stop[0].command).toBe('/x/ouijit-hook status status=ready');
+  });
+
+  test('mirrors the default agent surface (all tools, global MCP config)', () => {
+    const agent = JSON.parse(buildKiroAgentConfig('/x/ouijit-hook')) as Record<string, unknown>;
+    expect(agent.name).toBe('ouijit');
+    expect(agent.tools).toEqual(['*']);
+    expect(agent.includeMcpJson).toBe(true);
+  });
+
+  test('includes the prompt only when a file URI is given', () => {
+    const withPrompt = JSON.parse(buildKiroAgentConfig('/x/ouijit-hook', 'file:///ref.md')) as Record<string, unknown>;
+    expect(withPrompt.prompt).toBe('file:///ref.md');
+    const withoutPrompt = JSON.parse(buildKiroAgentConfig('/x/ouijit-hook')) as Record<string, unknown>;
+    expect(withoutPrompt.prompt).toBeUndefined();
+  });
+});
+
+describe('buildKiroHooksFile', () => {
+  test('emits a v1 hooks file with PascalCase triggers and command actions', () => {
+    const file = JSON.parse(buildKiroHooksFile('/x/ouijit-hook')) as {
+      version: string;
+      hooks: Array<{ name: string; trigger: string; action: { type: string; command: string }; timeout: number }>;
+    };
+    expect(file.version).toBe('v1');
+    const byTrigger = Object.fromEntries(file.hooks.map((h) => [h.trigger, h]));
+    expect(byTrigger.UserPromptSubmit.action.command).toBe('/x/ouijit-hook status status=thinking');
+    expect(byTrigger.PostToolUse.action.command).toBe('/x/ouijit-hook status status=thinking');
+    expect(byTrigger.Stop.action.command).toBe('/x/ouijit-hook status status=ready');
+    for (const hook of file.hooks) {
+      expect(hook.action.type).toBe('command');
+      // Short timeout so a wedged curl can't stall the agent between turns.
+      expect(hook.timeout).toBe(5);
+    }
+  });
+});
+
+describe('buildVmKiroAgentConfig / buildVmKiroHooksFile', () => {
+  test('hook commands point at $HOME/ouijit-hook with $HOME literal', () => {
+    const agent = JSON.parse(buildVmKiroAgentConfig()) as { hooks: Record<string, Array<{ command: string }>> };
+    for (const entries of Object.values(agent.hooks)) {
+      expect(entries[0].command).toContain('$HOME/ouijit-hook');
+    }
+    const hooksFile = JSON.parse(buildVmKiroHooksFile()) as {
+      hooks: Array<{ action: { command: string } }>;
+    };
+    for (const hook of hooksFile.hooks) {
+      expect(hook.action.command).toContain('$HOME/ouijit-hook');
+    }
+  });
+
+  test('omits the CLI reference (lateral-movement concern) and host config paths', () => {
+    const agent = JSON.parse(buildVmKiroAgentConfig()) as Record<string, unknown>;
+    expect(agent.prompt).toBeUndefined();
+    for (const source of [buildVmKiroAgentConfig(), buildVmKiroHooksFile()]) {
+      expect(source).not.toContain('ouijit-cli-reference');
+      expect(source).not.toContain('.config/Ouijit');
+    }
   });
 });

@@ -14,6 +14,7 @@ export interface HealthStatus {
   codex: boolean;
   pi: boolean;
   opencode: boolean;
+  kiro: boolean;
   lima: boolean;
   nono: boolean;
   gitVersion?: string;
@@ -67,23 +68,34 @@ async function detectOpencode(): Promise<boolean> {
   }
 }
 
+async function detectKiro(): Promise<boolean> {
+  try {
+    await execFileAsync('which', ['kiro-cli']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function checkHealth(): Promise<HealthStatus> {
-  const [git, claude, codex, pi, opencode, lima, nono] = await Promise.all([
+  const [git, claude, codex, pi, opencode, kiro, lima, nono] = await Promise.all([
     detectGit(),
     detectClaude(),
     detectCodex(),
     detectPi(),
     detectOpencode(),
+    detectKiro(),
     isLimaInstalled(),
     isNonoInstalled(),
   ]);
-  cached = { git: git.ok, claude, codex, pi, opencode, lima, nono, gitVersion: git.version };
+  cached = { git: git.ok, claude, codex, pi, opencode, kiro, lima, nono, gitVersion: git.version };
   healthLog.info('health probe', {
     git: cached.git,
     claude: cached.claude,
     codex: cached.codex,
     pi: cached.pi,
     opencode: cached.opencode,
+    kiro: cached.kiro,
     lima: cached.lima,
     nono: cached.nono,
     gitVersion: cached.gitVersion,
