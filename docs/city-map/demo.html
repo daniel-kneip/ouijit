@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>[hidden]{display:none!important}</style>
+<title>Ouijit City Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --ground: #cfe0b4;
+    --ground-line: rgba(31, 42, 34, 0.07);
+    --water: #a3cbd8;
+    --path: rgba(120, 96, 60, 0.35);
+    --surface: #fbfaf5;
+    --surface-2: #f1efe6;
+    --surface-3: #e6e3d7;
+    --ink: #1f2a22;
+    --ink-2: #5a665c;
+    --ink-3: #8a948b;
+    --border: rgba(31, 42, 34, 0.12);
+    --border-strong: rgba(31, 42, 34, 0.28);
+    --accent: #3d7dca;
+    --accent-ink: #ffffff;
+    --working: #3d7dca;
+    --waiting: #e99a12;
+    --error: #d94f4f;
+    --done: #4fae6d;
+    --exited: #9aa39c;
+    --review: #8b6cc9;
+    --shadow: 0 10px 30px rgba(31, 42, 34, 0.14);
+    --night: 0;
+    --font-display: 'Fredoka', 'Trebuchet MS', system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #22352a;
+      --ground-line: rgba(255, 255, 255, 0.05);
+      --water: #2d5668;
+      --path: rgba(214, 190, 140, 0.22);
+      --surface: #161d18;
+      --surface-2: #1d2620;
+      --surface-3: #27322a;
+      --ink: #e8eee7;
+      --ink-2: #a7b1a8;
+      --ink-3: #76817a;
+      --border: rgba(232, 238, 231, 0.12);
+      --border-strong: rgba(232, 238, 231, 0.3);
+      --accent: #6ea3e6;
+      --accent-ink: #0e1512;
+      --working: #6ea3e6;
+      --waiting: #f4b942;
+      --error: #e46a6a;
+      --done: #66c184;
+      --exited: #6f7a72;
+      --review: #a78de0;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      --night: 1;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #22352a;
+    --ground-line: rgba(255, 255, 255, 0.05);
+    --water: #2d5668;
+    --path: rgba(214, 190, 140, 0.22);
+    --surface: #161d18;
+    --surface-2: #1d2620;
+    --surface-3: #27322a;
+    --ink: #e8eee7;
+    --ink-2: #a7b1a8;
+    --ink-3: #76817a;
+    --border: rgba(232, 238, 231, 0.12);
+    --border-strong: rgba(232, 238, 231, 0.3);
+    --accent: #6ea3e6;
+    --accent-ink: #0e1512;
+    --working: #6ea3e6;
+    --waiting: #f4b942;
+    --error: #e46a6a;
+    --done: #66c184;
+    --exited: #6f7a72;
+    --review: #a78de0;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --night: 1;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--surface-2);
+    color: var(--ink);
+    font: 14px/1.45 var(--font-body);
+    overflow: hidden;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app {
+    display: grid;
+    grid-template-columns: 272px minmax(0, 1fr) auto;
+    grid-template-rows: 52px minmax(0, 1fr);
+    position: fixed;
+    inset: 0;
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--font-display); font-weight: 600; font-size: 17px; letter-spacing: 0.01em;
+  }
+  .brand svg { width: 26px; height: 26px; }
+  .brand .project { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); font-weight: 500; }
+  .topbar .spacer { flex: 1; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 11px; border-radius: 8px;
+    border: 1px solid var(--border-strong); background: var(--surface);
+    font-weight: 500; font-size: 13px; line-height: 1.2;
+  }
+  .btn:hover { background: var(--surface-3); }
+  .btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .btn.primary:hover { opacity: 0.9; }
+  .btn.quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
+  .btn.quiet:hover { background: var(--surface-3); color: var(--ink); }
+  .btn.small { padding: 4px 8px; font-size: 12px; }
+  .btn.danger { color: var(--error); }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--accent); }
+  .menu-btn { display: none; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow: auto;
+    display: flex; flex-direction: column;
+  }
+  .attention {
+    margin: 12px 12px 4px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .attention .row { display: flex; align-items: center; gap: 8px; }
+  .attention .n { font-family: var(--font-display); font-size: 20px; font-weight: 600; line-height: 1; min-width: 26px; }
+  .attention .lbl { flex: 1; color: var(--ink-2); font-size: 12.5px; }
+  .attention .n.waiting { color: var(--waiting); }
+  .attention .n.error { color: var(--error); }
+  .attention .n.zero { color: var(--ink-3); }
+  .group { padding: 12px 8px 4px; }
+  .group h3 {
+    margin: 0 0 4px 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .group h3 .count { font-family: var(--font-mono); color: var(--ink-3); font-weight: 500; letter-spacing: 0; }
+  .city-row {
+    width: 100%; text-align: left;
+    display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    padding: 7px 8px; border-radius: 8px; border: 1px solid transparent; background: transparent;
+  }
+  .city-row:hover { background: var(--surface-2); }
+  .city-row.selected { background: var(--surface-2); border-color: var(--border-strong); }
+  .city-row .swatch { width: 12px; height: 12px; border-radius: 3px; transform: rotate(45deg) scale(0.8); }
+  .city-row .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .city-row .ticket { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+  .city-row .sites { display: flex; gap: 3px; }
+  .city-row .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .city-row.done .name { color: var(--ink-2); }
+  .empty-group { margin: 0 8px 4px; font-size: 12.5px; color: var(--ink-3); }
+
+  /* ── Map ── */
+  .map { position: relative; overflow: hidden; background: var(--ground); }
+  canvas#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  canvas#map.grab { cursor: grab; }
+  canvas#map.grabbing { cursor: grabbing; }
+  canvas#map.point { cursor: pointer; }
+  canvas#map.move { cursor: move; }
+  .hint {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    padding: 5px 12px; border-radius: 999px; font-size: 12px; color: var(--ink-2);
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    border: 1px solid var(--border); pointer-events: none; white-space: nowrap;
+    max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis;
+  }
+  .legend {
+    position: absolute; left: 12px; bottom: 12px;
+    padding: 10px 12px; border-radius: 10px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid var(--border); box-shadow: var(--shadow);
+    font-size: 12px; display: grid; grid-template-columns: auto auto; gap: 4px 18px;
+  }
+  .legend h4 { grid-column: 1 / -1; margin: 0 0 2px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .legend .item { display: flex; align-items: center; gap: 7px; color: var(--ink-2); }
+  .legend .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .legend .sq { width: 10px; height: 10px; border-radius: 2px; flex: none; transform: rotate(45deg) scale(0.85); }
+  canvas#minimap {
+    position: absolute; right: 12px; bottom: 12px; width: 190px; height: 120px;
+    border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow);
+    background: color-mix(in srgb, var(--surface) 92%, transparent); cursor: crosshair;
+  }
+
+  /* ── Inspector ── */
+  .inspector {
+    width: 350px; background: var(--surface); border-left: 1px solid var(--border);
+    overflow: auto; display: flex; flex-direction: column;
+  }
+  .inspector .head { padding: 16px 16px 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  .inspector .eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .inspector .eyebrow .ticket { font-family: var(--font-mono); letter-spacing: 0; text-transform: none; color: var(--ink-2); font-size: 12px; }
+  .inspector .eyebrow .close { margin-left: auto; }
+  .name-input {
+    width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 6px; margin: 0 -6px;
+    font-family: var(--font-display); font-weight: 600; font-size: 21px; line-height: 1.2; color: var(--ink);
+  }
+  .name-input:hover { border-color: var(--border); }
+  .name-input:focus { border-color: var(--accent); outline: none; background: var(--surface-2); }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11.5px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .field select, .field input[type=text], .field textarea {
+    width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink);
+  }
+  .field textarea { min-height: 84px; resize: vertical; line-height: 1.45; }
+  .section { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border); }
+  .section h4 { margin: 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; display: flex; align-items: center; }
+  .section h4 .grow { flex: 1; }
+  .desc { margin: 0; white-space: pre-wrap; color: var(--ink); line-height: 1.5; max-width: 60ch; }
+  .desc.empty { color: var(--ink-3); font-style: italic; }
+  .site-row {
+    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2);
+  }
+  .site-row.selected { border-color: var(--accent); }
+  .site-row .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .site-row .meta { font-size: 11.5px; color: var(--ink-3); display: flex; gap: 8px; align-items: center; }
+  .site-row .meta .agent { font-family: var(--font-mono); }
+  .site-row .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .site-row .actions { display: flex; gap: 2px; }
+  .state-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--surface-3); }
+  .state-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .segmented { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .segmented button { padding: 6px 4px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--ink-2); }
+  .segmented button .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .segmented button.on { border-color: var(--ink); color: var(--ink); background: var(--surface); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
+  .kv dt { color: var(--ink-3); }
+  .kv dd { margin: 0; font-family: var(--font-mono); font-size: 12px; }
+  .footer-actions { padding: 14px 16px; display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+  .note { font-size: 12px; color: var(--ink-3); line-height: 1.4; }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 500; }
+
+  @media (max-width: 960px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .menu-btn { display: inline-flex; }
+    .sidebar { position: absolute; z-index: 5; top: 52px; bottom: 0; left: 0; width: 272px; transform: translateX(-100%); transition: transform 0.2s; box-shadow: var(--shadow); }
+    .sidebar.open { transform: none; }
+    .inspector { position: absolute; z-index: 6; top: 52px; bottom: 0; right: 0; width: min(350px, 100%); box-shadow: var(--shadow); }
+    .legend { display: none; }
+    canvas#minimap { width: 130px; height: 84px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar { transition: none; }
+  }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <button class="btn quiet menu-btn" id="menuBtn" aria-label="Toggle city list">☰</button>
+    <div class="brand">
+      <svg viewBox="0 0 26 26" aria-hidden="true">
+        <path d="M13 2 L24 8 L13 14 L2 8 Z" fill="#eacc6b"/>
+        <path d="M2 8 L13 14 L13 24 L2 18 Z" fill="#d9805c"/>
+        <path d="M24 8 L13 14 L13 24 L24 18 Z" fill="#b8613f"/>
+      </svg>
+      <span>City Map</span>
+      <span class="project">ouijit · main</span>
+    </div>
+    <div class="spacer"></div>
+    <label class="toggle"><input type="checkbox" id="simToggle" checked> Simulate agents</label>
+    <button class="btn quiet" id="legendBtn" aria-pressed="true">Legend</button>
+    <button class="btn quiet" id="resetBtn">Reset demo</button>
+    <button class="btn primary" id="newCityBtn">+ New city</button>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Cities"></aside>
+
+  <main class="map">
+    <canvas id="map" class="grab" aria-label="Map of tickets as cities"></canvas>
+    <div class="hint">Drag a city to move it · Scroll to zoom · Double-click a city to zoom in · Click a site to inspect it</div>
+    <div class="legend" id="legend">
+      <h4>Sites</h4>
+      <div class="item"><span class="dot" style="background: var(--working)"></span> Agent working</div>
+      <div class="item"><span class="dot" style="background: var(--waiting)"></span> Waiting for you</div>
+      <div class="item"><span class="dot" style="background: var(--error)"></span> Problem</div>
+      <div class="item"><span class="dot" style="background: var(--done)"></span> Finished</div>
+      <h4 style="margin-top: 6px">Cities</h4>
+      <div class="item"><span class="sq" style="border: 1.5px dashed var(--blueprint, var(--accent))"></span> To do · blueprint</div>
+      <div class="item"><span class="sq" style="background: #d9805c"></span> In progress · building</div>
+      <div class="item"><span class="sq" style="background: var(--review)"></span> In review · inspection flag</div>
+      <div class="item"><span class="sq" style="background: var(--exited)"></span> Done · settled, faded</div>
+    </div>
+    <canvas id="minimap" aria-label="Overview"></canvas>
+  </main>
+
+  <aside class="inspector" id="inspector" hidden aria-label="Inspector"></aside>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ── Constants ──────────────────────────────────────────────────────
+  const TW = 22, TH = 11, N = 7, STOREY = 13;
+  const CITY_HALF_W = N * TW, CITY_HALF_H = N * TH;
+  const STORAGE_KEY = 'ouijit-city-map-demo-v1';
+  const STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done' };
+  const STATUS_ORDER = ['in_progress', 'in_review', 'todo', 'done'];
+  const SITE_LABEL = { working: 'Agent working', waiting: 'Waiting for you', error: 'Problem', done: 'Finished', exited: 'Exited' };
+  const WALLS = ['#f2e3c1', '#e8a07a', '#8ec9c2', '#93b5e0', '#c1a3d9', '#eacc6b', '#f0b4a8', '#b9d98b'];
+  const SESSION_TITLES = [
+    'Wire kiro CLI flags', 'Port hook server to kiro', 'Fix failing terminal tests', 'Review diff for migrations',
+    'Draft PR description', 'Refactor ptyManager spawn', 'Add e2e for canvas drag', 'Investigate lint failure',
+    'Update docs images', 'Rebase onto main', 'Trace OSC title parsing', 'Write release notes',
+  ];
+
+  // ── Seed data ──────────────────────────────────────────────────────
+  function seedState() {
+    const now = Date.now();
+    const site = (id, slot, name, state, agent, minsAgo) => ({ id, slot, name, state, agent, startedAt: now - minsAgo * 60000 });
+    return {
+      version: 1,
+      nextTicket: 55,
+      nextSiteId: 100,
+      camera: { x: 40, y: 20, zoom: 0.9 },
+      cities: [
+        { id: 'c52', ticket: 52, name: 'Kiro harness', status: 'in_progress', pos: { x: 0, y: 0 }, createdAt: now - 3 * 86400000,
+          description: 'Add Kiro as an agent CLI next to Claude Code.\n\n- spawn flags and working directory per worktree\n- hook status (thinking / ready) from Kiro events\n- session titles so a terminal reports what it is doing\n\nDone when a task can be started with Kiro from the board and the card shows live status.',
+          sites: [site('s1', 0, 'Wire kiro CLI flags', 'working', 'kiro', 24), site('s2', 1, 'Hook status from kiro events', 'waiting', 'kiro', 41), site('s3', 2, 'Fix failing hook tests', 'error', 'claude', 9)],
+          builtSlots: [] },
+        { id: 'c54', ticket: 54, name: 'Kiro session titles', status: 'todo', parent: 52, pos: { x: 470, y: 250 }, createdAt: now - 86400000,
+          description: 'Read the title Kiro emits for a session and use it as the terminal label, so sites on the map get a name without the user typing one.', sites: [], builtSlots: [] },
+        { id: 'c53', ticket: 53, name: 'City map view', status: 'in_progress', pos: { x: -560, y: 130 }, createdAt: now - 2 * 86400000,
+          description: 'Experimental layout next to the canvas: every ticket is a city on a persistent map, every open terminal a construction site inside it.\n\nPositions persist per project. Sites keep their slot for the lifetime of the session.',
+          sites: [site('s4', 0, 'Isometric renderer spike', 'working', 'claude', 63), site('s5', 1, 'Persist city positions', 'done', 'claude', 120)],
+          builtSlots: [] },
+        { id: 'c49', ticket: 49, name: 'PR inbox polling', status: 'in_review', pos: { x: 420, y: -320 }, createdAt: now - 5 * 86400000,
+          description: 'Poll GitHub for pull requests that need review and surface them in the inbox panel. Backoff on rate limits.',
+          sites: [site('s6', 0, 'Review PR #295 diff', 'done', 'claude', 200)], builtSlots: [1] },
+        { id: 'c47', ticket: 47, name: 'Diff lens for migrations', status: 'todo', pos: { x: -430, y: -360 }, createdAt: now - 6 * 86400000,
+          description: 'A lens that hides generated migration noise and shows only the schema delta.', sites: [], builtSlots: [] },
+        { id: 'c45', ticket: 45, name: 'Import project from GitHub', status: 'done', pos: { x: -120, y: 520 }, createdAt: now - 12 * 86400000,
+          description: 'Clone a repository from GitHub straight into the projects folder and register it.', sites: [], builtSlots: [0, 1, 2] },
+        { id: 'c41', ticket: 41, name: 'Canvas smart guides', status: 'done', pos: { x: 660, y: -20 }, createdAt: now - 20 * 86400000,
+          description: 'Alignment guides while dragging terminal nodes on the canvas.', sites: [], builtSlots: [0, 3] },
+      ],
+    };
+  }
+
+  // ── State & persistence ────────────────────────────────────────────
+  let state = load() || seedState();
+  let sim = true;
+  let selection = null; // { type: 'city' | 'site' | 'new', cityId, siteId }
+  let hover = null;
+  let dirty = true;
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.cities)) { sim = parsed.sim !== false; return parsed; }
+    } catch (_) { /* storage unavailable: run from the seed */ }
+    return null;
+  }
+  let saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, sim })); } catch (_) { /* ignore */ }
+    }, 250);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const cityById = (id) => state.cities.find((c) => c.id === id);
+  const cityByTicket = (t) => state.cities.find((c) => c.ticket === t);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function hash2(x, y) {
+    let h = (x * 374761393 + y * 668265263) | 0;
+    h = (h ^ (h >>> 13)) * 1274126177;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function hexToHsl(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0; const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return { h, s: s * 100, l: l * 100 };
+  }
+  const toneCache = new Map();
+  function tone(hex, { s = 1, l = 0 } = {}) {
+    const key = hex + '|' + s + '|' + l;
+    let v = toneCache.get(key);
+    if (!v) {
+      const c = hexToHsl(hex);
+      v = `hsl(${c.h.toFixed(0)} ${clamp(c.s * s, 0, 100).toFixed(0)}% ${clamp(c.l + l, 0, 100).toFixed(0)}%)`;
+      toneCache.set(key, v);
+    }
+    return v;
+  }
+
+  // ── Theme tokens (canvas cannot read var()) ────────────────────────
+  let T = {};
+  function readTokens() {
+    const cs = getComputedStyle(document.documentElement);
+    const get = (n) => cs.getPropertyValue(n).trim();
+    T = {
+      ground: get('--ground'), groundLine: get('--ground-line'), water: get('--water'), path: get('--path'),
+      surface: get('--surface'), ink: get('--ink'), ink2: get('--ink-2'), ink3: get('--ink-3'), border: get('--border-strong'),
+      accent: get('--accent'), working: get('--working'), waiting: get('--waiting'), error: get('--error'), done: get('--done'),
+      exited: get('--exited'), review: get('--review'), night: get('--night') === '1',
+    };
+    dirty = true;
+  }
+  readTokens();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTokens);
+  new MutationObserver(readTokens).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  document.fonts?.ready.then(() => { dirty = true; });
+
+  const stateColor = (s) => ({ working: T.working, waiting: T.waiting, error: T.error, done: T.done, exited: T.exited })[s] || T.exited;
+  const statusSwatch = (st) => ({ todo: 'transparent', in_progress: '#d9805c', in_review: 'var(--review)', done: 'var(--exited)' })[st];
+
+  // ── City layout (deterministic per ticket) ─────────────────────────
+  const layoutCache = new Map();
+  function layout(city) {
+    let l = layoutCache.get(city.ticket);
+    if (l) return l;
+    const rnd = mulberry32(city.ticket * 7919 + 13);
+    const cells = [];
+    const lots = [], others = [];
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const mid = (N - 1) / 2;
+      let cell;
+      if (i === mid || j === mid) cell = { i, j, type: 'road' };
+      else {
+        const r = rnd();
+        if (r < 0.55) cell = { i, j, type: 'building', storeys: 1 + Math.floor(rnd() * 4), wall: WALLS[Math.floor(rnd() * WALLS.length)], win: rnd() };
+        else if (r < 0.75) cell = { i, j, type: 'park', trees: 1 + Math.floor(rnd() * 2) };
+        else cell = { i, j, type: 'lot' };
+      }
+      cells.push(cell);
+      if (cell.type === 'lot') lots.push(cell); else if (cell.type !== 'road') others.push(cell);
+    }
+    const shuffle = (arr) => { for (let k = arr.length - 1; k > 0; k--) { const m = Math.floor(rnd() * (k + 1)); [arr[k], arr[m]] = [arr[m], arr[k]]; } return arr; };
+    const slots = [...shuffle(lots), ...shuffle(others)].map((c) => ({ i: c.i, j: c.j, wall: WALLS[Math.floor(rnd() * WALLS.length)], storeys: 1 + Math.floor(rnd() * 2) }));
+    l = { cells, slots };
+    layoutCache.set(city.ticket, l);
+    return l;
+  }
+  const cellCenter = (i, j) => ({ x: (i - j) * TW, y: (i + j) * TH - (N - 1) * TH });
+
+  // ── Camera ─────────────────────────────────────────────────────────
+  const canvas = $('#map');
+  const ctx = canvas.getContext('2d');
+  const mini = $('#minimap');
+  const mctx = mini.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  const cam = state.camera;
+  let tween = null;
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = r.width; H = r.height;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    const mr = mini.getBoundingClientRect();
+    mini.width = Math.round(mr.width * DPR); mini.height = Math.round(mr.height * DPR);
+    dirty = true;
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  const toScreen = (wx, wy) => ({ x: (wx - cam.x) * cam.zoom + W / 2, y: (wy - cam.y) * cam.zoom + H / 2 });
+  const toWorld = (sx, sy) => ({ x: (sx - W / 2) / cam.zoom + cam.x, y: (sy - H / 2) / cam.zoom + cam.y });
+
+  function flyTo(x, y, zoom) {
+    const to = { x, y, zoom: zoom ?? cam.zoom };
+    if (reducedMotion.matches) { Object.assign(cam, to); dirty = true; save(); return; }
+    tween = { from: { ...cam }, to, t0: performance.now(), dur: 600 };
+  }
+  function stepTween(now) {
+    if (!tween) return;
+    const p = clamp((now - tween.t0) / tween.dur, 0, 1);
+    const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+    cam.x = tween.from.x + (tween.to.x - tween.from.x) * e;
+    cam.y = tween.from.y + (tween.to.y - tween.from.y) * e;
+    cam.zoom = tween.from.zoom + (tween.to.zoom - tween.from.zoom) * e;
+    dirty = true;
+    if (p >= 1) { tween = null; save(); }
+  }
+
+  // ── Drawing primitives ─────────────────────────────────────────────
+  function diamond(cx, cy, w, h) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy); ctx.closePath();
+  }
+  function isoBox(cx, cy, w, h, height, wall, opts = {}) {
+    const top = tone(wall, { s: opts.s, l: (opts.l || 0) + 8 });
+    const left = tone(wall, { s: opts.s, l: opts.l || 0 });
+    const right = tone(wall, { s: opts.s, l: (opts.l || 0) - 14 });
+    ctx.fillStyle = left;
+    ctx.beginPath(); ctx.moveTo(cx - w, cy - height); ctx.lineTo(cx, cy + h - height); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = right;
+    ctx.beginPath(); ctx.moveTo(cx + w, cy - height); ctx.lineTo(cx, cy + h - height); ctx.lineTo(cx, cy + h); ctx.lineTo(cx + w, cy); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = opts.roof || top;
+    diamond(cx, cy - height, w, h); ctx.fill();
+    if (opts.windows && height >= STOREY) {
+      const storeys = Math.floor(height / STOREY);
+      const lit = T.night && !opts.faded;
+      for (let s = 0; s < storeys; s++) {
+        const base = height - s * STOREY - 4;
+        for (const [face, us] of [[-1, [0.28, 0.62]], [1, [0.28, 0.62]]]) {
+          for (let k = 0; k < us.length; k++) {
+            const u1 = us[k], u2 = us[k] + 0.16;
+            const X = (u) => cx + face * (w - w * u), Y = (u) => cy + h * u;
+            const on = lit && hash2(Math.round(cx * 7 + s * 31 + face * 3), Math.round(cy + k * 17)) < 0.65;
+            ctx.fillStyle = on ? '#ffd98a' : (T.night ? 'rgba(10,16,20,0.55)' : 'rgba(31,42,34,0.28)');
+            ctx.beginPath();
+            ctx.moveTo(X(u1), Y(u1) - base); ctx.lineTo(X(u2), Y(u2) - base); ctx.lineTo(X(u2), Y(u2) - base + 6); ctx.lineTo(X(u1), Y(u1) - base + 6); ctx.closePath(); ctx.fill();
+          }
+        }
+      }
+    }
+  }
+  function tree(cx, cy, scale = 1, faded = false) {
+    const g = faded ? tone('#5f9a4c', { s: 0.25, l: 12 }) : tone('#5f9a4c', { l: T.night ? -10 : 0 });
+    const g2 = faded ? tone('#4a7f3a', { s: 0.25, l: 12 }) : tone('#4a7f3a', { l: T.night ? -10 : 0 });
+    ctx.fillStyle = 'rgba(31,42,34,0.18)'; ctx.beginPath(); ctx.ellipse(cx, cy + 1, 6 * scale, 3 * scale, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8a6a48'; ctx.fillRect(cx - 1.2 * scale, cy - 9 * scale, 2.4 * scale, 9 * scale);
+    ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(cx, cy - 12 * scale, 7 * scale, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx - 2 * scale, cy - 14 * scale, 5.5 * scale, 0, Math.PI * 2); ctx.fill();
+  }
+  function flag(cx, cy, height, color) {
+    ctx.strokeStyle = T.ink2; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - height); ctx.stroke();
+    ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(cx, cy - height); ctx.lineTo(cx + 12, cy - height + 4); ctx.lineTo(cx, cy - height + 8); ctx.closePath(); ctx.fill();
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  // ── Sites (construction) ───────────────────────────────────────────
+  function drawSite(city, site, slot, t, faded) {
+    const { x: cx, y: cy } = cellCenter(slot.i, slot.j);
+    const animate = !reducedMotion.matches && !faded;
+    const col = stateColor(site.state);
+    if (site.state === 'done') {
+      isoBox(cx, cy, TW * 0.7, TH * 0.7, STOREY * slot.storeys, slot.wall, { windows: true, faded });
+      flag(cx + TW * 0.55, cy + TH * 0.2, 26, col);
+      return;
+    }
+    // sandy lot with fence
+    ctx.fillStyle = tone('#e3d3a3', { l: T.night ? -18 : 0, s: site.state === 'exited' ? 0.2 : 1 });
+    diamond(cx, cy, TW * 0.92, TH * 0.92); ctx.fill();
+    if (site.state !== 'exited') {
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = '#e07a2f'; ctx.lineWidth = 1.2;
+      diamond(cx, cy, TW * 0.92, TH * 0.92); ctx.stroke(); ctx.setLineDash([]);
+      for (const [px, py] of [[cx, cy - TH * 0.92], [cx + TW * 0.92, cy], [cx, cy + TH * 0.92], [cx - TW * 0.92, cy]]) {
+        ctx.fillStyle = '#e07a2f'; ctx.fillRect(px - 1, py - 7, 2, 7);
+        ctx.fillStyle = '#fff5e6'; ctx.fillRect(px - 1, py - 4, 2, 2);
+      }
+    }
+    // materials pile + foundation slab
+    isoBox(cx + 5, cy + 3, 6, 3, 4, '#c9b48a', { s: site.state === 'exited' ? 0.2 : 1 });
+    isoBox(cx - 6, cy + 1, TW * 0.3, TH * 0.3, 3, slot.wall, { s: site.state === 'exited' ? 0.2 : 1 });
+    // crane
+    const mastX = cx, mastBase = cy - 3, mastH = 48;
+    const craneCol = site.state === 'exited' ? T.exited : '#f2c14e';
+    isoBox(mastX, mastBase, 2.6, 1.3, mastH, craneCol, {});
+    const topY = mastBase - mastH;
+    const baseAngle = -0.55;
+    const angle = site.state === 'working' && animate ? baseAngle + Math.sin(t / 2600) * 0.55 : baseAngle;
+    const jib = 34;
+    const jx = mastX + Math.cos(angle) * jib, jy = topY + Math.sin(angle) * jib * 0.5;
+    ctx.strokeStyle = craneCol; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(mastX - Math.cos(angle) * 10, topY - Math.sin(angle) * 5); ctx.lineTo(jx, jy); ctx.stroke();
+    const hookLen = site.state === 'working' && animate ? 14 + Math.sin(t / 1900) * 8 : 16;
+    ctx.strokeStyle = T.ink2; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(jx, jy); ctx.lineTo(jx, jy + hookLen); ctx.stroke();
+    ctx.fillStyle = slot.wall; ctx.fillRect(jx - 3, jy + hookLen, 6, 4);
+
+    if (site.state === 'working') {
+      const puffs = animate ? 3 : 1;
+      for (let k = 0; k < puffs; k++) {
+        const ph = animate ? ((t / 1500 + k / 3) % 1) : 0.4;
+        ctx.fillStyle = `rgba(200,180,140,${(1 - ph) * 0.45})`;
+        ctx.beginPath(); ctx.arc(cx - 8 + k * 5, cy - 2 - ph * 18, 3 + ph * 5, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (site.state === 'waiting') {
+      const blink = animate ? 0.55 + 0.45 * Math.sin(t / 260) : 1;
+      ctx.fillStyle = col; ctx.globalAlpha = 0.18 * blink; ctx.beginPath(); ctx.arc(mastX, topY - 8, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = blink; ctx.beginPath(); ctx.arc(mastX, topY - 8, 4.2, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      const pulse = animate ? (t / 1400) % 1 : 0.4;
+      ctx.strokeStyle = col; ctx.globalAlpha = (1 - pulse) * 0.7; ctx.lineWidth = 1.5;
+      diamond(cx, cy, TW * (0.9 + pulse * 0.6), TH * (0.9 + pulse * 0.6)); ctx.stroke(); ctx.globalAlpha = 1;
+    } else if (site.state === 'error') {
+      for (let k = 0; k < 3; k++) {
+        const ph = animate ? ((t / 1800 + k / 3) % 1) : k / 3;
+        ctx.fillStyle = `rgba(90,40,40,${(1 - ph) * 0.5})`;
+        ctx.beginPath(); ctx.arc(cx - 6 + Math.sin(ph * 6) * 3, cy - 4 - ph * 26, 3 + ph * 6, 0, Math.PI * 2); ctx.fill();
+      }
+      const by = topY - 12 + (animate ? Math.sin(t / 500) * 1.5 : 0);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(mastX, by - 9); ctx.lineTo(mastX + 8, by + 5); ctx.lineTo(mastX - 8, by + 5); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(mastX - 1, by - 4, 2, 5); ctx.fillRect(mastX - 1, by + 2, 2, 2);
+    }
+  }
+
+  // ── City ───────────────────────────────────────────────────────────
+  function drawCity(city, t) {
+    const { cells, slots } = layout(city);
+    const faded = city.status === 'done';
+    const blueprint = city.status === 'todo';
+    const opts = faded ? { s: 0.22, l: T.night ? -6 : 10 } : { l: T.night ? -12 : 0 };
+    const cx0 = city.pos.x, cy0 = city.pos.y;
+    ctx.save();
+    ctx.translate(cx0, cy0);
+
+    // ground
+    if (blueprint) {
+      ctx.fillStyle = 'rgba(61,125,202,0.13)';
+      diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.fill();
+      ctx.setLineDash([6, 5]); ctx.strokeStyle = T.accent; ctx.lineWidth = 1.5; diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.stroke(); ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle = faded ? tone('#b8cf9c', { s: 0.2, l: T.night ? -30 : 8 }) : tone('#b8cf9c', { l: T.night ? -32 : 0 });
+      diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.fill();
+      ctx.strokeStyle = 'rgba(31,42,34,0.18)'; ctx.lineWidth = 1; diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.stroke();
+    }
+
+    const siteBySlot = new Map();
+    for (const s of city.sites) siteBySlot.set(s.slot, s);
+    const builtBySlot = new Set(city.builtSlots);
+    const slotByCell = new Map(slots.map((s, idx) => [s.i + ',' + s.j, { idx, slot: s }]));
+
+    const order = [...cells].sort((a, b) => (a.i + a.j) - (b.i + b.j));
+    for (const cell of order) {
+      const { x, y } = cellCenter(cell.i, cell.j);
+      const here = slotByCell.get(cell.i + ',' + cell.j);
+      const site = here && siteBySlot.get(here.idx);
+      const built = here && builtBySlot.has(here.idx);
+
+      if (blueprint) {
+        if (cell.type === 'road') { ctx.fillStyle = 'rgba(61,125,202,0.10)'; diamond(x, y, TW, TH); ctx.fill(); }
+        else if (cell.type === 'building') { ctx.setLineDash([3, 3]); ctx.strokeStyle = T.accent; ctx.lineWidth = 1; diamond(x, y, TW * 0.7, TH * 0.7); ctx.stroke(); ctx.setLineDash([]); }
+        else if (cell.type === 'park') { ctx.fillStyle = T.accent; ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+        continue;
+      }
+
+      if (cell.type === 'road') {
+        ctx.fillStyle = faded ? tone('#9aa39c', { s: 0.1, l: T.night ? -25 : 10 }) : tone('#a9b0a4', { l: T.night ? -30 : 0 });
+        diamond(x, y, TW, TH); ctx.fill();
+        if (!faded && (cell.i + cell.j) % 2 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x - 1, y - 1, 2, 2); }
+        continue;
+      }
+      if (site) { drawSite(city, site, here.slot, t, faded); continue; }
+      if (built) { isoBox(x, y, TW * 0.7, TH * 0.7, STOREY * here.slot.storeys, here.slot.wall, { ...opts, windows: true, faded }); continue; }
+      if (cell.type === 'building') { isoBox(x, y, TW * 0.72, TH * 0.72, STOREY * cell.storeys, cell.wall, { ...opts, windows: true, faded }); }
+      else if (cell.type === 'park') {
+        ctx.fillStyle = faded ? tone('#9cc27a', { s: 0.2, l: T.night ? -28 : 10 }) : tone('#9cc27a', { l: T.night ? -30 : 0 });
+        diamond(x, y, TW * 0.9, TH * 0.9); ctx.fill();
+        tree(x - 4, y + 2, 0.9, faded);
+        if (cell.trees > 1) tree(x + 6, y - 2, 0.7, faded);
+      } else {
+        ctx.fillStyle = faded ? tone('#c3b995', { s: 0.2, l: T.night ? -25 : 8 }) : tone('#c3b995', { l: T.night ? -28 : 0 });
+        diamond(x, y, TW * 0.8, TH * 0.8); ctx.fill();
+      }
+    }
+
+    // centre plaza marker by status
+    if (city.status === 'in_review') {
+      ctx.fillStyle = T.review; ctx.globalAlpha = 0.25; diamond(0, 0, TW, TH); ctx.fill(); ctx.globalAlpha = 1;
+      flag(0, 2, 44, T.review);
+      const bob = reducedMotion.matches ? 0 : Math.sin(t / 700) * 2;
+      ctx.strokeStyle = T.review; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(14, -52 + bob, 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(18, -48 + bob); ctx.lineTo(23, -43 + bob); ctx.stroke();
+    } else if (city.status === 'done') {
+      flag(0, 2, 36, T.done);
+    } else if (city.status === 'todo') {
+      ctx.fillStyle = '#8a6a48'; ctx.fillRect(-1, -18, 2, 18);
+      ctx.fillStyle = '#f4e7c8'; ctx.fillRect(-11, -30, 22, 13);
+      ctx.strokeStyle = T.accent; ctx.lineWidth = 1; ctx.strokeRect(-11, -30, 22, 13);
+      ctx.fillStyle = T.accent; ctx.fillRect(-8, -26, 12, 1.5); ctx.fillRect(-8, -22, 8, 1.5);
+    }
+    ctx.restore();
+  }
+
+  function drawSelectionRing(city, t) {
+    ctx.save();
+    ctx.translate(city.pos.x, city.pos.y);
+    ctx.setLineDash([8, 6]); ctx.lineDashOffset = reducedMotion.matches ? 0 : -(t / 40) % 14;
+    ctx.strokeStyle = T.accent; ctx.lineWidth = 2 / cam.zoom;
+    diamond(0, 0, CITY_HALF_W + 12, CITY_HALF_H + 8); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawTerrain(vis) {
+    const step = 170;
+    const i0 = Math.floor(vis.x0 / step) - 1, i1 = Math.ceil(vis.x1 / step) + 1;
+    const j0 = Math.floor(vis.y0 / step) - 1, j1 = Math.ceil(vis.y1 / step) + 1;
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const h = hash2(i, j);
+      if (h > 0.22) continue;
+      const x = i * step + (hash2(i + 7, j) - 0.5) * 120, y = j * step + (hash2(i, j + 7) - 0.5) * 120;
+      if (state.cities.some((c) => Math.abs(c.pos.x - x) < CITY_HALF_W + 50 && Math.abs(c.pos.y - y) < CITY_HALF_H + 60)) continue;
+      if (h < 0.03) {
+        ctx.fillStyle = T.water; ctx.beginPath(); ctx.ellipse(x, y, 34, 17, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.ellipse(x - 8, y - 4, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+      } else {
+        const n = 1 + Math.floor(h * 14);
+        for (let k = 0; k < n; k++) tree(x + (hash2(i + k, j) - 0.5) * 50, y + (hash2(i, j + k) - 0.5) * 30, 0.8 + hash2(k, i) * 0.5, false);
+      }
+    }
+  }
+
+  function drawPaths() {
+    ctx.strokeStyle = T.path; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.setLineDash([12, 9]);
+    for (const c of state.cities) {
+      if (!c.parent) continue;
+      const p = cityByTicket(c.parent);
+      if (!p) continue;
+      const mx = (c.pos.x + p.pos.x) / 2, my = (c.pos.y + p.pos.y) / 2;
+      ctx.beginPath(); ctx.moveTo(p.pos.x, p.pos.y); ctx.quadraticCurveTo(mx + 40, my - 60, c.pos.x, c.pos.y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Labels live in screen space so they stay legible at any zoom.
+  function drawLabels() {
+    ctx.save();
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    for (const city of state.cities) {
+      const s = toScreen(city.pos.x, city.pos.y - CITY_HALF_H);
+      const selected = selection && selection.cityId === city.id && selection.type === 'city';
+      const hovered = hover && hover.type === 'city' && hover.cityId === city.id;
+      const faded = city.status === 'done';
+      ctx.font = `600 14px ${T_FONT_DISPLAY}`;
+      const nameW = ctx.measureText(city.name).width;
+      ctx.font = `500 11px ${T_FONT_MONO}`;
+      const tk = '#' + city.ticket;
+      const tkW = ctx.measureText(tk).width;
+      const pad = 9, gap = 7, h = 26, w = pad + tkW + gap + nameW + pad;
+      const x = s.x - w / 2, y = s.y - h - 8;
+      ctx.globalAlpha = faded && !selected && !hovered ? 0.72 : 1;
+      ctx.fillStyle = T.surface; ctx.strokeStyle = selected ? T.accent : T.border; ctx.lineWidth = selected ? 1.5 : 1;
+      roundRect(x, y, w, h, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = T.ink3; ctx.textBaseline = 'middle'; ctx.fillText(tk, x + pad, y + h / 2 + 0.5);
+      ctx.font = `600 14px ${T_FONT_DISPLAY}`; ctx.fillStyle = T.ink;
+      ctx.fillText(city.name, x + pad + tkW + gap, y + h / 2);
+      if (hovered && !selected) { ctx.fillStyle = T.accent; ctx.fillRect(x + pad + tkW + gap, y + h - 6, nameW, 1.5); }
+      ctx.globalAlpha = 1;
+
+      // site labels
+      if (cam.zoom >= 0.75 && !faded) {
+        const { slots } = layout(city);
+        for (const site of city.sites) {
+          const slot = slots[site.slot]; if (!slot) continue;
+          const c = cellCenter(slot.i, slot.j);
+          const p = toScreen(city.pos.x + c.x, city.pos.y + c.y + TH + 2);
+          ctx.font = `500 11px ${T_FONT_BODY}`;
+          const lw = ctx.measureText(site.name).width;
+          const sw = 8 + 8 + 5 + lw + 8, sh = 20;
+          const sx = p.x - sw / 2, sy = p.y + 4;
+          const sel = selection && selection.type === 'site' && selection.siteId === site.id;
+          ctx.fillStyle = T.surface; ctx.strokeStyle = sel ? T.accent : T.border; ctx.lineWidth = sel ? 1.5 : 1;
+          roundRect(sx, sy, sw, sh, 6); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = stateColor(site.state); ctx.beginPath(); ctx.arc(sx + 12, sy + sh / 2, 4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = site.state === 'exited' ? T.ink3 : T.ink; ctx.fillText(site.name, sx + 21, sy + sh / 2 + 0.5);
+        }
+      }
+    }
+    ctx.restore();
+  }
+  const T_FONT_DISPLAY = "'Fredoka', 'Trebuchet MS', system-ui, sans-serif";
+  const T_FONT_BODY = "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif";
+  const T_FONT_MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+
+  function draw(t) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.fillStyle = T.ground; ctx.fillRect(0, 0, W, H);
+    // iso grid
+    const tl = toWorld(0, 0), br = toWorld(W, H);
+    ctx.strokeStyle = T.groundLine; ctx.lineWidth = 1;
+    const g = 44 * cam.zoom;
+    if (g > 14) {
+      const ox = (-cam.x * cam.zoom + W / 2) % g, oy = (-cam.y * cam.zoom + H / 2) % (g / 2);
+      ctx.beginPath();
+      for (let x = ox - g * 4; x < W + g * 4; x += g) { ctx.moveTo(x - H, oy - H / 2 * 0 + H / 2 + H); ctx.lineTo(x + H, -H / 2); }
+      for (let x = ox - g * 4; x < W + g * 4; x += g) { ctx.moveTo(x - H, -H / 2); ctx.lineTo(x + H, H + H / 2); }
+      ctx.stroke();
+    }
+    ctx.setTransform(DPR * cam.zoom, 0, 0, DPR * cam.zoom, DPR * (W / 2 - cam.x * cam.zoom), DPR * (H / 2 - cam.y * cam.zoom));
+    drawTerrain({ x0: tl.x, y0: tl.y, x1: br.x, y1: br.y });
+    drawPaths();
+    const ordered = [...state.cities].sort((a, b) => a.pos.y - b.pos.y);
+    for (const city of ordered) {
+      if (city.pos.x + CITY_HALF_W < tl.x - 60 || city.pos.x - CITY_HALF_W > br.x + 60 || city.pos.y + CITY_HALF_H < tl.y - 120 || city.pos.y - CITY_HALF_H > br.y + 100) continue;
+      if (selection && selection.cityId === city.id) drawSelectionRing(city, t);
+      drawCity(city, t);
+    }
+    drawLabels();
+    drawMinimap();
+  }
+
+  function drawMinimap() {
+    const mw = mini.width / DPR, mh = mini.height / DPR;
+    mctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    mctx.clearRect(0, 0, mw, mh);
+    const b = mapBounds();
+    const sc = Math.min((mw - 24) / (b.x1 - b.x0), (mh - 24) / (b.y1 - b.y0));
+    const ox = mw / 2 - ((b.x0 + b.x1) / 2) * sc, oy = mh / 2 - ((b.y0 + b.y1) / 2) * sc;
+    const M = (x, y) => ({ x: ox + x * sc, y: oy + y * sc });
+    for (const c of state.cities) {
+      const p = M(c.pos.x, c.pos.y);
+      mctx.fillStyle = c.status === 'done' ? T.exited : c.status === 'todo' ? T.accent : c.status === 'in_review' ? T.review : '#d9805c';
+      mctx.globalAlpha = c.status === 'todo' ? 0.6 : 1;
+      mctx.beginPath(); mctx.moveTo(p.x, p.y - 5); mctx.lineTo(p.x + 8, p.y); mctx.lineTo(p.x, p.y + 5); mctx.lineTo(p.x - 8, p.y); mctx.closePath(); mctx.fill();
+      mctx.globalAlpha = 1;
+      const alert = c.sites.find((s) => s.state === 'waiting' || s.state === 'error');
+      if (alert) { mctx.fillStyle = stateColor(alert.state); mctx.beginPath(); mctx.arc(p.x + 7, p.y - 5, 3, 0, Math.PI * 2); mctx.fill(); }
+    }
+    const tl = toWorld(0, 0), br = toWorld(W, H);
+    const a = M(tl.x, tl.y), z = M(br.x, br.y);
+    mctx.strokeStyle = T.ink; mctx.lineWidth = 1; mctx.globalAlpha = 0.6;
+    mctx.strokeRect(a.x, a.y, z.x - a.x, z.y - a.y); mctx.globalAlpha = 1;
+    mini._map = { sc, ox, oy };
+  }
+  function mapBounds() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const c of state.cities) { x0 = Math.min(x0, c.pos.x); y0 = Math.min(y0, c.pos.y); x1 = Math.max(x1, c.pos.x); y1 = Math.max(y1, c.pos.y); }
+    if (!isFinite(x0)) { x0 = -500; y0 = -300; x1 = 500; y1 = 300; }
+    return { x0: x0 - 400, y0: y0 - 300, x1: x1 + 400, y1: y1 + 300 };
+  }
+
+  // ── Hit testing ────────────────────────────────────────────────────
+  function hit(sx, sy) {
+    const w = toWorld(sx, sy);
+    const ordered = [...state.cities].sort((a, b) => b.pos.y - a.pos.y);
+    for (const city of ordered) {
+      const dx = w.x - city.pos.x, dy = w.y - city.pos.y;
+      if (city.status !== 'done') {
+        const { slots } = layout(city);
+        for (const site of city.sites) {
+          const slot = slots[site.slot]; if (!slot) continue;
+          const c = cellCenter(slot.i, slot.j);
+          const ddx = dx - c.x, ddy = dy - (c.y - 20);
+          if (Math.abs(ddx) < TW * 1.1 && Math.abs(ddy) < 34) return { type: 'site', cityId: city.id, siteId: site.id };
+        }
+      }
+      // label box (screen space)
+      const ls = toScreen(city.pos.x, city.pos.y - CITY_HALF_H);
+      if (Math.abs(sx - ls.x) < 90 && sy > ls.y - 36 && sy < ls.y - 6) return { type: 'city', cityId: city.id };
+      if (Math.abs(dx) / CITY_HALF_W + Math.abs(dy) / CITY_HALF_H <= 1.05 || (Math.abs(dx) < CITY_HALF_W * 0.6 && dy < 0 && dy > -CITY_HALF_H - 70)) return { type: 'city', cityId: city.id };
+    }
+    return null;
+  }
+
+  // ── Pointer interaction ────────────────────────────────────────────
+  let pointer = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    const h = hit(e.offsetX, e.offsetY);
+    pointer = { x: e.offsetX, y: e.offsetY, sx: e.offsetX, sy: e.offsetY, hit: h, moved: false, city: h && h.type === 'city' ? cityById(h.cityId) : null, startPos: null };
+    if (pointer.city) pointer.startPos = { ...pointer.city.pos };
+    tween = null;
+    canvas.className = pointer.city ? 'move' : 'grabbing';
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointer) {
+      const h = hit(e.offsetX, e.offsetY);
+      const changed = JSON.stringify(h) !== JSON.stringify(hover);
+      hover = h; if (changed) dirty = true;
+      canvas.className = h ? 'point' : 'grab';
+      return;
+    }
+    const dx = e.offsetX - pointer.x, dy = e.offsetY - pointer.y;
+    if (!pointer.moved && Math.hypot(e.offsetX - pointer.sx, e.offsetY - pointer.sy) > 4) pointer.moved = true;
+    if (!pointer.moved) return;
+    if (pointer.city) {
+      pointer.city.pos.x += dx / cam.zoom; pointer.city.pos.y += dy / cam.zoom;
+    } else {
+      cam.x -= dx / cam.zoom; cam.y -= dy / cam.zoom;
+    }
+    pointer.x = e.offsetX; pointer.y = e.offsetY; dirty = true;
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!pointer) return;
+    if (!pointer.moved) {
+      select(pointer.hit);
+    } else {
+      save();
+    }
+    pointer = null;
+    canvas.className = hit(e.offsetX, e.offsetY) ? 'point' : 'grab';
+  });
+  canvas.addEventListener('pointercancel', () => { pointer = null; canvas.className = 'grab'; });
+  canvas.addEventListener('dblclick', (e) => {
+    const h = hit(e.offsetX, e.offsetY);
+    if (!h) return;
+    const city = cityById(h.cityId);
+    flyTo(city.pos.x, city.pos.y + 10, 1.7);
+  });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    tween = null;
+    const before = toWorld(e.offsetX, e.offsetY);
+    cam.zoom = clamp(cam.zoom * Math.exp(-e.deltaY * 0.0015), 0.3, 2.6);
+    const after = toWorld(e.offsetX, e.offsetY);
+    cam.x += before.x - after.x; cam.y += before.y - after.y;
+    dirty = true; save();
+  }, { passive: false });
+  mini.addEventListener('pointerdown', (e) => {
+    const m = mini._map; if (!m) return;
+    flyTo((e.offsetX - m.ox) / m.sc, (e.offsetY - m.oy) / m.sc);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && selection) { select(null); }
+  });
+
+  // ── Selection & navigation ─────────────────────────────────────────
+  function select(target) {
+    selection = target;
+    dirty = true;
+    renderInspector();
+    renderSidebar();
+  }
+  function goToCity(city, andSelect = true) {
+    flyTo(city.pos.x, city.pos.y + 10, Math.max(cam.zoom, 1.1));
+    if (andSelect) select({ type: 'city', cityId: city.id });
+  }
+  function goToSite(city, site) {
+    const slot = layout(city).slots[site.slot];
+    const c = cellCenter(slot.i, slot.j);
+    flyTo(city.pos.x + c.x, city.pos.y + c.y, Math.max(cam.zoom, 1.5));
+    select({ type: 'site', cityId: city.id, siteId: site.id });
+  }
+  let attentionCursor = 0;
+  function jumpToAttention(kind) {
+    const list = [];
+    for (const c of state.cities) for (const s of c.sites) if (s.state === kind) list.push({ c, s });
+    if (!list.length) return;
+    const { c, s } = list[attentionCursor++ % list.length];
+    goToSite(c, s);
+  }
+
+  // ── Mutations ──────────────────────────────────────────────────────
+  function freePosition() {
+    for (let k = 0; k < 600; k++) {
+      const r = 430 * Math.sqrt(k), a = k * 2.39996;
+      const p = { x: Math.round(r * Math.cos(a)), y: Math.round(r * Math.sin(a) * 0.72) };
+      if (state.cities.every((c) => Math.hypot(c.pos.x - p.x, (c.pos.y - p.y) * 1.4) >= 470)) return p;
+    }
+    return { x: 0, y: 0 };
+  }
+  function addCity({ name, description, status, parent }) {
+    const ticket = state.nextTicket++;
+    const city = { id: 'c' + ticket, ticket, name: name || 'Untitled ticket', description: description || '', status: status || 'todo', parent: parent || undefined, pos: freePosition(), sites: [], builtSlots: [], createdAt: Date.now() };
+    state.cities.push(city);
+    save();
+    goToCity(city);
+    return city;
+  }
+  function addSite(city, name, state_ = 'working', agent = 'claude') {
+    const used = new Set([...city.sites.map((s) => s.slot), ...city.builtSlots]);
+    const { slots } = layout(city);
+    let slot = 0; while (used.has(slot) && slot < slots.length) slot++;
+    if (slot >= slots.length) return null;
+    const site = { id: 's' + state.nextSiteId++, slot, name, state: state_, agent, startedAt: Date.now() };
+    city.sites.push(site);
+    if (city.status === 'todo') city.status = 'in_progress';
+    dirty = true; save();
+    return site;
+  }
+  function closeSite(city, site) {
+    city.sites = city.sites.filter((s) => s !== site);
+    if (site.state === 'done') city.builtSlots.push(site.slot);
+    if (selection && selection.siteId === site.id) selection = { type: 'city', cityId: city.id };
+    dirty = true; save();
+    renderInspector(); renderSidebar();
+  }
+
+  // ── Simulation ─────────────────────────────────────────────────────
+  let simTimer = null;
+  function simTick() {
+    if (!sim) return;
+    const active = state.cities.filter((c) => c.status !== 'done');
+    const pool = [];
+    for (const c of active) for (const s of c.sites) pool.push({ c, s });
+    const r = Math.random();
+    if (pool.length && r < 0.75) {
+      const { c, s } = pool[Math.floor(Math.random() * pool.length)];
+      const q = Math.random();
+      if (s.state === 'working') s.state = q < 0.45 ? 'waiting' : q < 0.65 ? 'done' : q < 0.8 ? 'error' : 'working';
+      else if (s.state === 'waiting') s.state = q < 0.6 ? 'working' : 'waiting';
+      else if (s.state === 'error') s.state = q < 0.55 ? 'working' : 'error';
+      else if (s.state === 'done' && q < 0.3) { closeSite(c, s); return finishTick(); }
+      void c;
+    } else if (r < 0.9) {
+      const cands = active.filter((c) => c.status === 'in_progress' && c.sites.length < 4);
+      if (cands.length) {
+        const c = cands[Math.floor(Math.random() * cands.length)];
+        addSite(c, SESSION_TITLES[Math.floor(Math.random() * SESSION_TITLES.length)], 'working', Math.random() < 0.5 ? 'kiro' : 'claude');
+      }
+    }
+    finishTick();
+  }
+  function finishTick() { dirty = true; save(); renderSidebar(); renderInspector(); }
+  function startSim() { clearInterval(simTimer); simTimer = setInterval(simTick, 4200); }
+  startSim();
+
+  // ── Sidebar ────────────────────────────────────────────────────────
+  const sidebar = $('#sidebar');
+  function renderSidebar() {
+    const waiting = state.cities.reduce((n, c) => n + c.sites.filter((s) => s.state === 'waiting').length, 0);
+    const errors = state.cities.reduce((n, c) => n + c.sites.filter((s) => s.state === 'error').length, 0);
+    const working = state.cities.reduce((n, c) => n + c.sites.filter((s) => s.state === 'working').length, 0);
+    let html = `<div class="attention">
+      <div class="row"><span class="n waiting ${waiting ? '' : 'zero'}">${waiting}</span><span class="lbl">waiting for you</span>${waiting ? '<button class="btn small" data-jump="waiting">Next</button>' : ''}</div>
+      <div class="row"><span class="n error ${errors ? '' : 'zero'}">${errors}</span><span class="lbl">hit a problem</span>${errors ? '<button class="btn small" data-jump="error">Next</button>' : ''}</div>
+      <div class="row"><span class="n zero">${working}</span><span class="lbl">agents working</span></div>
+    </div>`;
+    for (const status of STATUS_ORDER) {
+      const cities = state.cities.filter((c) => c.status === status).sort((a, b) => b.ticket - a.ticket);
+      html += `<div class="group"><h3>${STATUS_LABEL[status]} <span class="count">${cities.length}</span></h3>`;
+      if (!cities.length) html += `<div class="empty-group">Nothing here</div>`;
+      for (const c of cities) {
+        const sel = selection && selection.cityId === c.id;
+        const dots = c.sites.map((s) => `<span class="dot" style="background: var(--${s.state})" title="${esc(s.name)} · ${SITE_LABEL[s.state]}"></span>`).join('');
+        html += `<button class="city-row ${status} ${sel ? 'selected' : ''}" data-city="${c.id}">
+          <span class="swatch" style="background:${statusSwatch(status)}; ${status === 'todo' ? 'border:1.5px dashed var(--accent)' : ''}"></span>
+          <span class="name">${esc(c.name)}<span class="ticket">#${c.ticket}</span></span>
+          <span class="sites">${dots}</span></button>`;
+      }
+      html += `</div>`;
+    }
+    sidebar.innerHTML = html;
+  }
+  sidebar.addEventListener('click', (e) => {
+    const jump = e.target.closest('[data-jump]');
+    if (jump) { jumpToAttention(jump.dataset.jump); return; }
+    const row = e.target.closest('[data-city]');
+    if (row) { goToCity(cityById(row.dataset.city)); if (innerWidth <= 960) sidebar.classList.remove('open'); }
+  });
+
+  // ── Inspector ──────────────────────────────────────────────────────
+  const inspector = $('#inspector');
+  const fmtAgo = (ts) => { const m = Math.max(1, Math.round((Date.now() - ts) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+  const chip = (s) => `<span class="state-chip"><span class="dot" style="background: var(--${s})"></span>${SITE_LABEL[s]}</span>`;
+
+  function renderInspector() {
+    if (!selection) { inspector.hidden = true; return; }
+    inspector.hidden = false;
+    if (selection.type === 'new') return renderNewCity();
+    const city = cityById(selection.cityId);
+    if (!city) { selection = null; inspector.hidden = true; return; }
+    if (selection.type === 'site') {
+      const site = city.sites.find((s) => s.id === selection.siteId);
+      if (!site) { selection = { type: 'city', cityId: city.id }; }
+      else return renderSite(city, site);
+    }
+    const statusOpts = Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${city.status === k ? 'selected' : ''}>${v}</option>`).join('');
+    const parent = city.parent ? cityByTicket(city.parent) : null;
+    const sites = city.sites.map((s) => `<div class="site-row ${selection.siteId === s.id ? 'selected' : ''}" data-site="${s.id}">
+        <span class="dot" style="background: var(--${s.state})"></span>
+        <div><div class="name">${esc(s.name)}</div><div class="meta"><span class="agent">${esc(s.agent)}</span><span>${SITE_LABEL[s.state]}</span><span>${fmtAgo(s.startedAt)}</span></div></div>
+        <div class="actions"><button class="btn quiet small" data-focus="${s.id}" title="Show on map">Focus</button><button class="btn quiet small" data-close="${s.id}" title="Close terminal">×</button></div>
+      </div>`).join('');
+    inspector.innerHTML = `
+      <div class="head">
+        <div class="eyebrow"><span>City</span><span class="ticket">#${city.ticket}</span>${parent ? `<span>· part of <button class="link" data-goto="${parent.id}">#${parent.ticket}</button></span>` : ''}<button class="btn quiet small close" data-action="close" aria-label="Close inspector">✕</button></div>
+        <input class="name-input" data-field="name" value="${esc(city.name)}" aria-label="Ticket name">
+        <div class="field"><label for="statusSel">Status</label><select id="statusSel" data-field="status">${statusOpts}</select></div>
+      </div>
+      <div class="section"><h4>Description</h4>${city.description ? `<p class="desc">${esc(city.description)}</p>` : '<p class="desc empty">No description yet.</p>'}</div>
+      <div class="section"><h4>Sites <span class="grow"></span><button class="btn small" data-action="new-site">+ New terminal</button></h4>
+        ${sites || '<p class="note">No open terminals. A new terminal becomes a construction site on a free lot; when it finishes and closes, the building stays.</p>'}
+        ${city.builtSlots.length ? `<p class="note">${city.builtSlots.length} finished session${city.builtSlots.length > 1 ? 's' : ''} left buildings behind.</p>` : ''}
+      </div>
+      <div class="section"><dl class="kv"><dt>Created</dt><dd>${fmtAgo(city.createdAt)}</dd><dt>Location</dt><dd>${Math.round(city.pos.x)}, ${Math.round(city.pos.y)}</dd><dt>Branch</dt><dd>task/${city.ticket}</dd></dl></div>
+      <div class="footer-actions"><button class="btn" data-action="show">Show on map</button><button class="btn quiet danger" data-action="delete">Delete city</button></div>`;
+  }
+  function renderSite(city, site) {
+    const seg = ['working', 'waiting', 'error', 'done'].map((s) => `<button class="${site.state === s ? 'on' : ''}" data-state="${s}"><span class="dot" style="background: var(--${s})"></span>${SITE_LABEL[s].replace('Agent ', '').replace(' for you', '')}</button>`).join('');
+    inspector.innerHTML = `
+      <div class="head">
+        <div class="eyebrow"><span>Site</span><span class="ticket">in <button class="link" data-goto="${city.id}">#${city.ticket} ${esc(city.name)}</button></span><button class="btn quiet small close" data-action="close" aria-label="Close inspector">✕</button></div>
+        <input class="name-input" data-field="siteName" value="${esc(site.name)}" aria-label="Site name">
+        <p class="note">Named from the session title the agent reported. Edit it here; the map keeps your name.</p>
+      </div>
+      <div class="section"><h4>State</h4>${chip(site.state)}<div class="segmented">${seg}</div><p class="note">In the app this follows the terminal: thinking, waiting on input, error, or done.</p></div>
+      <div class="section"><dl class="kv"><dt>Agent</dt><dd>${esc(site.agent)}</dd><dt>Started</dt><dd>${fmtAgo(site.startedAt)}</dd><dt>Lot</dt><dd>slot ${site.slot}</dd><dt>Session</dt><dd>pty-${site.id.slice(1).padStart(4, '0')}</dd></dl></div>
+      <div class="footer-actions"><button class="btn primary" data-action="open-terminal">Open terminal</button><button class="btn quiet" data-action="close-site">Close terminal</button></div>`;
+  }
+  function renderNewCity() {
+    const parents = state.cities.map((c) => `<option value="${c.ticket}">#${c.ticket} ${esc(c.name)}</option>`).join('');
+    inspector.innerHTML = `
+      <div class="head"><div class="eyebrow"><span>New city</span><span class="ticket">#${state.nextTicket}</span><button class="btn quiet small close" data-action="close" aria-label="Close">✕</button></div>
+        <input class="name-input" id="newName" placeholder="Ticket name" aria-label="Ticket name"></div>
+      <div class="section">
+        <div class="field"><label for="newDesc">Description</label><textarea id="newDesc" placeholder="What should be built here?"></textarea></div>
+        <div class="field"><label for="newStatus">Status</label><select id="newStatus"><option value="todo">To do</option><option value="in_progress">In progress</option></select></div>
+        <div class="field"><label for="newParent">Part of</label><select id="newParent"><option value="">— none —</option>${parents}</select></div>
+        <p class="note">The city is founded on the next free lot of the map and keeps that location.</p>
+      </div>
+      <div class="footer-actions"><button class="btn primary" data-action="create">Found city</button><button class="btn quiet" data-action="close">Cancel</button></div>`;
+    requestAnimationFrame(() => $('#newName')?.focus());
+  }
+
+  inspector.addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    const city = selection && cityById(selection.cityId);
+    if (btn.dataset.goto) { goToCity(cityById(btn.dataset.goto)); return; }
+    if (btn.dataset.focus) { goToSite(city, city.sites.find((s) => s.id === btn.dataset.focus)); return; }
+    if (btn.dataset.close) { closeSite(city, city.sites.find((s) => s.id === btn.dataset.close)); return; }
+    if (btn.dataset.state) { const site = city.sites.find((s) => s.id === selection.siteId); site.state = btn.dataset.state; dirty = true; save(); renderInspector(); renderSidebar(); return; }
+    switch (btn.dataset.action) {
+      case 'close': select(null); break;
+      case 'show': goToCity(city); break;
+      case 'new-site': { const s = addSite(city, 'New terminal', 'working', 'claude'); if (s) goToSite(city, s); break; }
+      case 'close-site': closeSite(city, city.sites.find((s) => s.id === selection.siteId)); break;
+      case 'open-terminal': toast('In the app this focuses the terminal behind the site.'); break;
+      case 'delete': state.cities = state.cities.filter((c) => c !== city); save(); select(null); break;
+      case 'create': addCity({ name: $('#newName').value.trim(), description: $('#newDesc').value.trim(), status: $('#newStatus').value, parent: Number($('#newParent').value) || undefined }); break;
+    }
+  });
+  inspector.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-site]');
+    if (row && !e.target.closest('button')) { const city = cityById(selection.cityId); select({ type: 'site', cityId: city.id, siteId: row.dataset.site }); }
+  });
+  inspector.addEventListener('input', (e) => {
+    const f = e.target.dataset.field; if (!f) return;
+    const city = cityById(selection.cityId);
+    if (f === 'name') city.name = e.target.value;
+    if (f === 'siteName') city.sites.find((s) => s.id === selection.siteId).name = e.target.value;
+    dirty = true; save(); renderSidebar();
+  });
+  inspector.addEventListener('change', (e) => {
+    if (e.target.dataset.field === 'status') {
+      const city = cityById(selection.cityId);
+      city.status = e.target.value;
+      if (city.status === 'done') { for (const s of city.sites) if (s.state === 'done') city.builtSlots.push(s.slot); city.sites = []; }
+      dirty = true; save(); renderSidebar(); renderInspector();
+    }
+  });
+  inspector.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'newName') inspector.querySelector('[data-action="create"]').click(); });
+
+  // ── Top bar ────────────────────────────────────────────────────────
+  $('#newCityBtn').addEventListener('click', () => select({ type: 'new' }));
+  $('#resetBtn').addEventListener('click', () => {
+    state = seedState(); Object.assign(cam, state.camera); state.camera = cam; layoutCache.clear();
+    select(null); save(); dirty = true; toast('Demo reset to the seed map.');
+  });
+  const simToggle = $('#simToggle');
+  simToggle.checked = sim;
+  simToggle.addEventListener('change', () => { sim = simToggle.checked; save(); });
+  $('#menuBtn').addEventListener('click', () => sidebar.classList.toggle('open'));
+  $('#legendBtn').addEventListener('click', (e) => { const l = $('#legend'); l.hidden = !l.hidden; e.currentTarget.setAttribute('aria-pressed', String(!l.hidden)); });
+
+  let toastEl = null;
+  function toast(msg) {
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.className = 'hint'; toastEl.style.top = '44px'; toastEl.style.transition = 'opacity .3s'; $('.map').appendChild(toastEl); }
+    toastEl.textContent = msg; toastEl.style.opacity = '1';
+    clearTimeout(toastEl._t); toastEl._t = setTimeout(() => { toastEl.style.opacity = '0'; }, 2200);
+  }
+
+  // ── Loop ───────────────────────────────────────────────────────────
+  state.camera = cam;
+  function animated() {
+    if (tween) return true;
+    if (reducedMotion.matches) return false;
+    if (selection) return true;
+    return state.cities.some((c) => c.status === 'in_review' || (c.status !== 'done' && c.sites.some((s) => s.state !== 'done' && s.state !== 'exited')));
+  }
+  function frame(now) {
+    stepTween(now);
+    if (dirty || animated()) { draw(now); dirty = false; }
+    requestAnimationFrame(frame);
+  }
+  renderSidebar();
+  renderInspector();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</head>
+</html>
