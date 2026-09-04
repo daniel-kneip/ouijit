@@ -49,6 +49,7 @@ interface UIStoreState {
   diffFileListWidth: number;
   cityMapSidebarWidth: number;
   cityMapDrawerWidth: number;
+  cityMapSidebarGroup: CityMapSidebarGroup;
 }
 
 interface UIStoreActions {
@@ -71,6 +72,7 @@ interface UIStoreActions {
   setDiffFileListWidth: (width: number) => void;
   setCityMapSidebarWidth: (width: number) => void;
   setCityMapDrawerWidth: (width: number) => void;
+  setCityMapSidebarGroup: (group: CityMapSidebarGroup) => void;
 }
 
 type UIStore = UIStoreState & UIStoreActions;
@@ -82,6 +84,8 @@ export const DIFF_FILE_LIST_MAX_WIDTH = 500;
 export const CITY_MAP_SIDEBAR_DEFAULT_WIDTH = 240;
 export const CITY_MAP_SIDEBAR_MIN_WIDTH = 180;
 export const CITY_MAP_SIDEBAR_MAX_WIDTH = 480;
+
+export type CityMapSidebarGroup = 'status' | 'district';
 
 export const CITY_MAP_DRAWER_DEFAULT_WIDTH = 680;
 export const CITY_MAP_DRAWER_MIN_WIDTH = 420;
@@ -113,6 +117,7 @@ export const useUIStore = create<UIStore>()((set, get) => ({
   diffFileListWidth: DIFF_FILE_LIST_DEFAULT_WIDTH,
   cityMapSidebarWidth: CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
   cityMapDrawerWidth: CITY_MAP_DRAWER_DEFAULT_WIDTH,
+  cityMapSidebarGroup: 'status',
 
   setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
 
@@ -185,15 +190,21 @@ export const useUIStore = create<UIStore>()((set, get) => ({
     set({ cityMapDrawerWidth: clamped });
     void window.api.globalSettings.set('ui:city-map-drawer-width', String(clamped));
   },
+
+  setCityMapSidebarGroup: (group) => {
+    set({ cityMapSidebarGroup: group });
+    void window.api.globalSettings.set('ui:city-map-sidebar-group', group);
+  },
 }));
 
 export async function hydrateUIPreferences(): Promise<void> {
-  const [pinned, collapsed, width, mapWidth, drawerWidth] = await Promise.all([
+  const [pinned, collapsed, width, mapWidth, drawerWidth, mapGroup] = await Promise.all([
     window.api.globalSettings.get('ui:sidebar-pinned'),
     window.api.globalSettings.get('ui:diff-file-list-collapsed'),
     window.api.globalSettings.get('ui:diff-file-list-width'),
     window.api.globalSettings.get('ui:city-map-sidebar-width'),
     window.api.globalSettings.get('ui:city-map-drawer-width'),
+    window.api.globalSettings.get('ui:city-map-sidebar-group'),
   ]);
 
   const next: Partial<UIStoreState> = {};
@@ -207,6 +218,7 @@ export async function hydrateUIPreferences(): Promise<void> {
   if (drawerWidth && Number.isFinite(parsedDrawerWidth)) {
     next.cityMapDrawerWidth = clampCityMapDrawerWidth(parsedDrawerWidth);
   }
+  if (mapGroup === 'status' || mapGroup === 'district') next.cityMapSidebarGroup = mapGroup;
 
   useUIStore.setState(next);
 }

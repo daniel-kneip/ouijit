@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTerminalStore, DEFAULT_DISPLAY_STATE, type TerminalDisplayState } from '../../stores/terminalStore';
 import { useCityMapStore } from '../../stores/cityMapStore';
+import { snapToCells } from '../../components/citymap/cityGeometry';
 import type { Project, TaskWithWorkspace } from '../../types';
 
 vi.mock('electron-log/renderer', () => ({
@@ -167,10 +168,11 @@ describe('the city map', () => {
     pointer('pointermove', 90, 36);
     pointer('pointerup', 90, 36);
 
+    // Cities land on the cell lattice, so the drop point snaps.
     const zoom = useCityMapStore.getState().byProject[project.path].viewport.zoom;
     const moved = useCityMapStore.getState().byProject[project.path].cities[7].pos;
-    expect(moved.x).toBeCloseTo(start.x + 90 / zoom, 5);
-    expect(moved.y).toBeCloseTo(start.y + 36 / zoom, 5);
+    expect(moved).toEqual(snapToCells({ x: start.x + 90 / zoom, y: start.y + 36 / zoom }));
+    expect(moved).not.toEqual(start);
     await waitFor(() => {
       const saved = vi
         .mocked(window.api.globalSettings.set)
@@ -213,8 +215,11 @@ describe('the city map', () => {
     pointer('pointerup', grabX + 90, 0);
 
     const state = useCityMapStore.getState().byProject[project.path];
-    expect(state.districts[0].x).toBeCloseTo(district.x + 90 / zoom, 5);
-    expect(state.cities[7].pos.x).toBeCloseTo(cityPos.x + 90 / zoom, 5);
+    const landed = snapToCells({ x: district.x + 90 / zoom, y: district.y });
+    const delta = { x: landed.x - district.x, y: landed.y - district.y };
+    expect(state.districts[0]).toMatchObject({ x: landed.x, y: landed.y });
+    expect(state.cities[7].pos).toEqual({ x: cityPos.x + delta.x, y: cityPos.y + delta.y });
+    expect(delta.x).toBeGreaterThan(0);
     // Other cities stay put.
     expect(state.cities[9].pos).toEqual(otherPos);
   });
@@ -241,5 +246,19 @@ describe('the city map', () => {
     expect(screen.getByTestId('district-label-d1').textContent).toContain('Payments');
     // The camera is the saved one: with a 0×0 canvas, screen x = (world x − camera x) · zoom.
     await waitFor(() => expect(screen.getByTestId('city-label-7').style.left).toBe('-100px'));
+
+    // #9 waits for #7 over the road, which is in progress; the note sits on the road.
+    expect(screen.getByTestId('city-blocked-9').textContent).toContain('#7');
+    expect(screen.queryByTestId('city-blocked-7')).toBeNull();
+    useCityMapStore.getState().updateRoad(project.path, 'r1', { note: 'blocked until the PR merges' });
+    expect((await screen.findByTestId('road-label-r1')).textContent).toBe('blocked until the PR merges');
+
+    // Grouping by district lists the cities inside it under its name.
+    fireEvent.click(screen.getByTestId('sidebar-group-district'));
+    const sidebar = screen.getByLabelText('Cities');
+    await waitFor(() => expect(sidebar.textContent).toContain('Payments'));
+    expect(sidebar.textContent).toContain('No district');
+    expect(screen.getByTestId('fit-all')).toBeTruthy();
+    expect(screen.getByTestId('minimap')).toBeTruthy();
   });
 });

@@ -21,6 +21,7 @@ export interface Road {
   id: string;
   from: number;
   to: number;
+  note?: string;
 }
 
 /**
@@ -48,7 +49,8 @@ export interface CityMapProjectState {
 export type CityMapSelection =
   | { type: 'city'; taskNumber: number }
   | { type: 'site'; taskNumber: number; ptyId: string }
-  | { type: 'district'; id: string };
+  | { type: 'district'; id: string }
+  | { type: 'road'; id: string };
 
 export const DISTRICT_MIN_W = 200;
 export const DISTRICT_MIN_H = 160;
@@ -90,6 +92,7 @@ interface CityMapStoreState {
 interface CityMapStoreActions {
   addRoad: (projectPath: string, from: number, to: number) => void;
   removeRoad: (projectPath: string, id: string) => void;
+  updateRoad: (projectPath: string, id: string, patch: Partial<Omit<Road, 'id'>>) => void;
   addDistrict: (projectPath: string, center: Point) => District;
   updateDistrict: (projectPath: string, id: string, patch: Partial<Omit<District, 'id'>>) => void;
   /** Moves the district and the cities it holds by the same delta. */
@@ -201,6 +204,10 @@ export const useCityMapStore = create<CityMapStore>()((set, get) => {
 
     removeRoad: (projectPath, id) => {
       update(projectPath, (s) => ({ ...s, roads: s.roads.filter((r) => r.id !== id) }));
+    },
+
+    updateRoad: (projectPath, id, patch) => {
+      update(projectPath, (s) => ({ ...s, roads: s.roads.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
     },
 
     addDistrict: (projectPath, center) => {

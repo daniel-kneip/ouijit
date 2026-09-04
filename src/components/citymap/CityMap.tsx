@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
-import { useTerminalStore } from '../../stores/terminalStore';
+import { terminalMatchesTag, useTerminalStore } from '../../stores/terminalStore';
 import {
   useUIStore,
   CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
@@ -9,6 +9,7 @@ import {
   CITY_MAP_DRAWER_DEFAULT_WIDTH,
   CITY_MAP_DRAWER_MAX_WIDTH,
   CITY_MAP_DRAWER_MIN_WIDTH,
+  type CityMapSidebarGroup,
 } from '../../stores/uiStore';
 import { ResizeHandle } from '../common/ResizeHandle';
 import type { TerminalDisplayState } from '../../stores/terminalDisplay';
@@ -52,10 +53,12 @@ import {
   cityPresence,
   pointInCity,
   siteState,
+  snapToCells,
   type Point,
   type SiteState,
 } from './cityGeometry';
 import {
+  cityEdgePoint,
   districtColor,
   drawCity,
   drawDistrict,
@@ -76,6 +79,9 @@ const STATUS_ORDER: TaskStatus[] = ['in_progress', 'in_review', 'todo', 'done'];
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2.6;
 const DISTRICT_HUES = [210, 28, 150, 330, 90, 260, 45, 190];
+const FLASH_MS = 2500;
+const MINIMAP_W = 180;
+const MINIMAP_H = 110;
 
 interface SiteModel {
   ptyId: string;
@@ -90,6 +96,8 @@ interface CityModel {
   plot: CityPlot;
   color: string;
   sites: SiteModel[];
+  /** Filtered out by the project's tag filter: drawn faint, listed nowhere. */
+  hidden: boolean;
 }
 
 const TOKEN_SOURCES: Record<Exclude<keyof MapTokens, 'night'>, string> = {
@@ -135,11 +143,34 @@ function siteLabel(display: TerminalDisplayState): string {
 }
 
 function selectedTaskNumber(selection: CityMapSelection | null): number | null {
-  return selection && selection.type !== 'district' ? selection.taskNumber : null;
+  return selection && (selection.type === 'city' || selection.type === 'site') ? selection.taskNumber : null;
 }
 
 function citiesInside(district: District, cities: readonly CityModel[]): CityModel[] {
   return cities.filter((c) => pointInDistrict(district, c.plot.pos));
+}
+
+function needsYou(state: SiteState): boolean {
+  return state === 'waiting' || state === 'error';
+}
+
+/** Cities the road leads from that are not finished: what the destination is waiting on. */
+function openSources(city: CityModel, roads: readonly Road[], byNumber: Map<number, CityModel>): CityModel[] {
+  const sources: CityModel[] = [];
+  for (const road of roads) {
+    if (road.to !== city.task.taskNumber) continue;
+    const from = byNumber.get(road.from);
+    if (from && from.task.status !== 'done') sources.push(from);
+  }
+  return sources;
+}
+
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy || 1;
+  const u = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + u * dx), p.y - (a.y + u * dy));
 }
 
 interface CityMapProps {
@@ -148,6 +179,7 @@ interface CityMapProps {
 
 export function CityMap({ projectPath }: CityMapProps) {
   const tasks = useProjectStore((s) => s.tasks);
+  const tagFilter = useProjectStore((s) => s.tagFilter);
   const availableSandboxProviders = useProjectStore((s) => s.availableSandboxProviders);
   const displayStates = useTerminalStore((s) => s.displayStates);
   const terminalIds = useTerminalStore((s) => s.terminalsByProject[projectPath]) ?? EMPTY_IDS;
@@ -204,12 +236,42 @@ export function CityMap({ projectPath }: CityMapProps) {
         if (!display) continue;
         sites.push({ ptyId, slot, state: siteState(display), label: siteLabel(display), display });
       }
-      result.push({ task, plot, color, sites });
+      const hidden = !!tagFilter && !sites.some((s) => terminalMatchesTag(s.display, tagFilter));
+      result.push({ task, plot, color, sites, hidden });
     }
     return result;
-  }, [mapState, tasks, chainMap, displayStates]);
+  }, [mapState, tasks, chainMap, displayStates, tagFilter]);
   const roads = mapState?.roads ?? EMPTY_ROADS;
   const districts = mapState?.districts ?? EMPTY_DISTRICTS;
+
+  // A site that just started needing the user lights its city's label up.
+  const [flashing, setFlashing] = useState<Record<number, number>>({});
+  const previousStates = useRef<Map<string, SiteState>>(new Map());
+  useEffect(() => {
+    const next = new Map<string, SiteState>();
+    const lit: number[] = [];
+    for (const city of cities) {
+      for (const site of city.sites) {
+        next.set(site.ptyId, site.state);
+        const before = previousStates.current.get(site.ptyId);
+        if (before && before !== site.state && needsYou(site.state)) lit.push(city.task.taskNumber);
+      }
+    }
+    previousStates.current = next;
+    if (!lit.length) return;
+    const now = Date.now();
+    setFlashing((f) => ({ ...f, ...Object.fromEntries(lit.map((n) => [n, now])) }));
+    const timer = setTimeout(
+      () =>
+        setFlashing((f) => {
+          const kept: Record<number, number> = {};
+          for (const [n, at] of Object.entries(f)) if (at !== now) kept[Number(n)] = at;
+          return kept;
+        }),
+      FLASH_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [cities]);
 
   const looseTerminals = useMemo(
     () =>
@@ -245,13 +307,26 @@ export function CityMap({ projectPath }: CityMapProps) {
     roads,
     districts,
     selection,
+    flashing,
     viewport: mapState?.viewport,
     select,
     openTerminal,
     availableSandboxProviders,
   });
-  const { canvasRef, containerRef, probeRef, labels, flyTo, onContextMenu, menu, closeMenu, linking, cancelLinking } =
-    surface;
+  const {
+    canvasRef,
+    containerRef,
+    probeRef,
+    minimapRef,
+    labels,
+    flyTo,
+    fitAll,
+    onContextMenu,
+    menu,
+    closeMenu,
+    linking,
+    cancelLinking,
+  } = surface;
 
   const taskNumber = selectedTaskNumber(selection);
   const selectedCity = taskNumber != null ? cities.find((c) => c.task.taskNumber === taskNumber) : undefined;
@@ -260,10 +335,13 @@ export function CityMap({ projectPath }: CityMapProps) {
       ? selectedCity.sites.find((s) => s.ptyId === selection.ptyId)
       : undefined;
   const selectedDistrict = selection?.type === 'district' ? districts.find((d) => d.id === selection.id) : undefined;
+  const selectedRoad = selection?.type === 'road' ? roads.find((r) => r.id === selection.id) : undefined;
   const linkingCity = linking != null ? cities.find((c) => c.task.taskNumber === linking) : undefined;
+  const byNumber = useMemo(() => new Map(cities.map((c) => [c.task.taskNumber, c])), [cities]);
 
   const sidebarWidth = useUIStore((s) => s.cityMapSidebarWidth);
   const drawerWidth = useUIStore((s) => s.cityMapDrawerWidth);
+  const sidebarGroup = useUIStore((s) => s.cityMapSidebarGroup);
 
   return (
     <div
@@ -274,8 +352,11 @@ export function CityMap({ projectPath }: CityMapProps) {
       <CitySidebar
         width={sidebarWidth}
         cities={cities}
+        districts={districts}
+        group={sidebarGroup}
         selection={selection}
         looseTerminals={looseTerminals}
+        tagFilter={tagFilter}
         onPick={(city) => {
           select({ type: 'city', taskNumber: city.task.taskNumber });
           flyTo(city.plot.pos, 1.1);
@@ -286,6 +367,11 @@ export function CityMap({ projectPath }: CityMapProps) {
           const c = cellCenter(slots[site.slot].i, slots[site.slot].j);
           flyTo({ x: city.plot.pos.x + c.x, y: city.plot.pos.y + c.y }, 1.5);
           openTerminal(site.ptyId);
+        }}
+        onPickDistrict={(district) => {
+          select({ type: 'district', id: district.id });
+          const [top, , bottom] = districtCorners(district);
+          flyTo({ x: (top.x + bottom.x) / 2, y: (top.y + bottom.y) / 2 - 10 }, 0);
         }}
       />
       <ResizeHandle
@@ -318,12 +404,49 @@ export function CityMap({ projectPath }: CityMapProps) {
             </button>
           </div>
         )}
+        <div className="absolute left-3 bottom-3 z-10 flex items-center gap-1.5">
+          <button
+            type="button"
+            className="px-2.5 py-1 rounded-md border border-border text-[11px] text-text-secondary hover:text-text-primary"
+            style={{ background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' }}
+            onClick={fitAll}
+            data-testid="fit-all"
+            title="Bring every city into view"
+          >
+            Fit all
+          </button>
+          <button
+            type="button"
+            className="px-2.5 py-1 rounded-md border border-border text-[11px] font-mono text-text-secondary hover:text-text-primary"
+            style={{ background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' }}
+            onClick={() => flyTo(selectedCity?.plot.pos ?? { x: 0, y: 0 }, 1)}
+            title="Zoom to 100%"
+          >
+            1:1
+          </button>
+          {tagFilter && (
+            <span
+              className="px-2.5 py-1 rounded-md border border-border text-[11px] text-text-secondary"
+              style={{ background: 'var(--color-surface-raised)' }}
+            >
+              Showing cities tagged <strong className="text-text-primary">{tagFilter}</strong>
+            </span>
+          )}
+        </div>
+        <canvas
+          ref={minimapRef}
+          className="absolute right-3 bottom-3 z-10 rounded-[10px] border border-border cursor-crosshair"
+          style={{ width: MINIMAP_W, height: MINIMAP_H, background: 'var(--color-surface-raised)' }}
+          aria-label="Overview of the map"
+          data-testid="minimap"
+        />
         {selectedCity && (
           <CityInspector
             projectPath={projectPath}
             city={selectedCity}
             site={selectedSite}
             district={districts.find((d) => pointInDistrict(d, selectedCity.plot.pos))}
+            waitingOn={openSources(selectedCity, roads, byNumber)}
             onClose={() => select(null)}
             onSelectSite={(site) => {
               select({ type: 'site', taskNumber: selectedCity.task.taskNumber, ptyId: site.ptyId });
@@ -331,6 +454,10 @@ export function CityMap({ projectPath }: CityMapProps) {
             }}
             onBackToCity={() => select({ type: 'city', taskNumber: selectedCity.task.taskNumber })}
             onOpenTerminal={openTerminal}
+            onPickCity={(city) => {
+              select({ type: 'city', taskNumber: city.task.taskNumber });
+              flyTo(city.plot.pos, 0);
+            }}
             onContextMenu={onContextMenu}
           />
         )}
@@ -343,6 +470,19 @@ export function CityMap({ projectPath }: CityMapProps) {
             onPickCity={(city) => {
               select({ type: 'city', taskNumber: city.task.taskNumber });
               flyTo(city.plot.pos, 1.1);
+            }}
+          />
+        )}
+        {selectedRoad && (
+          <RoadInspector
+            projectPath={projectPath}
+            road={selectedRoad}
+            from={byNumber.get(selectedRoad.from)}
+            to={byNumber.get(selectedRoad.to)}
+            onClose={() => select(null)}
+            onPickCity={(city) => {
+              select({ type: 'city', taskNumber: city.task.taskNumber });
+              flyTo(city.plot.pos, 0);
             }}
           />
         )}
@@ -370,6 +510,7 @@ interface MapSurfaceInput {
   roads: Road[];
   districts: District[];
   selection: CityMapSelection | null;
+  flashing: Record<number, number>;
   viewport: CityMapViewport | undefined;
   select: (s: CityMapSelection | null) => void;
   openTerminal: (ptyId: string | null) => void;
@@ -379,13 +520,15 @@ interface MapSurfaceInput {
 type Hit =
   | { type: 'city'; city: CityModel }
   | { type: 'site'; city: CityModel; site: SiteModel }
+  | { type: 'road'; road: Road }
   | { type: 'district'; district: District }
   | { type: 'districtCorner'; district: District }
   | null;
 
 function useMapSurface(input: MapSurfaceInput) {
-  const { projectPath, ready, cities, roads, districts, selection, viewport, select, openTerminal } = input;
+  const { projectPath, ready, cities, roads, districts, selection, flashing, viewport, select, openTerminal } = input;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const minimapRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
   const camera = useRef<CityMapViewport>({ x: 0, y: 0, zoom: 0.9 });
@@ -395,6 +538,7 @@ function useMapSurface(input: MapSurfaceInput) {
   const tween = useRef<{ from: CityMapViewport; to: CityMapViewport; t0: number } | null>(null);
   const model = useRef({ cities, roads, districts, selection });
   model.current = { cities, roads, districts, selection };
+  const minimapMap = useRef<{ scale: number; ox: number; oy: number } | null>(null);
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuEntry[] } | null>(null);
   const [linking, setLinking] = useState<number | null>(null);
@@ -445,15 +589,9 @@ function useMapSurface(input: MapSurfaceInput) {
     persistCityMap(projectPath);
   }, [projectPath]);
 
-  const flyTo = useCallback(
-    (target: Point, zoom: number) => {
-      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const to = {
-        x: target.x,
-        y: target.y + 10,
-        zoom: zoom > 0 ? Math.max(camera.current.zoom, zoom) : camera.current.zoom,
-      };
-      if (reduced) {
+  const glide = useCallback(
+    (to: CityMapViewport) => {
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
         camera.current = to;
         dirty.current = true;
         bump();
@@ -464,6 +602,48 @@ function useMapSurface(input: MapSurfaceInput) {
     },
     [saveViewport],
   );
+
+  const flyTo = useCallback(
+    (target: Point, zoom: number) => {
+      glide({
+        x: target.x,
+        y: target.y + 10,
+        zoom: zoom > 0 ? Math.max(camera.current.zoom, zoom) : camera.current.zoom,
+      });
+    },
+    [glide],
+  );
+
+  const mapBounds = useCallback(() => {
+    const { cities: current, districts: currentDistricts } = model.current;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const c of current) {
+      x0 = Math.min(x0, c.plot.pos.x - CITY_HALF_W);
+      y0 = Math.min(y0, c.plot.pos.y - CITY_HALF_H - 60);
+      x1 = Math.max(x1, c.plot.pos.x + CITY_HALF_W);
+      y1 = Math.max(y1, c.plot.pos.y + CITY_HALF_H);
+    }
+    for (const d of currentDistricts) {
+      for (const p of districtCorners(d)) {
+        x0 = Math.min(x0, p.x);
+        y0 = Math.min(y0, p.y);
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
+      }
+    }
+    if (!Number.isFinite(x0)) return { x0: -400, y0: -300, x1: 400, y1: 300 };
+    return { x0, y0, x1, y1 };
+  }, []);
+
+  const fitAll = useCallback(() => {
+    const b = mapBounds();
+    const { w, h } = size.current;
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(w / (b.x1 - b.x0 + 120), h / (b.y1 - b.y0 + 120))));
+    glide({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, zoom });
+  }, [glide, mapBounds]);
 
   // Resize + draw loop.
   useEffect(() => {
@@ -485,6 +665,63 @@ function useMapSurface(input: MapSurfaceInput) {
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     resize();
+
+    const drawMinimap = () => {
+      const mini = minimapRef.current;
+      const mctx = mini?.getContext('2d');
+      const t = tokens.current;
+      if (!mini || !mctx || !t) return;
+      const dpr = size.current.dpr;
+      if (mini.width !== MINIMAP_W * dpr) {
+        mini.width = MINIMAP_W * dpr;
+        mini.height = MINIMAP_H * dpr;
+      }
+      mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      mctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
+      const b = mapBounds();
+      const pad = 12;
+      const scale = Math.min((MINIMAP_W - pad * 2) / (b.x1 - b.x0), (MINIMAP_H - pad * 2) / (b.y1 - b.y0));
+      const ox = MINIMAP_W / 2 - ((b.x0 + b.x1) / 2) * scale;
+      const oy = MINIMAP_H / 2 - ((b.y0 + b.y1) / 2) * scale;
+      const M = (p: Point) => ({ x: ox + p.x * scale, y: oy + p.y * scale });
+      minimapMap.current = { scale, ox, oy };
+      const { cities: current, districts: currentDistricts } = model.current;
+      for (const d of currentDistricts) {
+        const corners = districtCorners(d).map(M);
+        mctx.beginPath();
+        corners.forEach((c, i) => (i ? mctx.lineTo(c.x, c.y) : mctx.moveTo(c.x, c.y)));
+        mctx.closePath();
+        mctx.fillStyle = districtColor(d.hue, 0.25, t.night);
+        mctx.fill();
+      }
+      for (const c of current) {
+        const p = M(c.plot.pos);
+        mctx.globalAlpha = c.hidden ? 0.25 : c.task.status === 'done' ? 0.55 : 1;
+        mctx.fillStyle = c.color;
+        mctx.beginPath();
+        mctx.moveTo(p.x, p.y - 4);
+        mctx.lineTo(p.x + 6, p.y);
+        mctx.lineTo(p.x, p.y + 4);
+        mctx.lineTo(p.x - 6, p.y);
+        mctx.closePath();
+        mctx.fill();
+        mctx.globalAlpha = 1;
+        const alert = c.sites.find((s) => needsYou(s.state));
+        if (alert && !c.hidden) {
+          mctx.fillStyle = alert.state === 'error' ? t.error : t.waiting;
+          mctx.beginPath();
+          mctx.arc(p.x + 5, p.y - 4, 2.5, 0, Math.PI * 2);
+          mctx.fill();
+        }
+      }
+      const a = M(toWorld(0, 0));
+      const z = M(toWorld(size.current.w, size.current.h));
+      mctx.strokeStyle = t.ink;
+      mctx.globalAlpha = 0.6;
+      mctx.lineWidth = 1;
+      mctx.strokeRect(a.x, a.y, z.x - a.x, z.y - a.y);
+      mctx.globalAlpha = 1;
+    };
 
     let frame = 0;
     const draw = (time: number) => {
@@ -527,7 +764,9 @@ function useMapSurface(input: MapSurfaceInput) {
         const from = byNumber.get(road.from);
         const to = byNumber.get(road.to);
         if (!from || !to) return;
-        const touches = selectedTask != null && (road.from === selectedTask || road.to === selectedTask);
+        const touches =
+          (sel?.type === 'road' && sel.id === road.id) ||
+          (selectedTask != null && (road.from === selectedTask || road.to === selectedTask));
         drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches, `#${road.to}`);
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
@@ -540,6 +779,7 @@ function useMapSurface(input: MapSurfaceInput) {
           p.y - CITY_HALF_H > br.y + 100
         )
           continue;
+        if (city.hidden) ctx.globalAlpha = 0.22;
         if (selectedTask === city.task.taskNumber || linkingRef.current === city.task.taskNumber) {
           drawSelectionRing(ctx, t, p, cam.zoom, time, animate);
         }
@@ -551,8 +791,10 @@ function useMapSurface(input: MapSurfaceInput) {
           sites: city.sites.map((s) => ({ slot: s.slot, state: s.state })),
           built: city.plot.built,
         };
-        drawCity(ctx, t, drawable, time, animate);
+        drawCity(ctx, t, drawable, time, animate && !city.hidden);
+        ctx.globalAlpha = 1;
       }
+      drawMinimap();
     };
 
     const animated = () => {
@@ -562,8 +804,9 @@ function useMapSurface(input: MapSurfaceInput) {
       if (sel || linkingRef.current != null || currentRoads.length > 0) return true;
       return current.some(
         (c) =>
-          c.task.status === 'in_review' ||
-          (c.task.status !== 'done' && c.sites.some((s) => s.state !== 'done' && s.state !== 'exited')),
+          !c.hidden &&
+          (c.task.status === 'in_review' ||
+            (c.task.status !== 'done' && c.sites.some((s) => s.state !== 'done' && s.state !== 'exited'))),
       );
     };
 
@@ -596,13 +839,31 @@ function useMapSurface(input: MapSurfaceInput) {
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [toWorld, saveViewport]);
+  }, [toWorld, saveViewport, mapBounds]);
+
+  // Clicking the overview moves the camera there.
+  useEffect(() => {
+    const mini = minimapRef.current;
+    if (!mini) return;
+    const onDown = (e: PointerEvent) => {
+      const m = minimapMap.current;
+      if (!m) return;
+      const r = mini.getBoundingClientRect();
+      glide({
+        x: (e.clientX - r.left - m.ox) / m.scale,
+        y: (e.clientY - r.top - m.oy) / m.scale,
+        zoom: camera.current.zoom,
+      });
+    };
+    mini.addEventListener('pointerdown', onDown);
+    return () => mini.removeEventListener('pointerdown', onDown);
+  }, [glide]);
 
   const hit = useCallback(
     (sx: number, sy: number): Hit => {
       const w = toWorld(sx, sy);
-      const { cities: current, districts: currentDistricts, selection: sel } = model.current;
-      const ordered = [...current].sort((a, b) => b.plot.pos.y - a.plot.pos.y);
+      const { cities: current, roads: currentRoads, districts: currentDistricts, selection: sel } = model.current;
+      const ordered = [...current].filter((c) => !c.hidden).sort((a, b) => b.plot.pos.y - a.plot.pos.y);
       for (const city of ordered) {
         const local = { x: w.x - city.plot.pos.x, y: w.y - city.plot.pos.y };
         if (city.task.status !== 'done') {
@@ -623,6 +884,15 @@ function useMapSurface(input: MapSurfaceInput) {
         }
       }
       const grab = 10 / camera.current.zoom;
+      const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
+      for (const road of currentRoads) {
+        const from = byNumber.get(road.from);
+        const to = byNumber.get(road.to);
+        if (!from || !to) continue;
+        const a = cityEdgePoint(from.plot.pos, to.plot.pos);
+        const b = cityEdgePoint(to.plot.pos, from.plot.pos);
+        if (distanceToSegment(w, a, b) < grab) return { type: 'road', road };
+      }
       for (const district of [...currentDistricts].reverse()) {
         const selected = sel?.type === 'district' && sel.id === district.id;
         const bottom = districtCorners(district)[2];
@@ -682,20 +952,29 @@ function useMapSurface(input: MapSurfaceInput) {
       const touching = model.current.roads.filter((r) => r.from === task.taskNumber || r.to === task.taskNumber);
       if (touching.length) {
         const byNumber = new Map(model.current.cities.map((c) => [c.task.taskNumber, c]));
+        const describe = (road: Road) => {
+          const other = road.from === task.taskNumber ? road.to : road.from;
+          const name = byNumber.get(other)?.task.name ?? `#${other}`;
+          return road.from === task.taskNumber ? `→ #${other} ${name}` : `← #${other} ${name}`;
+        };
+        items.push({
+          label: 'Roads',
+          icon: 'git-branch',
+          submenu: touching.map((road) => ({
+            label: describe(road),
+            onClick: () => select({ type: 'road', id: road.id }),
+          })),
+        });
         items.push({
           label: 'Remove road',
           icon: 'trash',
-          submenu: touching.map((road) => {
-            const other = road.from === task.taskNumber ? road.to : road.from;
-            const name = byNumber.get(other)?.task.name ?? `#${other}`;
-            return {
-              label: road.from === task.taskNumber ? `→ #${other} ${name}` : `← #${other} ${name}`,
-              onClick: () => {
-                map.removeRoad(projectPath, road.id);
-                persistCityMap(projectPath);
-              },
-            };
-          }),
+          submenu: touching.map((road) => ({
+            label: describe(road),
+            onClick: () => {
+              map.removeRoad(projectPath, road.id);
+              persistCityMap(projectPath);
+            },
+          })),
         });
       }
       items.push({ separator: true });
@@ -721,6 +1000,23 @@ function useMapSurface(input: MapSurfaceInput) {
     [select],
   );
 
+  const roadMenuItems = useCallback(
+    (road: Road): ContextMenuEntry[] => [
+      { label: 'Edit note', icon: 'pencil-simple', onClick: () => select({ type: 'road', id: road.id }) },
+      {
+        label: 'Remove road',
+        icon: 'trash',
+        danger: true,
+        onClick: () => {
+          useCityMapStore.getState().removeRoad(projectPath, road.id);
+          persistCityMap(projectPath);
+          select(null);
+        },
+      },
+    ],
+    [projectPath, select],
+  );
+
   const districtMenuItems = useCallback(
     (district: District): ContextMenuEntry[] => [
       { label: 'Rename', icon: 'pencil-simple', onClick: () => select({ type: 'district', id: district.id }) },
@@ -744,14 +1040,16 @@ function useMapSurface(input: MapSurfaceInput) {
         label: 'New district here',
         icon: 'grid-four',
         onClick: () => {
-          const district = useCityMapStore.getState().addDistrict(projectPath, world);
+          const district = useCityMapStore.getState().addDistrict(projectPath, snapToCells(world));
           persistCityMap(projectPath);
           select({ type: 'district', id: district.id });
         },
       },
       { label: 'New ticket', icon: 'plus', onClick: () => openTaskComposer() },
+      { separator: true },
+      { label: 'Fit all', icon: 'arrows-in', onClick: fitAll },
     ],
-    [projectPath, select],
+    [projectPath, select, fitAll],
   );
 
   const onContextMenu = useCallback(
@@ -763,10 +1061,11 @@ function useMapSurface(input: MapSurfaceInput) {
         items = groundMenuItems(world);
       } else if (target.type === 'site') items = siteMenuItems(target.city, target.site);
       else if (target.type === 'city') items = cityMenuItems(target.city);
+      else if (target.type === 'road') items = roadMenuItems(target.road);
       else items = districtMenuItems(target.district);
       setMenu({ x: e.clientX, y: e.clientY, items });
     },
-    [cityMenuItems, siteMenuItems, districtMenuItems, groundMenuItems],
+    [cityMenuItems, siteMenuItems, roadMenuItems, districtMenuItems, groundMenuItems],
   );
 
   // Pointer interaction on the canvas: drag a city or district, pan the ground, click to select.
@@ -827,26 +1126,30 @@ function useMapSurface(input: MapSurfaceInput) {
       const map = useCityMapStore.getState();
       // From the grab point, not the last event: the model on the hit is a
       // snapshot, so adding each event's delta to it would only ever move
-      // one step from where the drag began.
+      // one step from where the drag began. Cities and districts land on the
+      // cell lattice, so what is dragged together stays in line.
       if (pointer.hit?.type === 'city' && pointer.origin) {
-        map.moveCity(projectPath, pointer.hit.city.task.taskNumber, {
-          x: pointer.origin.x + total.x,
-          y: pointer.origin.y + total.y,
-        });
-      } else if (pointer.hit?.type === 'district' && pointer.origin) {
-        const next = { x: pointer.origin.x + total.x, y: pointer.origin.y + total.y };
-        map.moveDistrict(
+        map.moveCity(
           projectPath,
-          pointer.hit.district.id,
-          { x: next.x - pointer.last.x, y: next.y - pointer.last.y },
-          pointer.inside,
+          pointer.hit.city.task.taskNumber,
+          snapToCells({ x: pointer.origin.x + total.x, y: pointer.origin.y + total.y }),
         );
-        pointer.last = next;
+      } else if (pointer.hit?.type === 'district' && pointer.origin) {
+        const next = snapToCells({ x: pointer.origin.x + total.x, y: pointer.origin.y + total.y });
+        if (next.x !== pointer.last.x || next.y !== pointer.last.y) {
+          map.moveDistrict(
+            projectPath,
+            pointer.hit.district.id,
+            { x: next.x - pointer.last.x, y: next.y - pointer.last.y },
+            pointer.inside,
+          );
+          pointer.last = next;
+        }
       } else if (pointer.hit?.type === 'districtCorner' && pointer.size) {
         const { s: alongW, t: alongH } = isoDelta(total.x, total.y);
         map.updateDistrict(projectPath, pointer.hit.district.id, {
-          w: pointer.size.x + alongW,
-          h: pointer.size.y + alongH,
+          w: Math.round((pointer.size.x + alongW) / TW) * TW,
+          h: Math.round((pointer.size.y + alongH) / TW) * TW,
         });
       } else {
         camera.current = { ...camera.current, x: camera.current.x - dx / zoom, y: camera.current.y - dy / zoom };
@@ -872,7 +1175,8 @@ function useMapSurface(input: MapSurfaceInput) {
         else if (h.type === 'site') {
           select({ type: 'site', taskNumber: h.city.task.taskNumber, ptyId: h.site.ptyId });
           openTerminal(h.site.ptyId);
-        } else select({ type: 'district', id: h.district.id });
+        } else if (h.type === 'road') select({ type: 'road', id: h.road.id });
+        else select({ type: 'district', id: h.district.id });
       } else if (pointer.hit) {
         persistCityMap(projectPath);
       } else {
@@ -943,6 +1247,7 @@ function useMapSurface(input: MapSurfaceInput) {
     const zoom = camera.current.zoom;
     const nodes: React.ReactNode[] = [];
     const selectedTask = selectedTaskNumber(selection);
+    const byNumber = new Map(cities.map((c) => [c.task.taskNumber, c]));
     for (const district of districts) {
       const p = toScreen(districtCorners(district)[0]);
       const selected = selection?.type === 'district' && selection.id === district.id;
@@ -967,18 +1272,44 @@ function useMapSurface(input: MapSurfaceInput) {
         </button>,
       );
     }
+    for (const road of roads) {
+      if (!road.note) continue;
+      const from = byNumber.get(road.from);
+      const to = byNumber.get(road.to);
+      if (!from || !to || from.hidden || to.hidden) continue;
+      const a = cityEdgePoint(from.plot.pos, to.plot.pos);
+      const b = cityEdgePoint(to.plot.pos, from.plot.pos);
+      const p = toScreen({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const selected = selection?.type === 'road' && selection.id === road.id;
+      nodes.push(
+        <button
+          key={`road-${road.id}`}
+          type="button"
+          data-testid={`road-label-${road.id}`}
+          className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 max-w-[220px] truncate px-2 py-0.5 rounded-md border text-[11px] text-text-primary ${selected ? 'border-accent' : 'border-border'}`}
+          style={{ left: p.x, top: p.y - 14, background: 'var(--color-surface-raised)' }}
+          title={road.note}
+          onClick={() => select({ type: 'road', id: road.id })}
+          onContextMenu={(e) => onContextMenu(e, { type: 'road', road })}
+        >
+          {road.note}
+        </button>,
+      );
+    }
     for (const city of cities) {
+      if (city.hidden) continue;
       const top = toScreen({ x: city.plot.pos.x, y: city.plot.pos.y - CITY_HALF_H });
       const selected = selectedTask === city.task.taskNumber;
       const faded = city.task.status === 'done';
       const waiting = city.sites.filter((s) => s.state === 'waiting').length;
       const problems = city.sites.filter((s) => s.state === 'error').length;
+      const waitingOn = openSources(city, roads, byNumber);
       nodes.push(
         <button
           key={`city-${city.task.taskNumber}`}
           type="button"
           data-testid={`city-label-${city.task.taskNumber}`}
-          className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-full flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs whitespace-nowrap transition-opacity ${selected ? 'border-accent' : 'border-border'} ${faded && !selected ? 'opacity-70' : ''} ${linking != null && linking !== city.task.taskNumber ? 'ring-2 ring-accent/40' : ''}`}
+          className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-full flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs whitespace-nowrap transition-opacity ${selected ? 'border-accent' : 'border-border'} ${faded && !selected ? 'opacity-70' : ''} ${linking != null && linking !== city.task.taskNumber ? 'ring-2 ring-accent/40' : ''} ${flashing[city.task.taskNumber] ? 'city-label-flash' : ''}`}
           style={{
             left: top.x,
             top: top.y - 8,
@@ -1000,6 +1331,17 @@ function useMapSurface(input: MapSurfaceInput) {
           <span className="font-medium text-text-primary">{city.task.name}</span>
           {problems > 0 && <AlertBadge count={problems} state="error" />}
           {waiting > 0 && <AlertBadge count={waiting} state="waiting" />}
+          {waitingOn.length > 0 && city.task.status !== 'done' && (
+            <span
+              className="inline-flex items-center gap-0.5 px-1.5 h-[18px] rounded-full font-mono text-[10px] text-text-secondary"
+              style={{ background: 'color-mix(in srgb, var(--color-ink) 8%, transparent)' }}
+              title={`Waits for ${waitingOn.map((c) => `#${c.task.taskNumber} ${c.task.name}`).join(', ')}`}
+              data-testid={`city-blocked-${city.task.taskNumber}`}
+            >
+              <Icon name="arrow-left" className="w-2.5 h-2.5" />
+              {waitingOn.length === 1 ? `#${waitingOn[0].task.taskNumber}` : waitingOn.length}
+            </span>
+          )}
         </button>,
       );
       if (zoom < 0.75 || faded) continue;
@@ -1010,7 +1352,7 @@ function useMapSurface(input: MapSurfaceInput) {
         const c = cellCenter(slot.i, slot.j);
         const p = toScreen({ x: city.plot.pos.x + c.x, y: city.plot.pos.y + c.y + TH + 2 });
         const sel = selection?.type === 'site' && selection.ptyId === site.ptyId;
-        const alert = site.state === 'waiting' || site.state === 'error';
+        const alert = needsYou(site.state);
         nodes.push(
           <button
             key={`site-${site.ptyId}`}
@@ -1049,9 +1391,11 @@ function useMapSurface(input: MapSurfaceInput) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     cities,
+    roads,
     districts,
     selection,
     linking,
+    flashing,
     toScreen,
     select,
     openTerminal,
@@ -1069,8 +1413,10 @@ function useMapSurface(input: MapSurfaceInput) {
     canvasRef,
     containerRef,
     probeRef,
+    minimapRef,
     labels,
     flyTo,
+    fitAll,
     onContextMenu,
     menu,
     closeMenu: () => setMenu(null),
@@ -1139,17 +1485,33 @@ function AlertBadge({ count, state }: { count: number; state: 'waiting' | 'error
 interface CitySidebarProps {
   width: number;
   cities: CityModel[];
+  districts: District[];
+  group: CityMapSidebarGroup;
   selection: CityMapSelection | null;
   looseTerminals: number;
+  tagFilter: string | null;
   onPick: (city: CityModel) => void;
   onPickSite: (city: CityModel, site: SiteModel) => void;
+  onPickDistrict: (district: District) => void;
 }
 
-function CitySidebar({ width, cities, selection, looseTerminals, onPick, onPickSite }: CitySidebarProps) {
+function CitySidebar({
+  width,
+  cities,
+  districts,
+  group,
+  selection,
+  looseTerminals,
+  tagFilter,
+  onPick,
+  onPickSite,
+  onPickDistrict,
+}: CitySidebarProps) {
+  const shown = cities.filter((c) => !c.hidden);
   const waiting: { city: CityModel; site: SiteModel }[] = [];
   const problems: { city: CityModel; site: SiteModel }[] = [];
   let working = 0;
-  for (const city of cities) {
+  for (const city of shown) {
     if (city.task.status === 'done') continue;
     for (const site of city.sites) {
       if (site.state === 'waiting') waiting.push({ city, site });
@@ -1164,6 +1526,41 @@ function CitySidebar({ width, cities, selection, looseTerminals, onPick, onPickS
     onPickSite(city, site);
   };
   const selectedTask = selectedTaskNumber(selection);
+  const byStatus = (a: CityModel, b: CityModel) =>
+    STATUS_ORDER.indexOf(a.task.status) - STATUS_ORDER.indexOf(b.task.status) || b.task.taskNumber - a.task.taskNumber;
+
+  const sections: { key: string; title: React.ReactNode; cities: CityModel[]; onTitle?: () => void }[] = [];
+  if (group === 'status') {
+    for (const status of STATUS_ORDER) {
+      sections.push({
+        key: status,
+        title: STATUS_LABELS[status],
+        cities: shown.filter((c) => c.task.status === status).sort((a, b) => b.task.taskNumber - a.task.taskNumber),
+      });
+    }
+  } else {
+    const placed = new Set<number>();
+    for (const district of [...districts].sort((a, b) => a.name.localeCompare(b.name))) {
+      const inside = citiesInside(district, shown).sort(byStatus);
+      for (const c of inside) placed.add(c.task.taskNumber);
+      sections.push({
+        key: district.id,
+        title: (
+          <>
+            <span className="w-2 h-2 rounded-[2px]" style={{ background: districtColor(district.hue, 1, false) }} />
+            {district.name}
+          </>
+        ),
+        cities: inside,
+        onTitle: () => onPickDistrict(district),
+      });
+    }
+    sections.push({
+      key: 'none',
+      title: 'No district',
+      cities: shown.filter((c) => !placed.has(c.task.taskNumber)).sort(byStatus),
+    });
+  }
 
   return (
     <aside
@@ -1189,55 +1586,86 @@ function CitySidebar({ width, cities, selection, looseTerminals, onPick, onPickS
         />
         <AttentionRow count={working} label="agents working" color="var(--color-text-tertiary)" />
       </div>
-      <div className="px-3 py-2">
-        <button type="button" className="btn-secondary w-full text-xs" onClick={() => openTaskComposer()}>
+      <div className="px-3 py-2 flex items-center gap-2">
+        <button type="button" className="btn-secondary flex-1 text-xs" onClick={() => openTaskComposer()}>
           + New ticket
         </button>
+        <div
+          className="flex rounded-md border border-border overflow-hidden text-[11px]"
+          role="radiogroup"
+          aria-label="Group cities by"
+        >
+          {(['status', 'district'] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              role="radio"
+              aria-checked={group === g}
+              data-testid={`sidebar-group-${g}`}
+              className={`px-2 py-1 ${group === g ? 'bg-ink/[0.08] text-text-primary' : 'text-text-tertiary hover:text-text-primary'}`}
+              onClick={() => useUIStore.getState().setCityMapSidebarGroup(g)}
+            >
+              {g === 'status' ? 'Status' : 'District'}
+            </button>
+          ))}
+        </div>
       </div>
-      {STATUS_ORDER.map((status) => {
-        const group = cities
-          .filter((c) => c.task.status === status)
-          .sort((a, b) => b.task.taskNumber - a.task.taskNumber);
-        return (
-          <div key={status} className="px-2 pt-2 pb-1">
-            <h3 className="mx-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary flex items-center gap-2">
-              {STATUS_LABELS[status]} <span className="font-mono font-medium">{group.length}</span>
-            </h3>
-            {group.length === 0 && <div className="mx-2 mb-1 text-xs text-text-tertiary">Nothing here</div>}
-            {group.map((city) => {
-              const selected = selectedTask === city.task.taskNumber;
-              return (
-                <button
-                  key={city.task.taskNumber}
-                  type="button"
-                  data-testid={`city-row-${city.task.taskNumber}`}
-                  className={`w-full text-left grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-2.5 px-2 py-1.5 rounded-lg border text-xs hover:bg-ink/[0.04] ${selected ? 'border-border bg-ink/[0.04]' : 'border-transparent'}`}
-                  onClick={() => onPick(city)}
+      {tagFilter && shown.length < cities.length && (
+        <div className="mx-3 mb-1 text-[11px] text-text-tertiary">
+          {cities.length - shown.length} cit{cities.length - shown.length === 1 ? 'y' : 'ies'} hidden by the tag filter.
+        </div>
+      )}
+      {sections.map((section) => (
+        <div key={section.key} className="px-2 pt-2 pb-1">
+          <h3 className="mx-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary flex items-center gap-2">
+            {section.onTitle ? (
+              <button
+                type="button"
+                className="flex items-center gap-2 hover:text-text-primary"
+                onClick={section.onTitle}
+              >
+                {section.title}
+              </button>
+            ) : (
+              section.title
+            )}
+            <span className="font-mono font-medium">{section.cities.length}</span>
+          </h3>
+          {section.cities.length === 0 && <div className="mx-2 mb-1 text-xs text-text-tertiary">Nothing here</div>}
+          {section.cities.map((city) => {
+            const status = city.task.status;
+            const selected = selectedTask === city.task.taskNumber;
+            return (
+              <button
+                key={city.task.taskNumber}
+                type="button"
+                data-testid={`city-row-${city.task.taskNumber}`}
+                className={`w-full text-left grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-2.5 px-2 py-1.5 rounded-lg border text-xs hover:bg-ink/[0.04] ${selected ? 'border-border bg-ink/[0.04]' : 'border-transparent'}`}
+                onClick={() => onPick(city)}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]"
+                  style={{
+                    background: status === 'todo' ? 'transparent' : city.color,
+                    border: `1.5px ${status === 'todo' ? 'dashed' : 'solid'} ${city.color}`,
+                  }}
+                />
+                <span
+                  className={`truncate font-medium ${status === 'done' ? 'text-text-secondary' : 'text-text-primary'}`}
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]"
-                    style={{
-                      background: status === 'todo' ? 'transparent' : city.color,
-                      border: `1.5px ${status === 'todo' ? 'dashed' : 'solid'} ${city.color}`,
-                    }}
-                  />
-                  <span
-                    className={`truncate font-medium ${status === 'done' ? 'text-text-secondary' : 'text-text-primary'}`}
-                  >
-                    {city.task.name}
-                    <span className="ml-1.5 font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
-                  </span>
-                  <span className="flex gap-0.5">
-                    {city.sites.map((s) => (
-                      <SiteDot key={s.ptyId} state={s.state} className="!w-1.5 !h-1.5" />
-                    ))}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        );
-      })}
+                  {city.task.name}
+                  <span className="ml-1.5 font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
+                </span>
+                <span className="flex gap-0.5">
+                  {city.sites.map((s) => (
+                    <SiteDot key={s.ptyId} state={s.state} className="!w-1.5 !h-1.5" />
+                  ))}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
       {looseTerminals > 0 && (
         <div className="mt-auto px-4 py-3 text-[11px] text-text-tertiary border-t border-border">
           {looseTerminals} terminal{looseTerminals > 1 ? 's' : ''} outside any ticket.{' '}
@@ -1290,16 +1718,49 @@ function AttentionRow({
 const PANEL_STYLE: CSSProperties = { background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' };
 const PANEL_CLASS =
   'absolute top-3 right-3 w-80 rounded-[14px] border border-bezel-panel glass-bevel flex flex-col z-20';
+const NAME_INPUT_CLASS =
+  'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none';
+const EYEBROW_CLASS =
+  'flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary';
+
+function CloseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="text-text-tertiary hover:text-text-primary"
+      onClick={onClick}
+      aria-label="Close inspector"
+    >
+      <Icon name="x" className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
+function CityLink({ city, onPick }: { city: CityModel; onPick: (city: CityModel) => void }) {
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-2 px-2 py-1 rounded-md text-left text-xs hover:bg-ink/[0.04] min-w-0"
+      onClick={() => onPick(city)}
+    >
+      <span className="w-2 h-2 rounded-[2px] rotate-45 shrink-0" style={{ background: city.color }} />
+      <span className="truncate text-text-primary">{city.task.name}</span>
+      <span className="font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
+    </button>
+  );
+}
 
 interface CityInspectorProps {
   projectPath: string;
   city: CityModel;
   site?: SiteModel;
   district?: District;
+  waitingOn: CityModel[];
   onClose: () => void;
   onSelectSite: (site: SiteModel) => void;
   onBackToCity: () => void;
   onOpenTerminal: (ptyId: string | null) => void;
+  onPickCity: (city: CityModel) => void;
   onContextMenu: (e: React.MouseEvent, target: Hit) => void;
 }
 
@@ -1308,10 +1769,12 @@ function CityInspector({
   city,
   site,
   district,
+  waitingOn,
   onClose,
   onSelectSite,
   onBackToCity,
   onOpenTerminal,
+  onPickCity,
   onContextMenu,
 }: CityInspectorProps) {
   const task = city.task;
@@ -1351,7 +1814,7 @@ function CityInspector({
   return (
     <div className={`${PANEL_CLASS} bottom-3 overflow-y-auto`} style={PANEL_STYLE} data-testid="city-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+        <div className={EYEBROW_CLASS}>
           <span className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]" style={{ background: city.color }} />
           <span>City</span>
           <span className="font-mono normal-case tracking-normal text-text-secondary">#{task.taskNumber}</span>
@@ -1372,17 +1835,10 @@ function CityInspector({
           >
             <Icon name="dots-six-vertical" className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            className="text-text-tertiary hover:text-text-primary"
-            onClick={onClose}
-            aria-label="Close inspector"
-          >
-            <Icon name="x" className="w-3.5 h-3.5" />
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
         <input
-          className="w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none"
+          className={NAME_INPUT_CLASS}
           value={name}
           aria-label="Ticket name"
           onChange={(e) => setName(e.target.value)}
@@ -1405,6 +1861,14 @@ function CityInspector({
           ))}
         </select>
       </div>
+      {waitingOn.length > 0 && task.status !== 'done' && (
+        <div className="p-4 border-b border-border flex flex-col gap-1">
+          <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary mb-1">Waits for</h4>
+          {waitingOn.map((c) => (
+            <CityLink key={c.task.taskNumber} city={c} onPick={onPickCity} />
+          ))}
+        </div>
+      )}
       <div className="p-4 border-b border-border">
         <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary mb-2">Description</h4>
         {task.prompt ? (
@@ -1498,7 +1962,7 @@ function SiteInspector({
   return (
     <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="site-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+        <div className={EYEBROW_CLASS}>
           <span>Site</span>
           <button
             type="button"
@@ -1508,17 +1972,10 @@ function SiteInspector({
             in #{city.task.taskNumber} {city.task.name}
           </button>
           <span className="flex-1" />
-          <button
-            type="button"
-            className="text-text-tertiary hover:text-text-primary"
-            onClick={onClose}
-            aria-label="Close inspector"
-          >
-            <Icon name="x" className="w-3.5 h-3.5" />
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
         <input
-          className="w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none"
+          className={NAME_INPUT_CLASS}
           value={label}
           placeholder={site.display.lastOscTitle || 'Shell'}
           aria-label="Site name"
@@ -1542,6 +1999,80 @@ function SiteInspector({
         <button type="button" className="btn-secondary text-xs" onClick={() => closeProjectTerminal(site.ptyId)}>
           Close
         </button>
+      </div>
+    </div>
+  );
+}
+
+function RoadInspector({
+  projectPath,
+  road,
+  from,
+  to,
+  onClose,
+  onPickCity,
+}: {
+  projectPath: string;
+  road: Road;
+  from?: CityModel;
+  to?: CityModel;
+  onClose: () => void;
+  onPickCity: (city: CityModel) => void;
+}) {
+  const [note, setNote] = useState(road.note ?? '');
+  useEffect(() => setNote(road.note ?? ''), [road.id, road.note]);
+  const commit = () => {
+    const trimmed = note.trim();
+    if (trimmed === (road.note ?? '')) return;
+    useCityMapStore.getState().updateRoad(projectPath, road.id, { note: trimmed || undefined });
+    persistCityMap(projectPath);
+  };
+  const open = from && from.task.status !== 'done';
+  return (
+    <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="road-inspector">
+      <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
+        <div className={EYEBROW_CLASS}>
+          <Icon name="arrow-right" className="w-3 h-3" />
+          <span>Road</span>
+          <span className="flex-1" />
+          <CloseButton onClick={onClose} />
+        </div>
+        <div className="flex flex-col gap-0.5 -mx-2">
+          {from && <CityLink city={from} onPick={onPickCity} />}
+          <span className="px-2 text-[10px] uppercase tracking-[0.08em] text-text-tertiary">leads to</span>
+          {to && <CityLink city={to} onPick={onPickCity} />}
+        </div>
+        <p className="text-[11px] text-text-tertiary leading-snug">
+          {open && from
+            ? `#${to?.task.taskNumber} waits: #${from.task.taskNumber} is ${STATUS_LABELS[from.task.status].toLowerCase()}.`
+            : 'The road is clear: what it leads from is done.'}
+        </p>
+      </div>
+      <div className="p-4 flex flex-col gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary" htmlFor="road-note">
+          Note
+        </label>
+        <textarea
+          id="road-note"
+          className="w-full min-h-[64px] px-2.5 py-2 text-xs leading-snug text-text-primary bg-background border border-border rounded-md outline-none resize-y focus:border-accent placeholder:text-text-tertiary"
+          placeholder="Why one waits for the other, e.g. blocked until the PR is merged"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={commit}
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="btn-secondary text-xs"
+            onClick={() => {
+              useCityMapStore.getState().removeRoad(projectPath, road.id);
+              persistCityMap(projectPath);
+              onClose();
+            }}
+          >
+            Remove road
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1577,21 +2108,14 @@ function DistrictInspector({
   return (
     <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="district-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+        <div className={EYEBROW_CLASS}>
           <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: districtColor(district.hue, 1, false) }} />
           <span>District</span>
           <span className="flex-1" />
-          <button
-            type="button"
-            className="text-text-tertiary hover:text-text-primary"
-            onClick={onClose}
-            aria-label="Close inspector"
-          >
-            <Icon name="x" className="w-3.5 h-3.5" />
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
         <input
-          className="w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none"
+          className={NAME_INPUT_CLASS}
           value={name}
           aria-label="District name"
           onChange={(e) => setName(e.target.value)}
@@ -1625,16 +2149,7 @@ function DistrictInspector({
         </h4>
         {cities.length === 0 && <p className="text-[11px] text-text-tertiary">Drag cities in to assign them.</p>}
         {cities.map((city) => (
-          <button
-            key={city.task.taskNumber}
-            type="button"
-            className="flex items-center gap-2 px-2 py-1 rounded-md text-left text-xs hover:bg-ink/[0.04]"
-            onClick={() => onPickCity(city)}
-          >
-            <span className="w-2 h-2 rounded-[2px] rotate-45" style={{ background: city.color }} />
-            <span className="truncate text-text-primary">{city.task.name}</span>
-            <span className="font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
-          </button>
+          <CityLink key={city.task.taskNumber} city={city} onPick={onPickCity} />
         ))}
       </div>
       <div className="p-4 pt-0 flex gap-2">

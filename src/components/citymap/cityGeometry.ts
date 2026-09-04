@@ -157,6 +157,13 @@ export function cityPresence(status: TaskStatus): CityPresence {
   }
 }
 
+/** The nearest point on the lattice one cell step apart along both iso axes. */
+export function snapToCells(p: Point): Point {
+  const s = Math.round((p.x / TW + p.y / TH) / 2);
+  const t = Math.round((p.y / TH - p.x / TW) / 2);
+  return { x: (s - t) * TW, y: (s + t) * TH };
+}
+
 export function pointInCity(local: Point): boolean {
   return Math.abs(local.x) / CITY_HALF_W + Math.abs(local.y) / CITY_HALF_H <= 1.05;
 }

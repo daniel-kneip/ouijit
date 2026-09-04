@@ -42,8 +42,15 @@ puts that context first:
   named, coloured area laid on the cities' own axes, so it sits on the
   ground grid; drag it and the cities inside come along, drag its bottom
   corner to resize. The city inspector says which district a city stands in.
-- **A sidebar lists cities by status** with the attention counts first (how
-  many sites wait for the user, how many hit a problem) and a "Next" jump.
+- **Roads carry meaning.** A road's inspector takes a note, shown on the road
+  itself; while the city a road leads from is not done, the destination's
+  label says what it waits for. The project's tag filter applies to the map:
+  cities without a matching terminal fade out and leave the list.
+- **A sidebar lists cities by status or by district** with the attention
+  counts first (how many sites wait for the user, how many hit a problem) and
+  a "Next" jump. Cities and districts snap to the cell lattice when dragged.
+  A minimap, "Fit all" and 1:1 keep the bearings; a city whose site starts
+  waiting or fails flashes its label rather than moving the camera.
 
 ## Mapping onto the app's data
 
@@ -70,7 +77,7 @@ interface CityMapState {
     lots: Record<string /* ptyId */, number /* slot */>;
     built: number[]; // slots whose session finished and closed
   }>;
-  roads: { id: string; from: number; to: number }[];
+  roads: { id: string; from: number; to: number; note?: string }[];
   // x,y is the top corner; w runs down-right along (1, ½), h down-left along (−1, ½)
   districts: { id: string; name: string; x: number; y: number; w: number; h: number; hue: number }[];
 }
