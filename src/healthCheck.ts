@@ -18,6 +18,7 @@ export interface HealthStatus {
   codex: boolean;
   pi: boolean;
   opencode: boolean;
+  kiro: boolean;
   lima: boolean;
   nono: boolean;
   gitVersion?: string;
@@ -72,12 +73,13 @@ export async function checkHealth(): Promise<HealthStatus> {
   // none of the places these binaries install themselves into.
   await ensureLoginPath();
 
-  const [git, claude, codex, pi, opencode, lima, nono, gh] = await Promise.all([
+  const [git, claude, codex, pi, opencode, kiro, lima, nono, gh] = await Promise.all([
     detectGit(),
     detectAgent('claude'),
     detectAgent('codex'),
     detectAgent('pi'),
     detectAgent('opencode'),
+    detectAgent('kiro-cli'),
     isLimaInstalled(),
     isNonoInstalled(),
     probeGh(),
@@ -88,6 +90,7 @@ export async function checkHealth(): Promise<HealthStatus> {
     codex,
     pi,
     opencode,
+    kiro,
     lima,
     nono,
     gitVersion: git.version,
@@ -101,6 +104,7 @@ export async function checkHealth(): Promise<HealthStatus> {
     codex: cached.codex,
     pi: cached.pi,
     opencode: cached.opencode,
+    kiro: cached.kiro,
     lima: cached.lima,
     nono: cached.nono,
     gitVersion: cached.gitVersion,

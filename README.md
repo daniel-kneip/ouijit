@@ -84,6 +84,7 @@ Also in the box: a multi-project home view, a configurable projects folder, `git
 - [Codex](https://github.com/openai/codex)
 - [Pi](https://pi.dev)
 - [OpenCode](https://opencode.ai)
+- [Kiro CLI](https://kiro.dev/cli/) — including the v3 early-access engine (`kiro-cli --v3`)
 
 To request support for another harness, [open an issue](https://github.com/ouijit/ouijit/issues/new).
 

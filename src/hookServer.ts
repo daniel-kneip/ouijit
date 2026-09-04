@@ -10,6 +10,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import { isPtyActive } from './ptyManager';
@@ -825,6 +826,168 @@ export const OPENCODE_WRAPPER = [
   '',
 ].join('\n');
 
+// ── Kiro CLI agent config + hooks + wrapper ──────────────────────────
+// Kiro CLI (`kiro-cli`, formerly Amazon Q Developer CLI) ships two engines:
+//   • v2 (default): lifecycle hooks and the system prompt both live in an
+//     agent config JSON (~/.kiro/agents/<name>.json). There is no CLI flag
+//     to inject either directly, so Ouijit maintains an `ouijit` agent that
+//     mirrors the default agent (all tools, global MCP config) plus the
+//     status hooks and the CLI reference, and the wrapper selects it via
+//     `--agent ouijit` unless the user picked their own agent.
+//   • v3 (early access, `kiro-cli --v3`): agent configs move to a Markdown
+//     format and hooks move to standalone files. Global hook files in
+//     ~/.kiro/hooks/*.json fire in every workspace, so Ouijit installs its
+//     status hooks there. They are harmless outside Ouijit terminals:
+//     ouijit-hook exits immediately when OUIJIT_API_URL is unset.
+
+/** Kiro CLI's global agent directory (v2 agent configs). */
+export function getKiroAgentDir(): string {
+  return path.join(os.homedir(), '.kiro', 'agents');
+}
+
+/** Path to the ouijit Kiro v2 agent config. */
+export function getKiroAgentPath(): string {
+  return path.join(getKiroAgentDir(), 'ouijit.json');
+}
+
+/** Kiro CLI's global hooks directory (v3 standalone hook files). */
+export function getKiroHooksDir(): string {
+  return path.join(os.homedir(), '.kiro', 'hooks');
+}
+
+/** Path to the ouijit Kiro v3 global hooks file. */
+export function getKiroHooksPath(): string {
+  return path.join(getKiroHooksDir(), 'ouijit.json');
+}
+
+/**
+ * Status mapping for Kiro's lifecycle events, shared by the v2 agent config
+ * (camelCase event keys) and the v3 hooks file (PascalCase triggers).
+ * userPromptSubmit / postToolUse → thinking, stop → ready — the same mapping
+ * the claude and codex wrappers use.
+ */
+const KIRO_STATUS_HOOKS: ReadonlyArray<readonly [v2Event: string, v3Trigger: string, status: 'thinking' | 'ready']> = [
+  ['userPromptSubmit', 'UserPromptSubmit', 'thinking'],
+  ['postToolUse', 'PostToolUse', 'thinking'],
+  ['stop', 'Stop', 'ready'],
+];
+
+/**
+ * Build the ouijit Kiro v2 agent config. The agent mirrors the built-in
+ * default (`tools: ["*"]`, global MCP servers included) so selecting it does
+ * not narrow what the user can do, and layers on the Ouijit status hooks.
+ * `promptFileUri` (a file:// URI, resolved by Kiro itself — no shell
+ * expansion) points the agent's prompt at the Ouijit CLI reference; the
+ * sandbox VM omits it because the ouijit CLI is not installed there.
+ */
+export function buildKiroAgentConfig(hookCmd: string, promptFileUri?: string): string {
+  const hooks: Record<string, Array<{ command: string }>> = {};
+  for (const [v2Event, , status] of KIRO_STATUS_HOOKS) {
+    hooks[v2Event] = [{ command: `${hookCmd} status status=${status}` }];
+  }
+  const agent: Record<string, unknown> = {
+    name: 'ouijit',
+    description:
+      'Default Kiro agent plus Ouijit status hooks and CLI awareness. Auto-installed by Ouijit; safe to delete (Ouijit recreates it).',
+    ...(promptFileUri ? { prompt: promptFileUri } : {}),
+    tools: ['*'],
+    includeMcpJson: true,
+    hooks,
+  };
+  return JSON.stringify(agent, null, 2) + '\n';
+}
+
+/**
+ * Build the ouijit Kiro v3 global hooks file (~/.kiro/hooks/ouijit.json).
+ * v3 loads every global hook file automatically, so no wrapper flag is
+ * needed; the hooks no-op outside Ouijit terminals via ouijit-hook's env
+ * guard. The short timeout keeps a wedged curl from stalling the agent.
+ */
+export function buildKiroHooksFile(hookCmd: string): string {
+  return (
+    JSON.stringify(
+      {
+        version: 'v1',
+        hooks: KIRO_STATUS_HOOKS.map(([, v3Trigger, status]) => ({
+          name: `ouijit-status-${v3Trigger.toLowerCase()}`,
+          description: 'Reports agent status to the Ouijit terminal card. Auto-installed by Ouijit; safe to delete.',
+          trigger: v3Trigger,
+          action: { type: 'command', command: `${hookCmd} status status=${status}` },
+          timeout: 5,
+        })),
+      },
+      null,
+      2,
+    ) + '\n'
+  );
+}
+
+/**
+ * Bash wrapper that shadows `kiro-cli`. For v2 sessions it appends
+ * `--agent ouijit` so the auto-installed agent (status hooks + CLI
+ * reference) is active; for v3 sessions (`--v3`, or OUIJIT_KIRO_V3=1 to opt
+ * a terminal in without editing hook commands) it passes through untouched —
+ * the v3 global hooks file is loaded automatically and the v2 agent format
+ * does not apply.
+ */
+export const KIRO_WRAPPER = [
+  '#!/bin/bash',
+  '# Ouijit kiro-cli wrapper — selects the auto-installed `ouijit` agent so',
+  '# Kiro CLI picks up the Ouijit status hooks and CLI reference. Kiro has no',
+  '# flag to inject hooks or extra system prompt directly; both live in the',
+  '# agent config (~/.kiro/agents/ouijit.json) written by Ouijit.',
+  buildWrapperResolver('kiro-cli'),
+  '',
+  '# v3 opt-in: `kiro-cli --v3` runs the CLI 3.0 early-access engine. Honor',
+  '# an explicit --v3 anywhere in the args, and let OUIJIT_KIRO_V3=1 opt a',
+  '# whole terminal in without editing every hook command.',
+  'KIRO_V3=""',
+  'for arg in "$@"; do',
+  '  case "$arg" in',
+  '    --v3) KIRO_V3=1; break ;;',
+  '  esac',
+  'done',
+  'if [ -z "$KIRO_V3" ] && [ -n "$OUIJIT_KIRO_V3" ]; then',
+  '  set -- --v3 "$@"',
+  '  KIRO_V3=1',
+  'fi',
+  '',
+  '# Utility subcommands do not start an agent session; injecting --agent',
+  '# would error or change their behavior. Run them untouched (mirrors the',
+  '# claude / pi / opencode subcommand guards).',
+  'for arg in "$@"; do',
+  '  case "$arg" in',
+  '    -*) continue ;;',
+  '    login|logout|whoami|profile|user|settings|agent|mcp|translate|doctor|update|diagnostic|issue|version|help)',
+  '      exec "$REAL_BIN" "$@"',
+  '      ;;',
+  '    *) break ;;',
+  '  esac',
+  'done',
+  '',
+  'if [ -n "$KIRO_V3" ]; then',
+  '  # v3 sessions load the Ouijit global hooks file (~/.kiro/hooks/*.json)',
+  '  # automatically; the v2 ouijit agent (and its CLI-reference prompt) does',
+  '  # not apply to the v3 Markdown agent format.',
+  '  exec "$REAL_BIN" "$@"',
+  'fi',
+  '',
+  '# If the user picked their own agent, respect it — swapping in the ouijit',
+  '# agent would replace their tools and prompt.',
+  'for arg in "$@"; do',
+  '  case "$arg" in',
+  '    --agent|--agent=*) exec "$REAL_BIN" "$@" ;;',
+  '  esac',
+  'done',
+  '',
+  '# Appended (not prepended): --agent is accepted after the subcommand and',
+  '# after positionals, so a bare `kiro-cli "prompt"` stays intact. When',
+  '# Ouijit is not running the hooks no-op (ouijit-hook exits without',
+  '# OUIJIT_API_URL) and the agent still carries the CLI reference.',
+  'exec "$REAL_BIN" "$@" --agent ouijit',
+  '',
+].join('\n');
+
 // ── nono shim ────────────────────────────────────────────────────────
 
 /**
@@ -901,6 +1064,25 @@ export function installWrapper(): void {
     const opencodePluginPath = getOpencodePluginPath();
     fs.mkdirSync(path.dirname(opencodePluginPath), { recursive: true });
     fs.writeFileSync(opencodePluginPath, OPENCODE_PLUGIN, { mode: 0o644 });
+
+    // Write kiro-cli wrapper (shadows `kiro-cli` to select the ouijit agent),
+    // the ouijit v2 agent config, and the v3 global hooks file. Hook command
+    // and prompt paths are resolved absolute at install time — Kiro reads the
+    // prompt's file:// URI itself (no shell expansion), so $HOME is not safe
+    // there, and using absolute paths for the hook commands keeps both files
+    // shell-independent.
+    fs.writeFileSync(path.join(binDir, 'kiro-cli'), KIRO_WRAPPER, { mode: 0o755 });
+    const kiroHookCmd = path.join(binDir, 'ouijit-hook');
+    const kiroAgentPath = getKiroAgentPath();
+    fs.mkdirSync(path.dirname(kiroAgentPath), { recursive: true });
+    // pathToFileURL percent-encodes spaces/unicode so the prompt URI stays
+    // valid on any homedir path.
+    fs.writeFileSync(kiroAgentPath, buildKiroAgentConfig(kiroHookCmd, pathToFileURL(getCliReferencePath()).href), {
+      mode: 0o644,
+    });
+    const kiroHooksPath = getKiroHooksPath();
+    fs.mkdirSync(path.dirname(kiroHooksPath), { recursive: true });
+    fs.writeFileSync(kiroHooksPath, buildKiroHooksFile(kiroHookCmd), { mode: 0o644 });
 
     // Write ouijit CLI wrapper (delegates to the bundled CLI JS via env vars set by PTY manager)
     fs.writeFileSync(
@@ -1048,4 +1230,20 @@ export function buildVmPiExtension(): string {
 /** opencode status plugin for the sandbox VM. Identical to the host-side source. */
 export function buildVmOpencodePlugin(): string {
   return OPENCODE_PLUGIN;
+}
+
+/**
+ * Kiro v2 agent config for the sandbox VM. Hook commands keep `$HOME` literal
+ * (expanded by the shell Kiro runs them with); the CLI-reference prompt is
+ * deliberately omitted — the ouijit CLI is not installed in the sandbox.
+ * There is no `kiro-cli` wrapper inside the VM, so a v2 session picks the
+ * agent up via `kiro-cli chat --agent ouijit`.
+ */
+export function buildVmKiroAgentConfig(): string {
+  return buildKiroAgentConfig('$HOME/ouijit-hook');
+}
+
+/** Kiro v3 global hooks file for the sandbox VM (auto-loaded, no wrapper needed). */
+export function buildVmKiroHooksFile(): string {
+  return buildKiroHooksFile('$HOME/ouijit-hook');
 }

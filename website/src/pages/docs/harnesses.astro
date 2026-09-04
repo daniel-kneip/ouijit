@@ -4,12 +4,12 @@ import Docs from '../../layouts/Docs.astro';
 <Docs slug="harnesses">
   <h1>Harnesses</h1>
   <p class="lead">
-    Claude Code, Codex, Pi, and OpenCode get live status indicators and learn the <code>ouijit</code> CLI
-    automatically. No configuration required.
+    Claude Code, Codex, Pi, OpenCode, and Kiro CLI get live status indicators and learn the <code>ouijit</code>
+    CLI automatically. No configuration required.
   </p>
 
   <h2>What you get</h2>
-  <p>Run <code>claude</code>, <code>codex</code>, <code>pi</code>, or <code>opencode</code> in any Ouijit terminal and two things happen:</p>
+  <p>Run <code>claude</code>, <code>codex</code>, <code>pi</code>, <code>opencode</code>, or <code>kiro-cli</code> in any Ouijit terminal and two things happen:</p>
   <ul>
     <li>
       <strong>Live status</strong>. The terminal card shows whether the agent is thinking or idle, visible
@@ -24,6 +24,15 @@ import Docs from '../../layouts/Docs.astro';
   <p>
     This applies only in terminals Ouijit opens, including <a href="/docs/sandbox/">sandboxed</a> ones.
     Everywhere else these tools behave as they always do.
+  </p>
+
+  <h2>Kiro CLI</h2>
+  <p>
+    Ouijit installs an <code>ouijit</code> agent for Kiro (<code>~/.kiro/agents/ouijit.json</code>) carrying the
+    status hooks and the CLI reference, and a wrapper that selects it. Kiro's CLI 3.0 early-access engine is
+    opt-in per invocation: run <code>kiro-cli --v3</code> yourself, or set <code>OUIJIT_KIRO_V3=1</code> in a hook
+    command's environment to have the wrapper add the flag. On v3 the status hooks come from a global hooks file
+    under <code>~/.kiro/hooks/</code>; the CLI reference is v2-only for now.
   </p>
 
   <h2>Notifications</h2>

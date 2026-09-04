@@ -615,7 +615,7 @@ export interface ElectronAPI {
   harness: HarnessAPI;
   tags: TagsAPI;
   scripts: ScriptsAPI;
-  /** CLI agent hook events (claude/codex/pi/opencode) */
+  /** CLI agent hook events (claude/codex/pi/opencode/kiro) */
   agentHooks: AgentHooksAPI;
   plan: PlanAPI;
   /** CLI-driven terminal panel ops (markdown / web preview) */
@@ -817,7 +817,7 @@ export interface CaptureAPI {
   onNavigate(callback: (payload: import('./capture/types').CaptureNavigatePayload) => void): () => void;
 }
 
-/** CLI agent hook events, covering claude, codex, pi and opencode alike. */
+/** CLI agent hook events, covering claude, codex, pi, opencode and kiro alike. */
 export interface AgentHooksAPI {
   onStatus(callback: (ptyId: PtyId, status: HookStatus) => void): () => void;
   getStatus(ptyId: PtyId): Promise<HookStatusEntry | null>;
