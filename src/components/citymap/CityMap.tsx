@@ -612,13 +612,29 @@ function useMapSurface(input: MapSurfaceInput) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    let pointer: { x: number; y: number; sx: number; sy: number; hit: Hit; moved: boolean } | null = null;
+    let pointer: {
+      x: number;
+      y: number;
+      sx: number;
+      sy: number;
+      hit: Hit;
+      moved: boolean;
+      origin: Point | null;
+    } | null = null;
 
     const down = (e: PointerEvent) => {
       if (e.button !== 0) return;
       canvas.setPointerCapture(e.pointerId);
       const h = hit(e.offsetX, e.offsetY);
-      pointer = { x: e.offsetX, y: e.offsetY, sx: e.offsetX, sy: e.offsetY, hit: h, moved: false };
+      pointer = {
+        x: e.offsetX,
+        y: e.offsetY,
+        sx: e.offsetX,
+        sy: e.offsetY,
+        hit: h,
+        moved: false,
+        origin: h?.type === 'city' ? { ...h.city.plot.pos } : null,
+      };
       tween.current = null;
       canvas.style.cursor = h?.type === 'city' ? 'move' : 'grabbing';
     };
@@ -632,10 +648,15 @@ function useMapSurface(input: MapSurfaceInput) {
       if (!pointer.moved && Math.hypot(e.offsetX - pointer.sx, e.offsetY - pointer.sy) > 4) pointer.moved = true;
       if (!pointer.moved) return;
       const zoom = camera.current.zoom;
-      if (pointer.hit?.type === 'city') {
-        const city = pointer.hit.city;
-        const pos = { x: city.plot.pos.x + dx / zoom, y: city.plot.pos.y + dy / zoom };
-        useCityMapStore.getState().moveCity(projectPath, city.task.taskNumber, pos);
+      if (pointer.hit?.type === 'city' && pointer.origin) {
+        // From the grab point, not the last event: the model on the hit is a
+        // snapshot, so adding each event's delta to it would only ever move
+        // one step from where the drag began.
+        const pos = {
+          x: pointer.origin.x + (e.offsetX - pointer.sx) / zoom,
+          y: pointer.origin.y + (e.offsetY - pointer.sy) / zoom,
+        };
+        useCityMapStore.getState().moveCity(projectPath, pointer.hit.city.task.taskNumber, pos);
       } else {
         camera.current = { ...camera.current, x: camera.current.x - dx / zoom, y: camera.current.y - dy / zoom };
       }

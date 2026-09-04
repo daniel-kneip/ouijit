@@ -43,6 +43,7 @@ function task(over: Partial<TaskWithWorkspace> & { taskNumber: number }): TaskWi
 beforeEach(() => {
   // jsdom draws nothing: the map's canvas stays blank and its observer inert.
   HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(null) as never;
+  HTMLElement.prototype.setPointerCapture = vi.fn();
   globalThis.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -138,6 +139,40 @@ describe('the city map', () => {
       const plot = useCityMapStore.getState().byProject[project.path].cities[7];
       expect(plot.lots).toEqual({});
       expect(plot.built).toEqual([1]);
+    });
+  });
+
+  test('a dragged city lands where the pointer let go, and stays there', async () => {
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('city-row-7');
+    await waitFor(() => expect(useCityMapStore.getState().byProject[project.path]?.cities[7]).toBeDefined());
+    const canvas = screen.getByLabelText('Map of tasks as cities');
+    const start = useCityMapStore.getState().byProject[project.path].cities[7].pos;
+
+    // The stubbed observer leaves the canvas at 0×0, so screen (0,0) is the
+    // camera centre, which the first city is founded on.
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0 });
+      Object.defineProperty(event, 'offsetX', { value: x });
+      Object.defineProperty(event, 'offsetY', { value: y });
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      canvas.dispatchEvent(event);
+    };
+    pointer('pointerdown', 0, 0);
+    pointer('pointermove', 45, 18);
+    pointer('pointermove', 90, 36);
+    pointer('pointerup', 90, 36);
+
+    const zoom = useCityMapStore.getState().byProject[project.path].viewport.zoom;
+    const moved = useCityMapStore.getState().byProject[project.path].cities[7].pos;
+    expect(moved.x).toBeCloseTo(start.x + 90 / zoom, 5);
+    expect(moved.y).toBeCloseTo(start.y + 36 / zoom, 5);
+    await waitFor(() => {
+      const saved = vi
+        .mocked(window.api.globalSettings.set)
+        .mock.calls.filter(([key]) => key === 'citymap:/work/alpha')
+        .at(-1);
+      expect(JSON.parse(saved![1] as string).cities[7].pos).toEqual(moved);
     });
   });
 });
