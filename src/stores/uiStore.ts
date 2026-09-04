@@ -47,6 +47,7 @@ interface UIStoreState {
   editorHookQueue: EditorHookRequest[];
   diffFileListCollapsed: boolean;
   diffFileListWidth: number;
+  cityMapSidebarWidth: number;
 }
 
 interface UIStoreActions {
@@ -67,6 +68,7 @@ interface UIStoreActions {
   resolveEditorHook: (id: number, hook: ScriptHook | null) => void;
   setDiffFileListCollapsed: (collapsed: boolean) => void;
   setDiffFileListWidth: (width: number) => void;
+  setCityMapSidebarWidth: (width: number) => void;
 }
 
 type UIStore = UIStoreState & UIStoreActions;
@@ -74,6 +76,14 @@ type UIStore = UIStoreState & UIStoreActions;
 export const DIFF_FILE_LIST_DEFAULT_WIDTH = 220;
 export const DIFF_FILE_LIST_MIN_WIDTH = 120;
 export const DIFF_FILE_LIST_MAX_WIDTH = 500;
+
+export const CITY_MAP_SIDEBAR_DEFAULT_WIDTH = 240;
+export const CITY_MAP_SIDEBAR_MIN_WIDTH = 180;
+export const CITY_MAP_SIDEBAR_MAX_WIDTH = 480;
+
+function clampCityMapSidebarWidth(width: number): number {
+  return Math.max(CITY_MAP_SIDEBAR_MIN_WIDTH, Math.min(CITY_MAP_SIDEBAR_MAX_WIDTH, Math.round(width)));
+}
 
 function clampFileListWidth(width: number): number {
   return Math.max(DIFF_FILE_LIST_MIN_WIDTH, Math.min(DIFF_FILE_LIST_MAX_WIDTH, Math.round(width)));
@@ -91,6 +101,7 @@ export const useUIStore = create<UIStore>()((set, get) => ({
   editorHookQueue: [],
   diffFileListCollapsed: false,
   diffFileListWidth: DIFF_FILE_LIST_DEFAULT_WIDTH,
+  cityMapSidebarWidth: CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
 
   setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
 
@@ -151,13 +162,20 @@ export const useUIStore = create<UIStore>()((set, get) => ({
     set({ diffFileListWidth: clamped });
     void window.api.globalSettings.set('ui:diff-file-list-width', String(clamped));
   },
+
+  setCityMapSidebarWidth: (width) => {
+    const clamped = clampCityMapSidebarWidth(width);
+    set({ cityMapSidebarWidth: clamped });
+    void window.api.globalSettings.set('ui:city-map-sidebar-width', String(clamped));
+  },
 }));
 
 export async function hydrateUIPreferences(): Promise<void> {
-  const [pinned, collapsed, width] = await Promise.all([
+  const [pinned, collapsed, width, mapWidth] = await Promise.all([
     window.api.globalSettings.get('ui:sidebar-pinned'),
     window.api.globalSettings.get('ui:diff-file-list-collapsed'),
     window.api.globalSettings.get('ui:diff-file-list-width'),
+    window.api.globalSettings.get('ui:city-map-sidebar-width'),
   ]);
 
   const next: Partial<UIStoreState> = {};
@@ -165,6 +183,8 @@ export async function hydrateUIPreferences(): Promise<void> {
   if (collapsed === '0' || collapsed === '1') next.diffFileListCollapsed = collapsed === '1';
   const parsedWidth = Number(width);
   if (width && Number.isFinite(parsedWidth)) next.diffFileListWidth = clampFileListWidth(parsedWidth);
+  const parsedMapWidth = Number(mapWidth);
+  if (mapWidth && Number.isFinite(parsedMapWidth)) next.cityMapSidebarWidth = clampCityMapSidebarWidth(parsedMapWidth);
 
   useUIStore.setState(next);
 }

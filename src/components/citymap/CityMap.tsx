@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTerminalStore } from '../../stores/terminalStore';
+import {
+  useUIStore,
+  CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
+  CITY_MAP_SIDEBAR_MAX_WIDTH,
+  CITY_MAP_SIDEBAR_MIN_WIDTH,
+} from '../../stores/uiStore';
+import { ResizeHandle } from '../common/ResizeHandle';
 import type { TerminalDisplayState } from '../../stores/terminalDisplay';
 import {
   loadPersistedCityMap,
@@ -224,9 +231,16 @@ export function CityMap({ projectPath }: CityMapProps) {
       ? selectedCity.sites.find((s) => s.ptyId === selection.ptyId)
       : undefined;
 
+  const sidebarWidth = useUIStore((s) => s.cityMapSidebarWidth);
+
   return (
-    <div className="flex h-full min-h-0" data-testid="city-map">
+    <div
+      className="flex h-full min-h-0 transition-[margin-left] duration-200 ease-out"
+      style={{ marginLeft: 'var(--sidebar-offset, 0px)' }}
+      data-testid="city-map"
+    >
       <CitySidebar
+        width={sidebarWidth}
         cities={cities}
         selection={selection}
         looseTerminals={looseTerminals}
@@ -243,6 +257,14 @@ export function CityMap({ projectPath }: CityMapProps) {
           flyTo({ x: city.plot.pos.x + c.x, y: city.plot.pos.y + c.y }, 1.5);
           openTerminal(site.ptyId);
         }}
+      />
+      <ResizeHandle
+        width={sidebarWidth}
+        onWidth={(width) => useUIStore.getState().setCityMapSidebarWidth(width)}
+        min={CITY_MAP_SIDEBAR_MIN_WIDTH}
+        max={CITY_MAP_SIDEBAR_MAX_WIDTH}
+        defaultWidth={CITY_MAP_SIDEBAR_DEFAULT_WIDTH}
+        label="Resize the city list"
       />
       <div ref={containerRef} className="relative flex-1 min-w-0 overflow-hidden">
         <span ref={probeRef} className="absolute w-0 h-0 pointer-events-none" aria-hidden="true" />
@@ -805,6 +827,7 @@ function SiteDot({ state, className = '' }: { state: SiteState; className?: stri
 }
 
 interface CitySidebarProps {
+  width: number;
   cities: CityModel[];
   selection: CityMapSelection | null;
   looseTerminals: number;
@@ -812,7 +835,7 @@ interface CitySidebarProps {
   onPickSite: (city: CityModel, site: SiteModel) => void;
 }
 
-function CitySidebar({ cities, selection, looseTerminals, onPick, onPickSite }: CitySidebarProps) {
+function CitySidebar({ width, cities, selection, looseTerminals, onPick, onPickSite }: CitySidebarProps) {
   const waiting: { city: CityModel; site: SiteModel }[] = [];
   const problems: { city: CityModel; site: SiteModel }[] = [];
   let working = 0;
@@ -833,8 +856,8 @@ function CitySidebar({ cities, selection, looseTerminals, onPick, onPickSite }: 
 
   return (
     <aside
-      className="w-60 shrink-0 flex flex-col border-r border-border overflow-y-auto"
-      style={{ background: 'var(--color-background-secondary)' }}
+      className="shrink-0 flex flex-col overflow-y-auto"
+      style={{ width, background: 'var(--color-background-secondary)' }}
       aria-label="Cities"
     >
       <div

@@ -41,7 +41,9 @@ export function registerTaskHandlers(): void {
 
   typedHandle('task:set-name', (projectPath, taskNumber, name) => setTaskName(projectPath, taskNumber, name));
 
-  typedHandle('task:workspace-file', (projectPath, taskNumber) => writeTaskWorkspace(projectPath, taskNumber));
+  typedHandle('task:workspace-file', (projectPath, taskNumber, worktreePath) =>
+    writeTaskWorkspace(projectPath, taskNumber, worktreePath),
+  );
 
   typedHandle('task:set-description', (projectPath, taskNumber, description) =>
     updateTaskDescription(projectPath, taskNumber, description),

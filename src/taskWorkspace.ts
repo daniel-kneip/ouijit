@@ -4,6 +4,9 @@ import * as path from 'node:path';
 import { getProjectTasks, getTaskByNumber } from './db';
 import { buildChainMap, getChainHex } from './utils/taskChain';
 import { generateBranchName } from './worktree';
+import { getLogger } from './logger';
+
+const workspaceLog = getLogger().scope('taskWorkspace');
 
 /**
  * A VS Code workspace file per task, kept outside the worktree so the repo
@@ -58,20 +61,39 @@ function readableOn(hex: string): string {
  * Writes the task's workspace file and returns its path, or null when the
  * task has no worktree yet. Rewritten on every call, so a rename or a new
  * parent shows up the next time the editor opens (VS Code also reloads the
- * file while it is open).
+ * file while it is open). `worktreePath` covers a worktree the renderer has
+ * in hand that the task row does not carry.
  */
-export async function writeTaskWorkspace(projectPath: string, taskNumber: number): Promise<string | null> {
-  const task = await getTaskByNumber(projectPath, taskNumber);
-  if (!task?.worktreePath) return null;
+export async function writeTaskWorkspace(
+  projectPath: string,
+  taskNumber: number,
+  worktreePath?: string,
+): Promise<string | null> {
+  try {
+    const task = await getTaskByNumber(projectPath, taskNumber);
+    const folder = task?.worktreePath ?? worktreePath;
+    if (!task || !folder) {
+      workspaceLog.warn('no worktree for workspace file', { projectPath, taskNumber });
+      return null;
+    }
 
-  const tasks = await getProjectTasks(projectPath);
-  const chain = buildChainMap(tasks).get(taskNumber);
-  const color = chain ? getChainHex(chain.rootTaskNumber, chain.depth) : getChainHex(taskNumber, 0);
+    const tasks = await getProjectTasks(projectPath);
+    const chain = buildChainMap(tasks).get(taskNumber);
+    const color = chain ? getChainHex(chain.rootTaskNumber, chain.depth) : getChainHex(taskNumber, 0);
 
-  const dir = taskWorkspaceDir(path.basename(projectPath));
-  await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${generateBranchName(task.name, taskNumber)}.code-workspace`);
-  const workspace = buildTaskWorkspace({ taskNumber, name: task.name, worktreePath: task.worktreePath, color });
-  await fs.writeFile(file, JSON.stringify(workspace, null, 2) + '\n');
-  return file;
+    const dir = taskWorkspaceDir(path.basename(projectPath));
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `${generateBranchName(task.name, taskNumber)}.code-workspace`);
+    const workspace = buildTaskWorkspace({ taskNumber, name: task.name, worktreePath: folder, color });
+    await fs.writeFile(file, JSON.stringify(workspace, null, 2) + '\n');
+    workspaceLog.info('wrote workspace file', { file });
+    return file;
+  } catch (error) {
+    workspaceLog.error('failed to write workspace file', {
+      projectPath,
+      taskNumber,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }

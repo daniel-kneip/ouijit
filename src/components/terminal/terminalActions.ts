@@ -717,7 +717,7 @@ export async function openWorktreeEditor(
   taskId: number | undefined,
   command: string,
 ): Promise<void> {
-  const workspaceFile = taskId != null ? await window.api.task.workspaceFile(projectPath, taskId) : null;
+  const workspaceFile = taskId != null ? await window.api.task.workspaceFile(projectPath, taskId, worktree.path) : null;
   await addProjectTerminal(
     projectPath,
     {
