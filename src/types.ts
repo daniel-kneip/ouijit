@@ -230,6 +230,32 @@ export interface ScriptHook {
   description?: string;
   /** Restart the command if an instance is already running in the same task (run hook only). */
   restartIfRunning?: boolean;
+  /** Where a resolved hook came from: the project's own row, or the harness the project uses. */
+  source?: 'project' | 'harness';
+}
+
+/** A named set of hooks kept outside any project; a project picks one and can override single hooks. */
+export interface Harness {
+  id: string;
+  name: string;
+  hooks: {
+    start?: ScriptHook;
+    continue?: ScriptHook;
+    run?: ScriptHook;
+    review?: ScriptHook;
+    done?: ScriptHook;
+    editor?: ScriptHook;
+  };
+}
+
+export interface HarnessAPI {
+  list(): Promise<Harness[]>;
+  create(name: string): Promise<Harness>;
+  rename(id: string, name: string): Promise<{ success: boolean }>;
+  delete(id: string): Promise<{ success: boolean }>;
+  saveHook(id: string, hook: ScriptHook): Promise<{ success: boolean }>;
+  deleteHook(id: string, hookType: HookType): Promise<{ success: boolean }>;
+  setForProject(projectPath: string, harnessId: string | null): Promise<{ success: boolean }>;
 }
 
 export interface Script {
@@ -452,6 +478,8 @@ export interface Project {
   path: string;
   /** Custom icon color override; when unset the color is generated from the name. */
   iconColor?: string;
+  /** The harness whose hooks fill in what the project's own hooks leave unset. */
+  harnessId?: string;
 }
 
 /**
@@ -584,6 +612,7 @@ export interface ElectronAPI {
     }) => void,
   ): () => void;
   hooks: HooksAPI;
+  harness: HarnessAPI;
   tags: TagsAPI;
   scripts: ScriptsAPI;
   /** CLI agent hook events (claude/codex/pi/opencode) */

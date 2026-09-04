@@ -14,6 +14,7 @@ export interface ProjectRow {
   added_at: string;
   icon_color: string | null;
   sort_order: number;
+  harness_id: string | null;
 }
 
 export class ProjectRepo {
@@ -66,6 +67,10 @@ export class ProjectRepo {
   /** Set a custom icon color, or pass null to fall back to the generated color. */
   setIconColor(path: string, color: string | null): void {
     this.db.prepare('UPDATE projects SET icon_color = ? WHERE path = ?').run(color, path);
+  }
+
+  setHarness(path: string, harnessId: string | null): void {
+    this.db.prepare('UPDATE projects SET harness_id = ? WHERE path = ?').run(harnessId, path);
   }
 
   reorder(paths: string[]): void {

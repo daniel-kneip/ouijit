@@ -7,6 +7,7 @@
 
 import type {
   Project,
+  Harness,
   EditorOpenResult,
   PtySpawnOptions,
   PtySpawnResult,
@@ -225,6 +226,13 @@ export interface IpcInvokeContract {
   'hooks:get-status': { args: [ptyId: string]; return: HookStatusEntry | null };
   'hooks:save': { args: [projectPath: string, hook: ScriptHook]; return: { success: boolean } };
   'hooks:delete': { args: [projectPath: string, hookType: HookType]; return: { success: boolean } };
+  'harness:list': { args: []; return: Harness[] };
+  'harness:create': { args: [name: string]; return: Harness };
+  'harness:rename': { args: [id: string, name: string]; return: { success: boolean } };
+  'harness:delete': { args: [id: string]; return: { success: boolean } };
+  'harness:save-hook': { args: [id: string, hook: ScriptHook]; return: { success: boolean } };
+  'harness:delete-hook': { args: [id: string, hookType: HookType]; return: { success: boolean } };
+  'harness:set-for-project': { args: [projectPath: string, harnessId: string | null]; return: { success: boolean } };
 
   // ── Plan ─────────────────────────────────────────────────────────────
   'plan:read': { args: [planPath: string]; return: string | null };

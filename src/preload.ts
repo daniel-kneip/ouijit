@@ -188,6 +188,16 @@ contextBridge.exposeInMainWorld('api', {
     save: (projectPath: string, hook: ScriptHook) => typedInvoke('hooks:save', projectPath, hook),
     delete: (projectPath: string, hookType: HookType) => typedInvoke('hooks:delete', projectPath, hookType),
   },
+  harness: {
+    list: () => typedInvoke('harness:list'),
+    create: (name: string) => typedInvoke('harness:create', name),
+    rename: (id: string, name: string) => typedInvoke('harness:rename', id, name),
+    delete: (id: string) => typedInvoke('harness:delete', id),
+    saveHook: (id: string, hook: ScriptHook) => typedInvoke('harness:save-hook', id, hook),
+    deleteHook: (id: string, hookType: HookType) => typedInvoke('harness:delete-hook', id, hookType),
+    setForProject: (projectPath: string, harnessId: string | null) =>
+      typedInvoke('harness:set-for-project', projectPath, harnessId),
+  },
 
   scripts: {
     getAll: (projectPath: string) => typedInvoke('scripts:get-all', projectPath),

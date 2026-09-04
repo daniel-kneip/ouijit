@@ -12,6 +12,7 @@ import { IconColorSection } from './IconColorSection';
 import { Icon } from '../terminal/Icon';
 import { LensList } from './LensList';
 import { LensAgentRow } from './LensAgentRow';
+import { HarnessPicker } from './HarnessPicker';
 import { useWorktreeSettingsStore } from '../../stores/worktreeSettingsStore';
 
 const LIFECYCLE_HOOKS: HookEntry[] = [
@@ -83,9 +84,13 @@ export function ProjectSettingsPanel({ projectPath }: ProjectSettingsPanelProps)
           <section>
             <h2 className="text-sm font-semibold text-text-primary mb-2">Lifecycle Hooks</h2>
             <p className="text-xs text-text-tertiary mb-4">
-              Commands that run automatically during the task lifecycle.
+              Commands that run automatically during the task lifecycle. A harness supplies the ones this project does
+              not set itself.
             </p>
-            <HookList projectPath={projectPath} hooks={LIFECYCLE_HOOKS} />
+            <div className="space-y-3">
+              <HarnessPicker projectPath={projectPath} />
+              <HookList projectPath={projectPath} hooks={LIFECYCLE_HOOKS} />
+            </div>
           </section>
           <section>
             <h2 className="text-sm font-semibold text-text-primary mb-2">Run Commands</h2>

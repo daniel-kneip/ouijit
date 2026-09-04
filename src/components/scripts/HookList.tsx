@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { HookType, ScriptHook } from '../../types';
+import type { Harness, HookType, ScriptHook } from '../../types';
 import { HookConfigDialog } from '../dialogs/HookConfigDialog';
 import { HookRowView } from './HookRowView';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAppStore } from '../../stores/appStore';
 
 export interface HookEntry {
   type: HookType;
@@ -20,6 +21,8 @@ interface HookListProps {
 export function HookList({ projectPath, hooks: hookEntries, bare }: HookListProps) {
   const [hooks, setHooks] = useState<Record<string, ScriptHook | undefined>>({});
   const [editingHook, setEditingHook] = useState<{ hookType: HookType; existing?: ScriptHook } | null>(null);
+  const harnessId = useAppStore((s) => s.projects.find((p) => p.path === projectPath)?.harnessId);
+  const [harness, setHarness] = useState<Harness | null>(null);
 
   const loadHooks = useCallback(() => {
     window.api.hooks.get(projectPath).then((h) => {
@@ -27,9 +30,16 @@ export function HookList({ projectPath, hooks: hookEntries, bare }: HookListProp
     });
   }, [projectPath]);
 
+  // The harness assignment lives on the project row, so a change to it is a
+  // change to which hooks resolve here.
   useEffect(() => {
     loadHooks();
-  }, [loadHooks]);
+    if (!harnessId) {
+      setHarness(null);
+      return;
+    }
+    void window.api.harness.list().then((all) => setHarness(all.find((h) => h.id === harnessId) ?? null));
+  }, [loadHooks, harnessId]);
 
   // The hook rows are local state (the store only tracks which types are
   // configured), so a `ouijit hook set` while this panel is open needs its own
@@ -55,12 +65,14 @@ export function HookList({ projectPath, hooks: hookEntries, bare }: HookListProp
 
   const rows = hookEntries.map(({ type, label, description }) => {
     const hook = hooks[type];
+    const inherited = hook?.source === 'harness';
     return (
       <HookRowView
         key={type}
         label={label}
-        description={description}
+        description={inherited && harness ? `${description} · from ${harness.name}` : description}
         command={hook?.command}
+        actionLabel={inherited ? 'Override' : undefined}
         onAction={() => setEditingHook({ hookType: type, existing: hook })}
       />
     );
@@ -85,6 +97,7 @@ export function HookList({ projectPath, hooks: hookEntries, bare }: HookListProp
           projectPath={projectPath}
           hookType={editingHook.hookType}
           existingHook={editingHook.existing}
+          inheritedFrom={editingHook.existing?.source === 'harness' ? harness?.name : undefined}
           onClose={handleDialogClose}
         />
       )}

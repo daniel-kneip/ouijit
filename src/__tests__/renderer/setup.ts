@@ -128,6 +128,15 @@ const mockApi = {
     save: vi.fn().mockResolvedValue({ success: true }),
     delete: vi.fn().mockResolvedValue({ success: true }),
   },
+  harness: {
+    list: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue({ id: 'h1', name: 'Harness', hooks: {} }),
+    rename: vi.fn().mockResolvedValue({ success: true }),
+    delete: vi.fn().mockResolvedValue({ success: true }),
+    saveHook: vi.fn().mockResolvedValue({ success: true }),
+    deleteHook: vi.fn().mockResolvedValue({ success: true }),
+    setForProject: vi.fn().mockResolvedValue({ success: true }),
+  },
   scripts: {
     getAll: vi.fn().mockResolvedValue([]),
     save: vi.fn().mockResolvedValue({ success: true }),

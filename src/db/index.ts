@@ -10,7 +10,8 @@ import * as path from 'node:path';
 import { getDatabase, _initTestDatabase } from './database';
 import { ProjectRepo } from './repos/projectRepo';
 import { TaskRepo, type TaskStatus, type TaskRow } from './repos/taskRepo';
-import { HookRepo, type HookType } from './repos/hookRepo';
+import { HookRepo, type HookType, type HookRow } from './repos/hookRepo';
+import { HarnessRepo, type HarnessHookRow } from './repos/harnessRepo';
 import { TagRepo, type TagRow } from './repos/tagRepo';
 import { GlobalSettingsRepo } from './repos/globalSettingsRepo';
 import { ScriptRepo, type ScriptRow } from './repos/scriptRepo';
@@ -18,7 +19,7 @@ import { ReviewDraftRepo, type ReviewDraftRow } from './repos/reviewDraftRepo';
 import { DiffLensRepo, type DiffLensRow } from './repos/diffLensRepo';
 import { worktreeKeyPrefix } from '../lens/subjectKeys';
 import { DiffNoteRepo, type DiffNoteRow } from './repos/diffNoteRepo';
-import type { ProjectSettings, ScriptHook } from '../types';
+import type { Harness, ProjectSettings, ScriptHook } from '../types';
 import { getLogger } from '../logger';
 
 const dbLog = getLogger().scope('db');
@@ -55,6 +56,7 @@ let scriptRepo: ScriptRepo | null = null;
 let reviewDraftRepo: ReviewDraftRepo | null = null;
 let diffLensRepo: DiffLensRepo | null = null;
 let diffNoteRepo: DiffNoteRepo | null = null;
+let harnessRepo: HarnessRepo | null = null;
 
 function repos() {
   if (!taskRepo) {
@@ -68,6 +70,7 @@ function repos() {
     reviewDraftRepo = new ReviewDraftRepo(db);
     diffLensRepo = new DiffLensRepo(db);
     diffNoteRepo = new DiffNoteRepo(db);
+    harnessRepo = new HarnessRepo(db);
   }
   return {
     projectRepo: projectRepo!,
@@ -79,6 +82,7 @@ function repos() {
     reviewDraftRepo: reviewDraftRepo!,
     diffLensRepo: diffLensRepo!,
     diffNoteRepo: diffNoteRepo!,
+    harnessRepo: harnessRepo!,
   };
 }
 
@@ -95,6 +99,7 @@ export function _resetCacheForTesting(): void {
   reviewDraftRepo = new ReviewDraftRepo(db);
   diffLensRepo = new DiffLensRepo(db);
   diffNoteRepo = new DiffNoteRepo(db);
+  harnessRepo = new HarnessRepo(db);
 }
 
 // ── Row → TaskMetadata conversion ────────────────────────────────────
@@ -523,26 +528,85 @@ export async function reorderTask(
 
 // ── Project settings functions (match projectSettings.ts signatures) ─
 
-export async function getProjectSettings(projectPath: string): Promise<ProjectSettings> {
-  const { hookRepo: hr } = repos();
-  const hookRows = hr.getForProject(projectPath);
+function rowToHook(row: HookRow | HarnessHookRow, source: 'project' | 'harness'): ScriptHook {
+  return {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    command: row.command,
+    restartIfRunning: row.restart_if_running === 1,
+    source,
+    ...(row.description && { description: row.description }),
+  };
+}
 
-  const hooks: ProjectSettings['hooks'] = {};
-  for (const row of hookRows) {
-    hooks[row.type as keyof typeof hooks] = {
-      id: row.id,
-      type: row.type,
-      name: row.name,
-      command: row.command,
-      restartIfRunning: row.restart_if_running === 1,
-      ...(row.description && { description: row.description }),
-    } as ScriptHook;
+/** The project's hooks, with the harness filling every type the project left unset. */
+export async function getProjectSettings(projectPath: string): Promise<ProjectSettings> {
+  const { hookRepo: hr, projectRepo: pr, harnessRepo: har } = repos();
+
+  const hooks: NonNullable<ProjectSettings['hooks']> = {};
+  const harnessId = pr.getByPath(projectPath)?.harness_id;
+  if (harnessId) {
+    for (const row of har.getHooks(harnessId)) hooks[row.type] = rowToHook(row, 'harness');
   }
+  for (const row of hr.getForProject(projectPath)) hooks[row.type] = rowToHook(row, 'project');
 
   return {
     customCommands: [],
     hooks,
   };
+}
+
+// ── Harnesses ────────────────────────────────────────────────────────
+
+function harnessWithHooks(row: { id: string; name: string }): Harness {
+  const { harnessRepo: har } = repos();
+  const hooks: Harness['hooks'] = {};
+  for (const hook of har.getHooks(row.id)) hooks[hook.type] = rowToHook(hook, 'harness');
+  return { id: row.id, name: row.name, hooks };
+}
+
+export async function getHarnesses(): Promise<Harness[]> {
+  const { harnessRepo: har } = repos();
+  return har.getAll().map(harnessWithHooks);
+}
+
+export async function createHarness(name: string): Promise<Harness> {
+  const { harnessRepo: har } = repos();
+  return harnessWithHooks(har.create(name));
+}
+
+export async function renameHarness(id: string, name: string): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  har.rename(id, name);
+  return { success: true };
+}
+
+export async function deleteHarness(id: string): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  har.delete(id);
+  return { success: true };
+}
+
+export async function saveHarnessHook(harnessId: string, hook: ScriptHook): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  if (!har.get(harnessId)) return { success: false };
+  har.saveHook(harnessId, hook.type, hook.name, hook.command, hook.id, hook.description, hook.restartIfRunning);
+  return { success: true };
+}
+
+export async function deleteHarnessHook(harnessId: string, hookType: HookType): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  har.deleteHook(harnessId, hookType);
+  return { success: true };
+}
+
+export async function setProjectHarness(projectPath: string, harnessId: string | null): Promise<{ success: boolean }> {
+  const { projectRepo: pr, harnessRepo: har } = repos();
+  if (harnessId && !har.get(harnessId)) return { success: false };
+  ensureProject(projectPath);
+  pr.setHarness(projectPath, harnessId);
+  return { success: true };
 }
 
 export async function getHooks(projectPath: string): Promise<{
