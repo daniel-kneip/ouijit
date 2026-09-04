@@ -13,6 +13,8 @@ import {
 import { ResizeHandle } from '../common/ResizeHandle';
 import type { TerminalDisplayState } from '../../stores/terminalDisplay';
 import {
+  districtCorners,
+  isoDelta,
   loadPersistedCityMap,
   persistCityMap,
   pointInDistrict,
@@ -526,7 +528,7 @@ function useMapSurface(input: MapSurfaceInput) {
         const to = byNumber.get(road.to);
         if (!from || !to) return;
         const touches = selectedTask != null && (road.from === selectedTask || road.to === selectedTask);
-        drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches);
+        drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches, `#${road.to}`);
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
       for (const city of ordered) {
@@ -623,11 +625,8 @@ function useMapSurface(input: MapSurfaceInput) {
       const grab = 10 / camera.current.zoom;
       for (const district of [...currentDistricts].reverse()) {
         const selected = sel?.type === 'district' && sel.id === district.id;
-        if (
-          selected &&
-          Math.abs(w.x - (district.x + district.w)) < grab &&
-          Math.abs(w.y - (district.y + district.h)) < grab
-        ) {
+        const bottom = districtCorners(district)[2];
+        if (selected && Math.abs(w.x - bottom.x) < grab && Math.abs(w.y - bottom.y) < grab) {
           return { type: 'districtCorner', district };
         }
         if (pointInDistrict(district, w)) return { type: 'district', district };
@@ -816,7 +815,7 @@ function useMapSurface(input: MapSurfaceInput) {
     const move = (e: PointerEvent) => {
       if (!pointer) {
         const h = hit(e.offsetX, e.offsetY);
-        canvas.style.cursor = h?.type === 'districtCorner' ? 'nwse-resize' : h ? 'pointer' : 'grab';
+        canvas.style.cursor = h?.type === 'districtCorner' ? 'ns-resize' : h ? 'pointer' : 'grab';
         return;
       }
       const dx = e.offsetX - pointer.x;
@@ -844,9 +843,10 @@ function useMapSurface(input: MapSurfaceInput) {
         );
         pointer.last = next;
       } else if (pointer.hit?.type === 'districtCorner' && pointer.size) {
+        const { s: alongW, t: alongH } = isoDelta(total.x, total.y);
         map.updateDistrict(projectPath, pointer.hit.district.id, {
-          w: pointer.size.x + total.x,
-          h: pointer.size.y + total.y,
+          w: pointer.size.x + alongW,
+          h: pointer.size.y + alongH,
         });
       } else {
         camera.current = { ...camera.current, x: camera.current.x - dx / zoom, y: camera.current.y - dy / zoom };
@@ -944,7 +944,7 @@ function useMapSurface(input: MapSurfaceInput) {
     const nodes: React.ReactNode[] = [];
     const selectedTask = selectedTaskNumber(selection);
     for (const district of districts) {
-      const p = toScreen({ x: district.x, y: district.y });
+      const p = toScreen(districtCorners(district)[0]);
       const selected = selection?.type === 'district' && selection.id === district.id;
       const count = citiesInside(district, cities).length;
       nodes.push(
@@ -952,10 +952,10 @@ function useMapSurface(input: MapSurfaceInput) {
           key={`district-${district.id}`}
           type="button"
           data-testid={`district-label-${district.id}`}
-          className={`pointer-events-auto absolute flex items-center gap-2 px-2.5 py-1 rounded-md border text-[11px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap ${selected ? 'border-accent' : 'border-transparent'}`}
+          className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-full flex items-center gap-2 px-2.5 py-1 rounded-md border text-[11px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap ${selected ? 'border-accent' : 'border-transparent'}`}
           style={{
-            left: p.x + 10,
-            top: p.y + 8,
+            left: p.x,
+            top: p.y - 6,
             background: 'var(--color-surface-raised)',
             color: districtColor(district.hue, 1, false),
           }}
@@ -1616,7 +1616,7 @@ function DistrictInspector({
           ))}
         </div>
         <p className="text-[11px] text-text-tertiary leading-snug">
-          Drag the district to move it with its cities; drag the corner to resize it.
+          Drag the district to move it with its cities; drag its bottom corner to resize it.
         </p>
       </div>
       <div className="p-4 flex flex-col gap-1.5 max-h-64 overflow-y-auto">

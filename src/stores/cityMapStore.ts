@@ -23,7 +23,11 @@ export interface Road {
   to: number;
 }
 
-/** A named area of the map; cities inside it move with it. */
+/**
+ * A named area of the map; cities inside it move with it. It lies on the
+ * cities' own axes: `x`,`y` is the top corner, `w` runs down-right along
+ * (1, ½) and `h` down-left along (−1, ½), so its edges follow the ground grid.
+ */
 export interface District {
   id: string;
   name: string;
@@ -46,18 +50,34 @@ export type CityMapSelection =
   | { type: 'site'; taskNumber: number; ptyId: string }
   | { type: 'district'; id: string };
 
-export const DISTRICT_MIN_W = 220;
+export const DISTRICT_MIN_W = 200;
 export const DISTRICT_MIN_H = 160;
-export const DISTRICT_DEFAULT_W = 720;
-export const DISTRICT_DEFAULT_H = 460;
+export const DISTRICT_DEFAULT_W = 600;
+export const DISTRICT_DEFAULT_H = 480;
 const DISTRICT_HUES = [210, 28, 150, 330, 90, 260, 45, 190];
 
 function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** A map offset as lengths along the two iso axes. */
+export function isoDelta(dx: number, dy: number): { s: number; t: number } {
+  return { s: (dx + 2 * dy) / 2, t: (2 * dy - dx) / 2 };
+}
+
 export function pointInDistrict(d: District, p: Point): boolean {
-  return p.x >= d.x && p.x <= d.x + d.w && p.y >= d.y && p.y <= d.y + d.h;
+  const { s, t } = isoDelta(p.x - d.x, p.y - d.y);
+  return s >= 0 && s <= d.w && t >= 0 && t <= d.h;
+}
+
+/** Top, right, bottom, left corners of the district's rhombus. */
+export function districtCorners(d: District): [Point, Point, Point, Point] {
+  return [
+    { x: d.x, y: d.y },
+    { x: d.x + d.w, y: d.y + d.w / 2 },
+    { x: d.x + d.w - d.h, y: d.y + (d.w + d.h) / 2 },
+    { x: d.x - d.h, y: d.y + d.h / 2 },
+  ];
 }
 
 interface CityMapStoreState {
@@ -188,8 +208,8 @@ export const useCityMapStore = create<CityMapStore>()((set, get) => {
       const district: District = {
         id: newId(),
         name: `District ${count + 1}`,
-        x: Math.round(center.x - DISTRICT_DEFAULT_W / 2),
-        y: Math.round(center.y - DISTRICT_DEFAULT_H / 2),
+        x: Math.round(center.x - (DISTRICT_DEFAULT_W - DISTRICT_DEFAULT_H) / 2),
+        y: Math.round(center.y - (DISTRICT_DEFAULT_W + DISTRICT_DEFAULT_H) / 4),
         w: DISTRICT_DEFAULT_W,
         h: DISTRICT_DEFAULT_H,
         hue: DISTRICT_HUES[count % DISTRICT_HUES.length],

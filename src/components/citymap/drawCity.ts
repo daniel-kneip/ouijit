@@ -623,12 +623,20 @@ export function districtColor(hue: number, alpha: number, night: boolean): strin
   return `hsla(${hue}, 55%, ${night ? 62 : 45}%, ${alpha})`;
 }
 
-export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: boolean, zoom: number): void {
-  const r = 18;
+function districtPath(ctx: Ctx, d: DrawDistrict): void {
   ctx.beginPath();
-  ctx.roundRect(d.x, d.y, d.w, d.h, r);
+  ctx.moveTo(d.x, d.y);
+  ctx.lineTo(d.x + d.w, d.y + d.w / 2);
+  ctx.lineTo(d.x + d.w - d.h, d.y + (d.w + d.h) / 2);
+  ctx.lineTo(d.x - d.h, d.y + d.h / 2);
+  ctx.closePath();
+}
+
+export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: boolean, zoom: number): void {
+  districtPath(ctx, d);
   ctx.fillStyle = districtColor(d.hue, t.night ? 0.16 : 0.13, t.night);
   ctx.fill();
+  ctx.lineJoin = 'round';
   ctx.lineWidth = (selected ? 2.5 : 1.5) / zoom;
   ctx.strokeStyle = selected ? t.accent : districtColor(d.hue, 0.7, t.night);
   ctx.setLineDash(selected ? [] : [10, 8]);
@@ -636,9 +644,11 @@ export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: 
   ctx.setLineDash([]);
   if (selected) {
     const size = 12 / zoom;
+    const bx = d.x + d.w - d.h;
+    const by = d.y + (d.w + d.h) / 2;
     ctx.fillStyle = t.accent;
     ctx.beginPath();
-    ctx.roundRect(d.x + d.w - size / 2, d.y + d.h - size / 2, size, size, 3 / zoom);
+    ctx.roundRect(bx - size / 2, by - size / 2, size, size, 3 / zoom);
     ctx.fill();
   }
 }
@@ -669,6 +679,7 @@ export function drawRoad(
   animate: boolean,
   seed: number,
   highlighted: boolean,
+  destination: string,
 ): void {
   const a = cityEdgePoint(from, to);
   const b = cityEdgePoint(to, from);
@@ -695,7 +706,20 @@ export function drawRoad(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Direction arrows painted on the asphalt.
+  // Direction arrows painted on the asphalt, and a large one where the road arrives.
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.save();
+  ctx.translate(b.x - (dx / len) * 12, b.y - (dy / len) * 12);
+  ctx.rotate(angle);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(9, 0);
+  ctx.lineTo(-5, -6);
+  ctx.lineTo(-1, 0);
+  ctx.lineTo(-5, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   for (const f of [0.3, 0.7]) {
     const px = a.x + dx * f;
@@ -711,6 +735,14 @@ export function drawRoad(
     ctx.fill();
     ctx.restore();
   }
+
+  drawSignpost(
+    ctx,
+    a.x + (dx / len) * 26 - (dy / len) * 16,
+    a.y + (dy / len) * 26 + (dx / len) * 16,
+    angle,
+    destination,
+  );
 
   const cars = Math.max(1, Math.min(4, Math.floor(len / 200)));
   for (let k = 0; k < cars; k++) {
@@ -737,6 +769,58 @@ export function drawRoad(
     ctx.fillRect(5, 1, 1.5, 2);
     ctx.restore();
   }
+  ctx.restore();
+}
+
+/** A one-way sign beside the road's start: a white arrow the way traffic goes, the destination below. */
+function drawSignpost(ctx: Ctx, x: number, y: number, angle: number, destination: string): void {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 1, 5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#6b6f6a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y - 30);
+  ctx.stroke();
+
+  const cy = y - 38;
+  ctx.fillStyle = '#2f6fd6';
+  ctx.beginPath();
+  ctx.arc(x, cy, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(x, cy);
+  ctx.rotate(angle);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-5, 0);
+  ctx.lineTo(5, 0);
+  ctx.moveTo(1.5, -3.5);
+  ctx.lineTo(5, 0);
+  ctx.lineTo(1.5, 3.5);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#6b6f6a';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x - 13, cy + 11, 26, 10, 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#1f2a22';
+  ctx.font = 'bold 7px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(destination, x, cy + 16.5);
   ctx.restore();
 }
 

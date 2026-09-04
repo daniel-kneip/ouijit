@@ -33,11 +33,14 @@ puts that context first:
 - **Task chains are paths.** A child task's city is linked to its parent's by
   a dirt path, the same relation the canvas draws as chain edges.
 - **Roads are yours to draw.** "Road from here…" on a city, then a click on
-  the city it leads to, lays a one-way road with cars driving that way. A
+  the city it leads to, lays a one-way road: a signpost at the start with the
+  arrow the traffic takes and the destination's number, arrows on the
+  asphalt, a large one where it arrives, and cars driving that way. A
   dependency you want to see, not one the data knows. Remove it from either
   end's context menu.
 - **Districts group cities.** "New district here" on empty ground makes a
-  named, coloured area; drag it and the cities inside come along, drag its
+  named, coloured area laid on the cities' own axes, so it sits on the
+  ground grid; drag it and the cities inside come along, drag its bottom
   corner to resize. The city inspector says which district a city stands in.
 - **A sidebar lists cities by status** with the attention counts first (how
   many sites wait for the user, how many hit a problem) and a "Next" jump.
@@ -68,6 +71,7 @@ interface CityMapState {
     built: number[]; // slots whose session finished and closed
   }>;
   roads: { id: string; from: number; to: number }[];
+  // x,y is the top corner; w runs down-right along (1, ½), h down-left along (−1, ½)
   districts: { id: string; name: string; x: number; y: number; w: number; h: number; hue: number }[];
 }
 ```

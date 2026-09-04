@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import {
   DISTRICT_MIN_W,
+  districtCorners,
   normalizeProjectState,
   pointInDistrict,
   useCityMapStore,
@@ -39,6 +40,12 @@ describe('roads and districts on the map', () => {
     const district = store.addDistrict(project, inside);
     expect(district.name).toBe('District 1');
     expect(pointInDistrict(district, inside)).toBe(true);
+    // The rhombus lies on the cities' axes and is centred on the founding point.
+    const [top, right, bottom, left] = districtCorners(district);
+    expect(right.y - top.y).toBeCloseTo((right.x - top.x) / 2, 5);
+    expect(left.y - top.y).toBeCloseTo((top.x - left.x) / 2, 5);
+    expect((top.x + bottom.x) / 2).toBeCloseTo(inside.x, 0);
+    expect((top.y + bottom.y) / 2).toBeCloseTo(inside.y, 0);
     const outside = useCityMapStore.getState().byProject[project].cities[2].pos;
     expect(pointInDistrict(district, outside)).toBe(false);
 
