@@ -218,4 +218,28 @@ describe('the city map', () => {
     // Other cities stay put.
     expect(state.cities[9].pos).toEqual(otherPos);
   });
+
+  test('a saved map comes back with its cities, roads, districts and viewport', async () => {
+    const saved = {
+      viewport: { x: 100, y: 0, zoom: 1 },
+      cities: {
+        7: { pos: { x: 0, y: 0 }, lots: {}, built: [] },
+        9: { pos: { x: 600, y: 300 }, lots: {}, built: [] },
+      },
+      roads: [{ id: 'r1', from: 7, to: 9 }],
+      districts: [{ id: 'd1', name: 'Payments', x: -400, y: -300, w: 800, h: 600, hue: 28 }],
+    };
+    vi.mocked(window.api.globalSettings.get).mockImplementation(async (key: string) =>
+      key === 'citymap:/work/alpha' ? JSON.stringify(saved) : undefined,
+    );
+
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('district-label-d1');
+    const state = useCityMapStore.getState().byProject[project.path];
+    expect(state.cities[9].pos).toEqual({ x: 600, y: 300 });
+    expect(state.roads).toEqual(saved.roads);
+    expect(screen.getByTestId('district-label-d1').textContent).toContain('Payments');
+    // The camera is the saved one: with a 0×0 canvas, screen x = (world x − camera x) · zoom.
+    await waitFor(() => expect(screen.getByTestId('city-label-7').style.left).toBe('-100px'));
+  });
 });

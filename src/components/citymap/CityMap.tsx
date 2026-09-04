@@ -238,6 +238,7 @@ export function CityMap({ projectPath }: CityMapProps) {
 
   const surface = useMapSurface({
     projectPath,
+    ready,
     cities,
     roads,
     districts,
@@ -361,6 +362,8 @@ export function CityMap({ projectPath }: CityMapProps) {
 
 interface MapSurfaceInput {
   projectPath: string;
+  /** Whether the persisted state has been loaded; the viewport is adopted only from that. */
+  ready: boolean;
   cities: CityModel[];
   roads: Road[];
   districts: District[];
@@ -379,7 +382,7 @@ type Hit =
   | null;
 
 function useMapSurface(input: MapSurfaceInput) {
-  const { projectPath, cities, roads, districts, selection, viewport, select, openTerminal } = input;
+  const { projectPath, ready, cities, roads, districts, selection, viewport, select, openTerminal } = input;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
@@ -397,15 +400,16 @@ function useMapSurface(input: MapSurfaceInput) {
   linkingRef.current = linking;
   const themeEpoch = useThemeEpoch();
 
-  // The persisted viewport arrives after mount; adopt it once per project.
+  // The persisted viewport arrives after mount, behind the project's default
+  // one; adopt it once per project, and only once it has actually loaded.
   const adopted = useRef<string | null>(null);
   useEffect(() => {
-    if (!viewport || adopted.current === projectPath) return;
+    if (!ready || !viewport || adopted.current === projectPath) return;
     adopted.current = projectPath;
     camera.current = { ...viewport };
     dirty.current = true;
     bump();
-  }, [viewport, projectPath]);
+  }, [ready, viewport, projectPath]);
 
   useEffect(() => {
     if (probeRef.current) tokens.current = resolveTokens(probeRef.current);

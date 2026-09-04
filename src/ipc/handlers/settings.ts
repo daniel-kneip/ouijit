@@ -10,6 +10,7 @@ export function isAllowedKey(key: string): boolean {
     key === 'disableReadyAudio' ||
     key === 'hasSeenWelcome' ||
     key.startsWith('canvas:') ||
+    key.startsWith('citymap:') ||
     key.startsWith('experimental:') ||
     key.startsWith('terminal:') ||
     key.startsWith('lastSession:') ||
