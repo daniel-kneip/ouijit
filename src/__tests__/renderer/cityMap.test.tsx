@@ -101,6 +101,10 @@ describe('the city map', () => {
     const positions = Object.values(cities).map((c) => `${c.pos.x},${c.pos.y}`);
     expect(new Set(positions).size).toBe(4);
 
+    // A site that needs the user is called out on the city's label.
+    expect(screen.getByTestId('city-alert-waiting').textContent).toBe('1');
+    expect(screen.queryByTestId('city-alert-error')).toBeNull();
+
     // The city's inspector shows the ticket and its sites.
     fireEvent.click(screen.getByTestId('city-row-7'));
     const inspector = await screen.findByTestId('city-inspector');
@@ -174,5 +178,44 @@ describe('the city map', () => {
         .at(-1);
       expect(JSON.parse(saved![1] as string).cities[7].pos).toEqual(moved);
     });
+  });
+
+  test('a district names an area and takes its cities along when dragged', async () => {
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('city-row-7');
+    await waitFor(() => expect(useCityMapStore.getState().byProject[project.path]?.cities[7]).toBeDefined());
+    const cityPos = useCityMapStore.getState().byProject[project.path].cities[7].pos;
+    const district = useCityMapStore.getState().addDistrict(project.path, cityPos);
+    useCityMapStore.getState().setSelection(project.path, { type: 'district', id: district.id });
+
+    const inspector = await screen.findByTestId('district-inspector');
+    expect((within(inspector).getByLabelText('District name') as HTMLInputElement).value).toBe('District 1');
+    expect(inspector.textContent).toContain('Cities inside 1');
+    fireEvent.change(within(inspector).getByLabelText('District name'), { target: { value: 'Payments' } });
+    fireEvent.blur(within(inspector).getByLabelText('District name'));
+    expect(screen.getByTestId(`district-label-${district.id}`).textContent).toContain('Payments');
+
+    // Grab the district beside the city (the canvas is 0×0, so screen is the camera centre) and drag.
+    const canvas = screen.getByLabelText('Map of tasks as cities');
+    const zoom = useCityMapStore.getState().byProject[project.path].viewport.zoom;
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0 });
+      Object.defineProperty(event, 'offsetX', { value: x });
+      Object.defineProperty(event, 'offsetY', { value: y });
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      canvas.dispatchEvent(event);
+    };
+    const otherPos = useCityMapStore.getState().byProject[project.path].cities[9].pos;
+    const grabX = (cityPos.x + 300) * zoom;
+    pointer('pointerdown', grabX, 0);
+    pointer('pointermove', grabX + 45, 0);
+    pointer('pointermove', grabX + 90, 0);
+    pointer('pointerup', grabX + 90, 0);
+
+    const state = useCityMapStore.getState().byProject[project.path];
+    expect(state.districts[0].x).toBeCloseTo(district.x + 90 / zoom, 5);
+    expect(state.cities[7].pos.x).toBeCloseTo(cityPos.x + 90 / zoom, 5);
+    // Other cities stay put.
+    expect(state.cities[9].pos).toEqual(otherPos);
   });
 });

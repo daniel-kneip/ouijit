@@ -30,8 +30,15 @@ puts that context first:
   and the sidebar swatch use the same hue the board badge and the terminal
   header show, and the same hex the VS Code workspace file paints its title
   bar with. A child task darkens its parent's hue, as chain badges do.
-- **Task chains are roads.** A child task's city is linked to its parent's by
-  a path, the same relation the canvas draws as chain edges.
+- **Task chains are paths.** A child task's city is linked to its parent's by
+  a dirt path, the same relation the canvas draws as chain edges.
+- **Roads are yours to draw.** "Road from here…" on a city, then a click on
+  the city it leads to, lays a one-way road with cars driving that way. A
+  dependency you want to see, not one the data knows. Remove it from either
+  end's context menu.
+- **Districts group cities.** "New district here" on empty ground makes a
+  named, coloured area; drag it and the cities inside come along, drag its
+  corner to resize. The city inspector says which district a city stands in.
 - **A sidebar lists cities by status** with the attention counts first (how
   many sites wait for the user, how many hit a problem) and a "Next" jump.
 
@@ -48,7 +55,7 @@ already hold:
 | Site name              | `display.label`, falling back to `lastOscTitle`; rename via the existing `pty.setLabel`          |
 | Site state             | `summaryType` + `hookStatus` + `exited`: thinking → working, ready → waiting, error, success     |
 | Road                   | `parentTaskNumber`                                                                               |
-| Positions and lots     | New per-project blob, stored the way `canvasStore` stores `canvas:<projectPath>`                 |
+| Positions, lots, roads, districts | New per-project blob, stored the way `canvasStore` stores `canvas:<projectPath>`      |
 
 Persisted per project (`citymap:<projectPath>` in global settings):
 
@@ -60,6 +67,8 @@ interface CityMapState {
     lots: Record<string /* ptyId */, number /* slot */>;
     built: number[]; // slots whose session finished and closed
   }>;
+  roads: { id: string; from: number; to: number }[];
+  districts: { id: string; name: string; x: number; y: number; w: number; h: number; hue: number }[];
 }
 ```
 

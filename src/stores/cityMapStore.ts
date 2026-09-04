@@ -16,14 +16,49 @@ export interface CityMapViewport {
   zoom: number;
 }
 
+/** A one-way road the user drew between two cities. */
+export interface Road {
+  id: string;
+  from: number;
+  to: number;
+}
+
+/** A named area of the map; cities inside it move with it. */
+export interface District {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hue: number;
+}
+
 export interface CityMapProjectState {
   cities: Record<number, CityPlot>;
   viewport: CityMapViewport;
+  roads: Road[];
+  districts: District[];
 }
 
 export type CityMapSelection =
   | { type: 'city'; taskNumber: number }
-  | { type: 'site'; taskNumber: number; ptyId: string };
+  | { type: 'site'; taskNumber: number; ptyId: string }
+  | { type: 'district'; id: string };
+
+export const DISTRICT_MIN_W = 220;
+export const DISTRICT_MIN_H = 160;
+export const DISTRICT_DEFAULT_W = 720;
+export const DISTRICT_DEFAULT_H = 460;
+const DISTRICT_HUES = [210, 28, 150, 330, 90, 260, 45, 190];
+
+function newId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function pointInDistrict(d: District, p: Point): boolean {
+  return p.x >= d.x && p.x <= d.x + d.w && p.y >= d.y && p.y <= d.y + d.h;
+}
 
 interface CityMapStoreState {
   byProject: Record<string, CityMapProjectState>;
@@ -33,6 +68,13 @@ interface CityMapStoreState {
 }
 
 interface CityMapStoreActions {
+  addRoad: (projectPath: string, from: number, to: number) => void;
+  removeRoad: (projectPath: string, id: string) => void;
+  addDistrict: (projectPath: string, center: Point) => District;
+  updateDistrict: (projectPath: string, id: string, patch: Partial<Omit<District, 'id'>>) => void;
+  /** Moves the district and the cities it holds by the same delta. */
+  moveDistrict: (projectPath: string, id: string, delta: Point, taskNumbers: number[]) => void;
+  removeDistrict: (projectPath: string, id: string) => void;
   ensureProject: (projectPath: string) => void;
   loadProject: (projectPath: string, state: CityMapProjectState) => void;
   ensureCity: (projectPath: string, taskNumber: number) => CityPlot;
@@ -47,7 +89,18 @@ interface CityMapStoreActions {
 type CityMapStore = CityMapStoreState & CityMapStoreActions;
 
 function emptyProjectState(): CityMapProjectState {
-  return { cities: {}, viewport: { x: 0, y: 0, zoom: 0.9 } };
+  return { cities: {}, viewport: { x: 0, y: 0, zoom: 0.9 }, roads: [], districts: [] };
+}
+
+/** A persisted state from before roads and districts existed still loads. */
+export function normalizeProjectState(parsed: Partial<CityMapProjectState>): CityMapProjectState | null {
+  if (!parsed.cities || !parsed.viewport) return null;
+  return {
+    cities: parsed.cities,
+    viewport: parsed.viewport,
+    roads: Array.isArray(parsed.roads) ? parsed.roads : [],
+    districts: Array.isArray(parsed.districts) ? parsed.districts : [],
+  };
 }
 
 export const useCityMapStore = create<CityMapStore>()((set, get) => {
@@ -118,6 +171,68 @@ export const useCityMapStore = create<CityMapStore>()((set, get) => {
       });
     },
 
+    addRoad: (projectPath, from, to) => {
+      if (from === to) return;
+      update(projectPath, (s) => {
+        if (s.roads.some((r) => r.from === from && r.to === to)) return s;
+        return { ...s, roads: [...s.roads, { id: newId(), from, to }] };
+      });
+    },
+
+    removeRoad: (projectPath, id) => {
+      update(projectPath, (s) => ({ ...s, roads: s.roads.filter((r) => r.id !== id) }));
+    },
+
+    addDistrict: (projectPath, center) => {
+      const count = get().byProject[projectPath]?.districts.length ?? 0;
+      const district: District = {
+        id: newId(),
+        name: `District ${count + 1}`,
+        x: Math.round(center.x - DISTRICT_DEFAULT_W / 2),
+        y: Math.round(center.y - DISTRICT_DEFAULT_H / 2),
+        w: DISTRICT_DEFAULT_W,
+        h: DISTRICT_DEFAULT_H,
+        hue: DISTRICT_HUES[count % DISTRICT_HUES.length],
+      };
+      update(projectPath, (s) => ({ ...s, districts: [...s.districts, district] }));
+      return district;
+    },
+
+    updateDistrict: (projectPath, id, patch) => {
+      update(projectPath, (s) => ({
+        ...s,
+        districts: s.districts.map((d) =>
+          d.id === id
+            ? {
+                ...d,
+                ...patch,
+                w: Math.max(DISTRICT_MIN_W, patch.w ?? d.w),
+                h: Math.max(DISTRICT_MIN_H, patch.h ?? d.h),
+              }
+            : d,
+        ),
+      }));
+    },
+
+    moveDistrict: (projectPath, id, delta, taskNumbers) => {
+      update(projectPath, (s) => {
+        const cities = { ...s.cities };
+        for (const n of taskNumbers) {
+          const city = cities[n];
+          if (city) cities[n] = { ...city, pos: { x: city.pos.x + delta.x, y: city.pos.y + delta.y } };
+        }
+        return {
+          ...s,
+          cities,
+          districts: s.districts.map((d) => (d.id === id ? { ...d, x: d.x + delta.x, y: d.y + delta.y } : d)),
+        };
+      });
+    },
+
+    removeDistrict: (projectPath, id) => {
+      update(projectPath, (s) => ({ ...s, districts: s.districts.filter((d) => d.id !== id) }));
+    },
+
     setOpenPty: (projectPath, ptyId) => {
       set({ openPtyId: { ...get().openPtyId, [projectPath]: ptyId } });
     },
@@ -146,9 +261,7 @@ export async function loadPersistedCityMap(projectPath: string): Promise<CityMap
   const json = await window.api.globalSettings.get(STORAGE_PREFIX + projectPath);
   if (!json) return null;
   try {
-    const parsed = JSON.parse(json) as Partial<CityMapProjectState>;
-    if (!parsed.cities || !parsed.viewport) return null;
-    return { cities: parsed.cities, viewport: parsed.viewport };
+    return normalizeProjectState(JSON.parse(json) as Partial<CityMapProjectState>);
   } catch {
     return null;
   }

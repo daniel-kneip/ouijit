@@ -9,6 +9,8 @@ interface ResizeHandleProps {
   /** Double-clicking the handle returns to this. Omitted, it does nothing. */
   defaultWidth?: number;
   label?: string;
+  /** Which edge of the sized pane the handle sits on; a pane to the right of its handle grows leftwards. */
+  edge?: 'end' | 'start';
 }
 
 const STEP = 16;
@@ -36,7 +38,9 @@ export function ResizeHandle({
   max = 500,
   defaultWidth,
   label = 'Resize',
+  edge = 'end',
 }: ResizeHandleProps) {
+  const sign = edge === 'end' ? 1 : -1;
   const onMouseDown = useCallback(
     (event: MouseEvent) => {
       event.preventDefault();
@@ -49,7 +53,8 @@ export function ResizeHandle({
       body.style.cursor = 'col-resize';
       body.style.userSelect = 'none';
 
-      const onMove = (move: globalThis.MouseEvent) => onWidth(clamp(startWidth + move.clientX - startX, min, max));
+      const onMove = (move: globalThis.MouseEvent) =>
+        onWidth(clamp(startWidth + sign * (move.clientX - startX), min, max));
       const onUp = () => {
         body.style.cursor = previousCursor;
         body.style.userSelect = previousSelect;
@@ -60,19 +65,19 @@ export function ResizeHandle({
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     },
-    [width, onWidth, min, max],
+    [width, onWidth, min, max, sign],
   );
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') onWidth(clamp(width - STEP, min, max));
-      else if (event.key === 'ArrowRight') onWidth(clamp(width + STEP, min, max));
+      if (event.key === 'ArrowLeft') onWidth(clamp(width - sign * STEP, min, max));
+      else if (event.key === 'ArrowRight') onWidth(clamp(width + sign * STEP, min, max));
       else if (event.key === 'Home') onWidth(min);
       else if (event.key === 'End') onWidth(max);
       else return;
       event.preventDefault();
     },
-    [width, onWidth, min, max],
+    [width, onWidth, min, max, sign],
   );
 
   return (

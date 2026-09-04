@@ -216,6 +216,20 @@ function drawSite(
     return;
   }
   const exited = site.state === 'exited';
+  const needsYou = site.state === 'waiting' || site.state === 'error';
+  if (needsYou) {
+    const pulse = animate ? 0.5 + 0.5 * Math.sin(time / 420) : 0.7;
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.18 + 0.14 * pulse;
+    diamond(ctx, cx, cy, TW * 1.9, TH * 1.9);
+    ctx.fill();
+    ctx.globalAlpha = 0.55 + 0.35 * pulse;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    diamond(ctx, cx, cy, TW * 1.45, TH * 1.45);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   ctx.fillStyle = tone('#e3d3a3', exited ? 0.2 : 1, t.night ? -18 : 0);
   diamond(ctx, cx, cy, TW * 0.92, TH * 0.92);
   ctx.fill();
@@ -316,6 +330,46 @@ function drawSite(
     ctx.fillRect(mastX - 1, by - 4, 2, 5);
     ctx.fillRect(mastX - 1, by + 2, 2, 2);
   }
+
+  if (needsYou) drawPin(ctx, mastX, topY - 16, col, site.state === 'waiting' ? '!' : '×', time, animate);
+}
+
+/** A marker that stands above everything on the lot, so it reads at any zoom the city itself reads at. */
+function drawPin(
+  ctx: Ctx,
+  x: number,
+  baseY: number,
+  color: string,
+  glyph: string,
+  time: number,
+  animate: boolean,
+): void {
+  const bob = animate ? Math.sin(time / 380) * 2 : 0;
+  const top = baseY - 34 + bob;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, baseY);
+  ctx.lineTo(x, top + 10);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(x, baseY + 1, 5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, top, 11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(glyph, x, top + 0.5);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
 }
 
 export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, animate: boolean): void {
@@ -524,6 +578,166 @@ export function drawPath(ctx: Ctx, t: MapTokens, from: Point, to: Point): void {
   ctx.setLineDash([]);
 }
 
-/** Grid size in map units the iso ground lines repeat at. */
-export const GRID = 44;
+/**
+ * Ground lines along the two cell edges (slopes of ±1/2), one per cell row, so
+ * a city's ground sits on the grid. Drawn in map space.
+ */
+export function drawGrid(
+  ctx: Ctx,
+  t: MapTokens,
+  visible: { x0: number; y0: number; x1: number; y1: number },
+  zoom: number,
+): void {
+  const step = 2 * TH;
+  if (step * zoom < 7) return;
+  ctx.strokeStyle = t.groundLine;
+  ctx.lineWidth = 1 / zoom;
+  ctx.beginPath();
+  for (const slope of [0.5, -0.5]) {
+    const cAt = (x: number, y: number) => y - slope * x;
+    const cs = [
+      cAt(visible.x0, visible.y0),
+      cAt(visible.x1, visible.y0),
+      cAt(visible.x0, visible.y1),
+      cAt(visible.x1, visible.y1),
+    ];
+    const c0 = Math.floor(Math.min(...cs) / step) * step;
+    const c1 = Math.ceil(Math.max(...cs) / step) * step;
+    for (let c = c0; c <= c1; c += step) {
+      ctx.moveTo(visible.x0, slope * visible.x0 + c);
+      ctx.lineTo(visible.x1, slope * visible.x1 + c);
+    }
+  }
+  ctx.stroke();
+}
+
+export interface DrawDistrict {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hue: number;
+}
+
+export function districtColor(hue: number, alpha: number, night: boolean): string {
+  return `hsla(${hue}, 55%, ${night ? 62 : 45}%, ${alpha})`;
+}
+
+export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: boolean, zoom: number): void {
+  const r = 18;
+  ctx.beginPath();
+  ctx.roundRect(d.x, d.y, d.w, d.h, r);
+  ctx.fillStyle = districtColor(d.hue, t.night ? 0.16 : 0.13, t.night);
+  ctx.fill();
+  ctx.lineWidth = (selected ? 2.5 : 1.5) / zoom;
+  ctx.strokeStyle = selected ? t.accent : districtColor(d.hue, 0.7, t.night);
+  ctx.setLineDash(selected ? [] : [10, 8]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (selected) {
+    const size = 12 / zoom;
+    ctx.fillStyle = t.accent;
+    ctx.beginPath();
+    ctx.roundRect(d.x + d.w - size / 2, d.y + d.h - size / 2, size, size, 3 / zoom);
+    ctx.fill();
+  }
+}
+
+/** Where a straight road leaves a city: on the edge of its ground diamond. */
+export function cityEdgePoint(center: Point, towards: Point): Point {
+  const dx = towards.x - center.x;
+  const dy = towards.y - center.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const reach = 1 / (Math.abs(ux) / CITY_HALF_W + Math.abs(uy) / CITY_HALF_H);
+  return { x: center.x + ux * reach * 1.04, y: center.y + uy * reach * 1.04 };
+}
+
+const CAR_COLOURS = ['#e0524d', '#3f7fd8', '#f2b134', '#3fa66b', '#f0f0f0', '#7a5cc9'];
+
+/**
+ * A one-way road from one city's edge to another's, with cars driving the
+ * way the arrows point. `seed` staggers the cars between roads.
+ */
+export function drawRoad(
+  ctx: Ctx,
+  t: MapTokens,
+  from: Point,
+  to: Point,
+  time: number,
+  animate: boolean,
+  seed: number,
+  highlighted: boolean,
+): void {
+  const a = cityEdgePoint(from, to);
+  const b = cityEdgePoint(to, from);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 20) return;
+  const angle = Math.atan2(dy, dx);
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = highlighted ? t.accent : t.night ? '#4b5450' : '#8d938c';
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.strokeStyle = t.night ? '#2f3633' : '#6f756f';
+  ctx.lineWidth = 9;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 8]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Direction arrows painted on the asphalt.
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  for (const f of [0.3, 0.7]) {
+    const px = a.x + dx * f;
+    const py = a.y + dy * f;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(5, 0);
+    ctx.lineTo(-3, -3.2);
+    ctx.lineTo(-3, 3.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const cars = Math.max(1, Math.min(4, Math.floor(len / 200)));
+  for (let k = 0; k < cars; k++) {
+    const phase = animate ? (time / (len * 14) + k / cars + seed * 0.37) % 1 : (k + 0.5) / cars;
+    const px = a.x + dx * phase;
+    const py = a.y + dy * phase;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.roundRect(-6, -2.5, 12, 6, 2);
+    ctx.fill();
+    ctx.fillStyle = CAR_COLOURS[(seed + k) % CAR_COLOURS.length];
+    ctx.beginPath();
+    ctx.roundRect(-6, -3.5, 12, 6, 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(-3, -2.5, 5, 4, 1);
+    ctx.fill();
+    ctx.fillStyle = '#fff6c2';
+    ctx.fillRect(5, -3, 1.5, 2);
+    ctx.fillRect(5, 1, 1.5, 2);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 export { N };

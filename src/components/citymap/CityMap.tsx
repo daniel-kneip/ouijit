@@ -6,17 +6,23 @@ import {
   CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
   CITY_MAP_SIDEBAR_MAX_WIDTH,
   CITY_MAP_SIDEBAR_MIN_WIDTH,
+  CITY_MAP_DRAWER_DEFAULT_WIDTH,
+  CITY_MAP_DRAWER_MAX_WIDTH,
+  CITY_MAP_DRAWER_MIN_WIDTH,
 } from '../../stores/uiStore';
 import { ResizeHandle } from '../common/ResizeHandle';
 import type { TerminalDisplayState } from '../../stores/terminalDisplay';
 import {
   loadPersistedCityMap,
   persistCityMap,
+  pointInDistrict,
   syncCityMapWithTerminals,
   useCityMapStore,
   type CityMapSelection,
   type CityMapViewport,
   type CityPlot,
+  type District,
+  type Road,
 } from '../../stores/cityMapStore';
 import type { SandboxProviderId, TaskStatus, TaskWithWorkspace } from '../../types';
 import { buildChainMap, getChainColor } from '../../utils/taskChain';
@@ -48,9 +54,12 @@ import {
   type SiteState,
 } from './cityGeometry';
 import {
-  GRID,
+  districtColor,
   drawCity,
+  drawDistrict,
+  drawGrid,
   drawPath,
+  drawRoad,
   drawSelectionRing,
   drawTerrain,
   withAlpha,
@@ -59,9 +68,12 @@ import {
 } from './drawCity';
 
 const EMPTY_IDS: string[] = [];
+const EMPTY_ROADS: Road[] = [];
+const EMPTY_DISTRICTS: District[] = [];
 const STATUS_ORDER: TaskStatus[] = ['in_progress', 'in_review', 'todo', 'done'];
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2.6;
+const DISTRICT_HUES = [210, 28, 150, 330, 90, 260, 45, 190];
 
 interface SiteModel {
   ptyId: string;
@@ -118,6 +130,14 @@ function resolveTokens(probe: HTMLElement): MapTokens {
 
 function siteLabel(display: TerminalDisplayState): string {
   return display.label || display.lastOscTitle || 'Shell';
+}
+
+function selectedTaskNumber(selection: CityMapSelection | null): number | null {
+  return selection && selection.type !== 'district' ? selection.taskNumber : null;
+}
+
+function citiesInside(district: District, cities: readonly CityModel[]): CityModel[] {
+  return cities.filter((c) => pointInDistrict(district, c.plot.pos));
 }
 
 interface CityMapProps {
@@ -186,6 +206,8 @@ export function CityMap({ projectPath }: CityMapProps) {
     }
     return result;
   }, [mapState, tasks, chainMap, displayStates]);
+  const roads = mapState?.roads ?? EMPTY_ROADS;
+  const districts = mapState?.districts ?? EMPTY_DISTRICTS;
 
   const looseTerminals = useMemo(
     () =>
@@ -214,24 +236,31 @@ export function CityMap({ projectPath }: CityMapProps) {
     [projectPath],
   );
 
-  const { canvasRef, containerRef, probeRef, labels, flyTo, onContextMenu, menu, closeMenu } = useMapSurface({
+  const surface = useMapSurface({
     projectPath,
     cities,
-    chainMap,
+    roads,
+    districts,
     selection,
     viewport: mapState?.viewport,
     select,
     openTerminal,
     availableSandboxProviders,
   });
+  const { canvasRef, containerRef, probeRef, labels, flyTo, onContextMenu, menu, closeMenu, linking, cancelLinking } =
+    surface;
 
-  const selectedCity = selection ? cities.find((c) => c.task.taskNumber === selection.taskNumber) : undefined;
+  const taskNumber = selectedTaskNumber(selection);
+  const selectedCity = taskNumber != null ? cities.find((c) => c.task.taskNumber === taskNumber) : undefined;
   const selectedSite =
     selection?.type === 'site' && selectedCity
       ? selectedCity.sites.find((s) => s.ptyId === selection.ptyId)
       : undefined;
+  const selectedDistrict = selection?.type === 'district' ? districts.find((d) => d.id === selection.id) : undefined;
+  const linkingCity = linking != null ? cities.find((c) => c.task.taskNumber === linking) : undefined;
 
   const sidebarWidth = useUIStore((s) => s.cityMapSidebarWidth);
+  const drawerWidth = useUIStore((s) => s.cityMapDrawerWidth);
 
   return (
     <div
@@ -246,14 +275,12 @@ export function CityMap({ projectPath }: CityMapProps) {
         looseTerminals={looseTerminals}
         onPick={(city) => {
           select({ type: 'city', taskNumber: city.task.taskNumber });
-          flyTo(city.plot.pos, Math.max(1.1, 0));
+          flyTo(city.plot.pos, 1.1);
         }}
         onPickSite={(city, site) => {
           select({ type: 'site', taskNumber: city.task.taskNumber, ptyId: site.ptyId });
-          const c = cellCenter(
-            cityLayout(city.task.taskNumber).slots[site.slot].i,
-            cityLayout(city.task.taskNumber).slots[site.slot].j,
-          );
+          const { slots } = cityLayout(city.task.taskNumber);
+          const c = cellCenter(slots[site.slot].i, slots[site.slot].j);
           flyTo({ x: city.plot.pos.x + c.x, y: city.plot.pos.y + c.y }, 1.5);
           openTerminal(site.ptyId);
         }}
@@ -274,11 +301,26 @@ export function CityMap({ projectPath }: CityMapProps) {
           aria-label="Map of tasks as cities"
         />
         <div className="absolute inset-0 pointer-events-none">{labels}</div>
+        {linkingCity && (
+          <div
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded-full border border-accent text-xs"
+            style={{ background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' }}
+            data-testid="road-hint"
+          >
+            <span className="text-text-primary">
+              Road from <strong>#{linkingCity.task.taskNumber}</strong>: click the city it leads to
+            </span>
+            <button type="button" className="text-text-tertiary hover:text-text-primary" onClick={cancelLinking}>
+              Cancel
+            </button>
+          </div>
+        )}
         {selectedCity && (
           <CityInspector
             projectPath={projectPath}
             city={selectedCity}
             site={selectedSite}
+            district={districts.find((d) => pointInDistrict(d, selectedCity.plot.pos))}
             onClose={() => select(null)}
             onSelectSite={(site) => {
               select({ type: 'site', taskNumber: selectedCity.task.taskNumber, ptyId: site.ptyId });
@@ -289,8 +331,25 @@ export function CityMap({ projectPath }: CityMapProps) {
             onContextMenu={onContextMenu}
           />
         )}
+        {selectedDistrict && (
+          <DistrictInspector
+            projectPath={projectPath}
+            district={selectedDistrict}
+            cities={citiesInside(selectedDistrict, cities)}
+            onClose={() => select(null)}
+            onPickCity={(city) => {
+              select({ type: 'city', taskNumber: city.task.taskNumber });
+              flyTo(city.plot.pos, 1.1);
+            }}
+          />
+        )}
         {openPtyId && displayStates[openPtyId] && (
-          <TerminalDrawer ptyId={openPtyId} projectPath={projectPath} onHide={() => openTerminal(null)} />
+          <TerminalDrawer
+            ptyId={openPtyId}
+            projectPath={projectPath}
+            width={drawerWidth}
+            onHide={() => openTerminal(null)}
+          />
         )}
         {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />}
       </div>
@@ -303,7 +362,8 @@ export function CityMap({ projectPath }: CityMapProps) {
 interface MapSurfaceInput {
   projectPath: string;
   cities: CityModel[];
-  chainMap: ReturnType<typeof buildChainMap>;
+  roads: Road[];
+  districts: District[];
   selection: CityMapSelection | null;
   viewport: CityMapViewport | undefined;
   select: (s: CityMapSelection | null) => void;
@@ -311,10 +371,15 @@ interface MapSurfaceInput {
   availableSandboxProviders: SandboxProviderId[];
 }
 
-type Hit = { type: 'city'; city: CityModel } | { type: 'site'; city: CityModel; site: SiteModel } | null;
+type Hit =
+  | { type: 'city'; city: CityModel }
+  | { type: 'site'; city: CityModel; site: SiteModel }
+  | { type: 'district'; district: District }
+  | { type: 'districtCorner'; district: District }
+  | null;
 
 function useMapSurface(input: MapSurfaceInput) {
-  const { projectPath, cities, selection, viewport, select, openTerminal } = input;
+  const { projectPath, cities, roads, districts, selection, viewport, select, openTerminal } = input;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
@@ -323,10 +388,13 @@ function useMapSurface(input: MapSurfaceInput) {
   const tokens = useRef<MapTokens | null>(null);
   const dirty = useRef(true);
   const tween = useRef<{ from: CityMapViewport; to: CityMapViewport; t0: number } | null>(null);
-  const model = useRef({ cities, selection });
-  model.current = { cities, selection };
+  const model = useRef({ cities, roads, districts, selection });
+  model.current = { cities, roads, districts, selection };
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuEntry[] } | null>(null);
+  const [linking, setLinking] = useState<number | null>(null);
+  const linkingRef = useRef<number | null>(null);
+  linkingRef.current = linking;
   const themeEpoch = useThemeEpoch();
 
   // The persisted viewport arrives after mount; adopt it once per project.
@@ -346,7 +414,16 @@ function useMapSurface(input: MapSurfaceInput) {
 
   useEffect(() => {
     dirty.current = true;
-  }, [cities, selection]);
+  }, [cities, roads, districts, selection]);
+
+  useEffect(() => {
+    if (linking == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLinking(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [linking]);
 
   const toScreen = useCallback((p: Point): Point => {
     const c = camera.current;
@@ -412,22 +489,9 @@ function useMapSurface(input: MapSurfaceInput) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = t.ground;
       ctx.fillRect(0, 0, w, h);
-      const g = GRID * cam.zoom;
-      if (g > 14) {
-        ctx.strokeStyle = t.groundLine;
-        ctx.lineWidth = 1;
-        const ox = (-cam.x * cam.zoom + w / 2) % g;
-        ctx.beginPath();
-        for (let x = ox - g * 4; x < w + g * 4; x += g) {
-          ctx.moveTo(x - h, h + h / 2);
-          ctx.lineTo(x + h, -h / 2);
-          ctx.moveTo(x - h, -h / 2);
-          ctx.lineTo(x + h, h + h / 2);
-        }
-        ctx.stroke();
-      }
       const tl = toWorld(0, 0);
       const br = toWorld(w, h);
+      const visible = { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y };
       ctx.setTransform(
         dpr * cam.zoom,
         0,
@@ -436,11 +500,15 @@ function useMapSurface(input: MapSurfaceInput) {
         dpr * (w / 2 - cam.x * cam.zoom),
         dpr * (h / 2 - cam.y * cam.zoom),
       );
-      const { cities: current, selection: sel } = model.current;
+      drawGrid(ctx, t, visible, cam.zoom);
+      const { cities: current, roads: currentRoads, districts: currentDistricts, selection: sel } = model.current;
+      for (const d of currentDistricts) {
+        drawDistrict(ctx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
+      }
       drawTerrain(
         ctx,
         t,
-        { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y },
+        visible,
         current.map((c) => c.plot.pos),
       );
       const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
@@ -448,6 +516,14 @@ function useMapSurface(input: MapSurfaceInput) {
         const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
         if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
       }
+      const selectedTask = selectedTaskNumber(sel);
+      currentRoads.forEach((road, index) => {
+        const from = byNumber.get(road.from);
+        const to = byNumber.get(road.to);
+        if (!from || !to) return;
+        const touches = selectedTask != null && (road.from === selectedTask || road.to === selectedTask);
+        drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches);
+      });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
       for (const city of ordered) {
         const p = city.plot.pos;
@@ -458,7 +534,9 @@ function useMapSurface(input: MapSurfaceInput) {
           p.y - CITY_HALF_H > br.y + 100
         )
           continue;
-        if (sel && sel.taskNumber === city.task.taskNumber) drawSelectionRing(ctx, t, p, cam.zoom, time, animate);
+        if (selectedTask === city.task.taskNumber || linkingRef.current === city.task.taskNumber) {
+          drawSelectionRing(ctx, t, p, cam.zoom, time, animate);
+        }
         const drawable: DrawCity = {
           taskNumber: city.task.taskNumber,
           presence: cityPresence(city.task.status),
@@ -474,8 +552,8 @@ function useMapSurface(input: MapSurfaceInput) {
     const animated = () => {
       if (tween.current) return true;
       if (reduced.matches) return false;
-      const { cities: current, selection: sel } = model.current;
-      if (sel) return true;
+      const { cities: current, roads: currentRoads, selection: sel } = model.current;
+      if (sel || linkingRef.current != null || currentRoads.length > 0) return true;
       return current.some(
         (c) =>
           c.task.status === 'in_review' ||
@@ -517,7 +595,8 @@ function useMapSurface(input: MapSurfaceInput) {
   const hit = useCallback(
     (sx: number, sy: number): Hit => {
       const w = toWorld(sx, sy);
-      const ordered = [...model.current.cities].sort((a, b) => b.plot.pos.y - a.plot.pos.y);
+      const { cities: current, districts: currentDistricts, selection: sel } = model.current;
+      const ordered = [...current].sort((a, b) => b.plot.pos.y - a.plot.pos.y);
       for (const city of ordered) {
         const local = { x: w.x - city.plot.pos.x, y: w.y - city.plot.pos.y };
         if (city.task.status !== 'done') {
@@ -537,6 +616,18 @@ function useMapSurface(input: MapSurfaceInput) {
           return { type: 'city', city };
         }
       }
+      const grab = 10 / camera.current.zoom;
+      for (const district of [...currentDistricts].reverse()) {
+        const selected = sel?.type === 'district' && sel.id === district.id;
+        if (
+          selected &&
+          Math.abs(w.x - (district.x + district.w)) < grab &&
+          Math.abs(w.y - (district.y + district.h)) < grab
+        ) {
+          return { type: 'districtCorner', district };
+        }
+        if (pointInDistrict(district, w)) return { type: 'district', district };
+      }
       return null;
     },
     [toWorld],
@@ -546,6 +637,7 @@ function useMapSurface(input: MapSurfaceInput) {
     (city: CityModel): ContextMenuEntry[] => {
       const task = city.task;
       const store = useProjectStore.getState();
+      const map = useCityMapStore.getState();
       const items: ContextMenuEntry[] = [];
       for (const site of city.sites) {
         items.push({
@@ -577,6 +669,34 @@ function useMapSurface(input: MapSurfaceInput) {
       items.push(moveToEntry(actions));
       items.push({ separator: true });
       items.push({
+        label: 'Road from here…',
+        icon: 'arrow-right',
+        onClick: () => {
+          select({ type: 'city', taskNumber: task.taskNumber });
+          setLinking(task.taskNumber);
+        },
+      });
+      const touching = model.current.roads.filter((r) => r.from === task.taskNumber || r.to === task.taskNumber);
+      if (touching.length) {
+        const byNumber = new Map(model.current.cities.map((c) => [c.task.taskNumber, c]));
+        items.push({
+          label: 'Remove road',
+          icon: 'trash',
+          submenu: touching.map((road) => {
+            const other = road.from === task.taskNumber ? road.to : road.from;
+            const name = byNumber.get(other)?.task.name ?? `#${other}`;
+            return {
+              label: road.from === task.taskNumber ? `→ #${other} ${name}` : `← #${other} ${name}`,
+              onClick: () => {
+                map.removeRoad(projectPath, road.id);
+                persistCityMap(projectPath);
+              },
+            };
+          }),
+        });
+      }
+      items.push({ separator: true });
+      items.push({
         label: 'Show on board',
         icon: 'kanban',
         onClick: () => store.setKanbanVisible(true),
@@ -598,17 +718,55 @@ function useMapSurface(input: MapSurfaceInput) {
     [select],
   );
 
-  const onContextMenu = useCallback(
-    (e: { clientX: number; clientY: number; preventDefault(): void }, target: Hit) => {
-      e.preventDefault();
-      if (!target) return;
-      const items = target.type === 'site' ? siteMenuItems(target.city, target.site) : cityMenuItems(target.city);
-      setMenu({ x: e.clientX, y: e.clientY, items });
-    },
-    [cityMenuItems, siteMenuItems],
+  const districtMenuItems = useCallback(
+    (district: District): ContextMenuEntry[] => [
+      { label: 'Rename', icon: 'pencil-simple', onClick: () => select({ type: 'district', id: district.id }) },
+      {
+        label: 'Remove district',
+        icon: 'trash',
+        danger: true,
+        onClick: () => {
+          useCityMapStore.getState().removeDistrict(projectPath, district.id);
+          persistCityMap(projectPath);
+          select(null);
+        },
+      },
+    ],
+    [projectPath, select],
   );
 
-  // Pointer interaction on the canvas: drag a city, pan the ground, click to select.
+  const groundMenuItems = useCallback(
+    (world: Point): ContextMenuEntry[] => [
+      {
+        label: 'New district here',
+        icon: 'grid-four',
+        onClick: () => {
+          const district = useCityMapStore.getState().addDistrict(projectPath, world);
+          persistCityMap(projectPath);
+          select({ type: 'district', id: district.id });
+        },
+      },
+      { label: 'New ticket', icon: 'plus', onClick: () => openTaskComposer() },
+    ],
+    [projectPath, select],
+  );
+
+  const onContextMenu = useCallback(
+    (e: { clientX: number; clientY: number; preventDefault(): void }, target: Hit, world?: Point) => {
+      e.preventDefault();
+      let items: ContextMenuEntry[];
+      if (!target) {
+        if (!world) return;
+        items = groundMenuItems(world);
+      } else if (target.type === 'site') items = siteMenuItems(target.city, target.site);
+      else if (target.type === 'city') items = cityMenuItems(target.city);
+      else items = districtMenuItems(target.district);
+      setMenu({ x: e.clientX, y: e.clientY, items });
+    },
+    [cityMenuItems, siteMenuItems, districtMenuItems, groundMenuItems],
+  );
+
+  // Pointer interaction on the canvas: drag a city or district, pan the ground, click to select.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -620,12 +778,21 @@ function useMapSurface(input: MapSurfaceInput) {
       hit: Hit;
       moved: boolean;
       origin: Point | null;
+      size: Point | null;
+      inside: number[];
+      last: Point;
     } | null = null;
 
     const down = (e: PointerEvent) => {
       if (e.button !== 0) return;
       canvas.setPointerCapture(e.pointerId);
       const h = hit(e.offsetX, e.offsetY);
+      const origin =
+        h?.type === 'city'
+          ? { ...h.city.plot.pos }
+          : h?.type === 'district'
+            ? { x: h.district.x, y: h.district.y }
+            : null;
       pointer = {
         x: e.offsetX,
         y: e.offsetY,
@@ -633,14 +800,19 @@ function useMapSurface(input: MapSurfaceInput) {
         sy: e.offsetY,
         hit: h,
         moved: false,
-        origin: h?.type === 'city' ? { ...h.city.plot.pos } : null,
+        origin,
+        size: h?.type === 'districtCorner' ? { x: h.district.w, y: h.district.h } : null,
+        inside:
+          h?.type === 'district' ? citiesInside(h.district, model.current.cities).map((c) => c.task.taskNumber) : [],
+        last: origin ?? { x: 0, y: 0 },
       };
       tween.current = null;
-      canvas.style.cursor = h?.type === 'city' ? 'move' : 'grabbing';
+      canvas.style.cursor = h?.type === 'city' || h?.type === 'district' ? 'move' : 'grabbing';
     };
     const move = (e: PointerEvent) => {
       if (!pointer) {
-        canvas.style.cursor = hit(e.offsetX, e.offsetY) ? 'pointer' : 'grab';
+        const h = hit(e.offsetX, e.offsetY);
+        canvas.style.cursor = h?.type === 'districtCorner' ? 'nwse-resize' : h ? 'pointer' : 'grab';
         return;
       }
       const dx = e.offsetX - pointer.x;
@@ -648,15 +820,30 @@ function useMapSurface(input: MapSurfaceInput) {
       if (!pointer.moved && Math.hypot(e.offsetX - pointer.sx, e.offsetY - pointer.sy) > 4) pointer.moved = true;
       if (!pointer.moved) return;
       const zoom = camera.current.zoom;
+      const total = { x: (e.offsetX - pointer.sx) / zoom, y: (e.offsetY - pointer.sy) / zoom };
+      const map = useCityMapStore.getState();
+      // From the grab point, not the last event: the model on the hit is a
+      // snapshot, so adding each event's delta to it would only ever move
+      // one step from where the drag began.
       if (pointer.hit?.type === 'city' && pointer.origin) {
-        // From the grab point, not the last event: the model on the hit is a
-        // snapshot, so adding each event's delta to it would only ever move
-        // one step from where the drag began.
-        const pos = {
-          x: pointer.origin.x + (e.offsetX - pointer.sx) / zoom,
-          y: pointer.origin.y + (e.offsetY - pointer.sy) / zoom,
-        };
-        useCityMapStore.getState().moveCity(projectPath, pointer.hit.city.task.taskNumber, pos);
+        map.moveCity(projectPath, pointer.hit.city.task.taskNumber, {
+          x: pointer.origin.x + total.x,
+          y: pointer.origin.y + total.y,
+        });
+      } else if (pointer.hit?.type === 'district' && pointer.origin) {
+        const next = { x: pointer.origin.x + total.x, y: pointer.origin.y + total.y };
+        map.moveDistrict(
+          projectPath,
+          pointer.hit.district.id,
+          { x: next.x - pointer.last.x, y: next.y - pointer.last.y },
+          pointer.inside,
+        );
+        pointer.last = next;
+      } else if (pointer.hit?.type === 'districtCorner' && pointer.size) {
+        map.updateDistrict(projectPath, pointer.hit.district.id, {
+          w: pointer.size.x + total.x,
+          h: pointer.size.y + total.y,
+        });
       } else {
         camera.current = { ...camera.current, x: camera.current.x - dx / zoom, y: camera.current.y - dy / zoom };
       }
@@ -669,13 +856,20 @@ function useMapSurface(input: MapSurfaceInput) {
       if (!pointer) return;
       if (!pointer.moved) {
         const h = pointer.hit;
-        if (!h) select(null);
+        const from = linkingRef.current;
+        if (from != null && h?.type === 'city') {
+          useCityMapStore.getState().addRoad(projectPath, from, h.city.task.taskNumber);
+          persistCityMap(projectPath);
+          setLinking(null);
+        } else if (from != null && !h) {
+          setLinking(null);
+        } else if (!h) select(null);
         else if (h.type === 'city') select({ type: 'city', taskNumber: h.city.task.taskNumber });
-        else {
+        else if (h.type === 'site') {
           select({ type: 'site', taskNumber: h.city.task.taskNumber, ptyId: h.site.ptyId });
           openTerminal(h.site.ptyId);
-        }
-      } else if (pointer.hit?.type === 'city') {
+        } else select({ type: 'district', id: h.district.id });
+      } else if (pointer.hit) {
         persistCityMap(projectPath);
       } else {
         saveViewport();
@@ -689,7 +883,7 @@ function useMapSurface(input: MapSurfaceInput) {
     };
     const dbl = (e: MouseEvent) => {
       const h = hit(e.offsetX, e.offsetY);
-      if (h) flyTo(h.city.plot.pos, 1.7);
+      if (h?.type === 'city' || h?.type === 'site') flyTo(h.city.plot.pos, 1.7);
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -707,7 +901,7 @@ function useMapSurface(input: MapSurfaceInput) {
       bump();
       saveViewport();
     };
-    const context = (e: MouseEvent) => onContextMenu(e, hit(e.offsetX, e.offsetY));
+    const context = (e: MouseEvent) => onContextMenu(e, hit(e.offsetX, e.offsetY), toWorld(e.offsetX, e.offsetY));
 
     canvas.style.cursor = 'grab';
     canvas.addEventListener('pointerdown', down);
@@ -728,27 +922,68 @@ function useMapSurface(input: MapSurfaceInput) {
     };
   }, [hit, toWorld, select, openTerminal, flyTo, saveViewport, projectPath, onContextMenu]);
 
+  const finishRoad = useCallback(
+    (to: number) => {
+      const from = linkingRef.current;
+      if (from == null) return false;
+      useCityMapStore.getState().addRoad(projectPath, from, to);
+      persistCityMap(projectPath);
+      setLinking(null);
+      return true;
+    },
+    [projectPath],
+  );
+
   // Labels are DOM so they stay legible at any zoom and take real clicks.
   const labels = useMemo(() => {
     const zoom = camera.current.zoom;
     const nodes: React.ReactNode[] = [];
+    const selectedTask = selectedTaskNumber(selection);
+    for (const district of districts) {
+      const p = toScreen({ x: district.x, y: district.y });
+      const selected = selection?.type === 'district' && selection.id === district.id;
+      const count = citiesInside(district, cities).length;
+      nodes.push(
+        <button
+          key={`district-${district.id}`}
+          type="button"
+          data-testid={`district-label-${district.id}`}
+          className={`pointer-events-auto absolute flex items-center gap-2 px-2.5 py-1 rounded-md border text-[11px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap ${selected ? 'border-accent' : 'border-transparent'}`}
+          style={{
+            left: p.x + 10,
+            top: p.y + 8,
+            background: 'var(--color-surface-raised)',
+            color: districtColor(district.hue, 1, false),
+          }}
+          onClick={() => select({ type: 'district', id: district.id })}
+          onContextMenu={(e) => onContextMenu(e, { type: 'district', district })}
+        >
+          {district.name}
+          <span className="font-mono font-medium normal-case tracking-normal text-text-tertiary">{count}</span>
+        </button>,
+      );
+    }
     for (const city of cities) {
       const top = toScreen({ x: city.plot.pos.x, y: city.plot.pos.y - CITY_HALF_H });
-      const selected = selection?.taskNumber === city.task.taskNumber;
+      const selected = selectedTask === city.task.taskNumber;
       const faded = city.task.status === 'done';
+      const waiting = city.sites.filter((s) => s.state === 'waiting').length;
+      const problems = city.sites.filter((s) => s.state === 'error').length;
       nodes.push(
         <button
           key={`city-${city.task.taskNumber}`}
           type="button"
           data-testid={`city-label-${city.task.taskNumber}`}
-          className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-full flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs whitespace-nowrap transition-opacity ${selected ? 'border-accent' : 'border-border'} ${faded && !selected ? 'opacity-70' : ''}`}
+          className={`pointer-events-auto absolute -translate-x-1/2 -translate-y-full flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs whitespace-nowrap transition-opacity ${selected ? 'border-accent' : 'border-border'} ${faded && !selected ? 'opacity-70' : ''} ${linking != null && linking !== city.task.taskNumber ? 'ring-2 ring-accent/40' : ''}`}
           style={{
             left: top.x,
             top: top.y - 8,
             background: 'var(--color-surface-raised)',
             boxShadow: 'var(--shadow-panel)',
           }}
-          onClick={() => select({ type: 'city', taskNumber: city.task.taskNumber })}
+          onClick={() => {
+            if (!finishRoad(city.task.taskNumber)) select({ type: 'city', taskNumber: city.task.taskNumber });
+          }}
           onDoubleClick={() => flyTo(city.plot.pos, 1.7)}
           onContextMenu={(e) => onContextMenu(e, { type: 'city', city })}
         >
@@ -759,6 +994,8 @@ function useMapSurface(input: MapSurfaceInput) {
             #{city.task.taskNumber}
           </span>
           <span className="font-medium text-text-primary">{city.task.name}</span>
+          {problems > 0 && <AlertBadge count={problems} state="error" />}
+          {waiting > 0 && <AlertBadge count={waiting} state="waiting" />}
         </button>,
       );
       if (zoom < 0.75 || faded) continue;
@@ -769,13 +1006,20 @@ function useMapSurface(input: MapSurfaceInput) {
         const c = cellCenter(slot.i, slot.j);
         const p = toScreen({ x: city.plot.pos.x + c.x, y: city.plot.pos.y + c.y + TH + 2 });
         const sel = selection?.type === 'site' && selection.ptyId === site.ptyId;
+        const alert = site.state === 'waiting' || site.state === 'error';
         nodes.push(
           <button
             key={`site-${site.ptyId}`}
             type="button"
             data-testid={`site-label-${site.ptyId}`}
-            className={`pointer-events-auto absolute -translate-x-1/2 flex items-center gap-1.5 pl-2 pr-2.5 py-0.5 rounded-md border text-[11px] whitespace-nowrap ${sel ? 'border-accent' : 'border-border'}`}
-            style={{ left: p.x, top: p.y + 4, background: 'var(--color-surface-raised)' }}
+            className={`pointer-events-auto absolute -translate-x-1/2 flex items-center gap-1.5 pl-2 pr-2.5 py-0.5 rounded-md border text-[11px] whitespace-nowrap ${sel ? 'border-accent' : alert ? 'border-transparent font-semibold' : 'border-border'}`}
+            style={{
+              left: p.x,
+              top: p.y + 4,
+              background: alert ? SITE_COLOR[site.state] : 'var(--color-surface-raised)',
+              color: alert ? '#fff' : undefined,
+              boxShadow: alert ? `0 0 0 3px ${SITE_RING[site.state]}, var(--shadow-panel)` : undefined,
+            }}
             title={SITE_STATE_LABEL[site.state]}
             onClick={() => {
               select({ type: 'site', taskNumber: city.task.taskNumber, ptyId: site.ptyId });
@@ -783,8 +1027,15 @@ function useMapSurface(input: MapSurfaceInput) {
             }}
             onContextMenu={(e) => onContextMenu(e, { type: 'site', city, site })}
           >
-            <SiteDot state={site.state} />
-            <span className={site.state === 'exited' ? 'text-text-tertiary' : 'text-text-primary'}>{site.label}</span>
+            {alert ? (
+              <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
+            ) : (
+              <SiteDot state={site.state} />
+            )}
+            <span className={site.state === 'exited' ? 'text-text-tertiary' : alert ? '' : 'text-text-primary'}>
+              {site.label}
+            </span>
+            {alert && <span className="opacity-90">· {SITE_STATE_LABEL[site.state]}</span>}
           </button>,
         );
       }
@@ -794,12 +1045,15 @@ function useMapSurface(input: MapSurfaceInput) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     cities,
+    districts,
     selection,
+    linking,
     toScreen,
     select,
     openTerminal,
     flyTo,
     onContextMenu,
+    finishRoad,
     camera.current.x,
     camera.current.y,
     camera.current.zoom,
@@ -807,7 +1061,18 @@ function useMapSurface(input: MapSurfaceInput) {
     size.current.h,
   ]);
 
-  return { canvasRef, containerRef, probeRef, labels, flyTo, onContextMenu, menu, closeMenu: () => setMenu(null) };
+  return {
+    canvasRef,
+    containerRef,
+    probeRef,
+    labels,
+    flyTo,
+    onContextMenu,
+    menu,
+    closeMenu: () => setMenu(null),
+    linking,
+    cancelLinking: () => setLinking(null),
+  };
 }
 
 /** Opens a shell in the task's worktree and shows it in the drawer once it is registered. */
@@ -837,6 +1102,13 @@ const SITE_COLOR: Record<SiteState, string> = {
   done: 'var(--color-success)',
   exited: 'var(--color-text-tertiary)',
 };
+const SITE_RING: Record<SiteState, string> = {
+  working: 'transparent',
+  waiting: 'color-mix(in srgb, var(--color-ansi-yellow) 35%, transparent)',
+  error: 'color-mix(in srgb, var(--color-error) 35%, transparent)',
+  done: 'transparent',
+  exited: 'transparent',
+};
 
 function SiteDot({ state, className = '' }: { state: SiteState; className?: string }) {
   return (
@@ -844,6 +1116,19 @@ function SiteDot({ state, className = '' }: { state: SiteState; className?: stri
       className={`inline-block w-2 h-2 rounded-full shrink-0 ${className}`}
       style={{ background: SITE_COLOR[state] }}
     />
+  );
+}
+
+function AlertBadge({ count, state }: { count: number; state: 'waiting' | 'error' }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full font-mono text-[10px] font-semibold text-white"
+      style={{ background: SITE_COLOR[state] }}
+      title={state === 'waiting' ? `${count} waiting for you` : `${count} with a problem`}
+      data-testid={`city-alert-${state}`}
+    >
+      {count}
+    </span>
   );
 }
 
@@ -874,6 +1159,7 @@ function CitySidebar({ width, cities, selection, looseTerminals, onPick, onPickS
     const { city, site } = list[cursor.current++ % list.length];
     onPickSite(city, site);
   };
+  const selectedTask = selectedTaskNumber(selection);
 
   return (
     <aside
@@ -915,7 +1201,7 @@ function CitySidebar({ width, cities, selection, looseTerminals, onPick, onPickS
             </h3>
             {group.length === 0 && <div className="mx-2 mb-1 text-xs text-text-tertiary">Nothing here</div>}
             {group.map((city) => {
-              const selected = selection?.taskNumber === city.task.taskNumber;
+              const selected = selectedTask === city.task.taskNumber;
               return (
                 <button
                   key={city.task.taskNumber}
@@ -997,10 +1283,15 @@ function AttentionRow({
   );
 }
 
+const PANEL_STYLE: CSSProperties = { background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' };
+const PANEL_CLASS =
+  'absolute top-3 right-3 w-80 rounded-[14px] border border-bezel-panel glass-bevel flex flex-col z-20';
+
 interface CityInspectorProps {
   projectPath: string;
   city: CityModel;
   site?: SiteModel;
+  district?: District;
   onClose: () => void;
   onSelectSite: (site: SiteModel) => void;
   onBackToCity: () => void;
@@ -1008,12 +1299,11 @@ interface CityInspectorProps {
   onContextMenu: (e: React.MouseEvent, target: Hit) => void;
 }
 
-const PANEL_STYLE: CSSProperties = { background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' };
-
 function CityInspector({
   projectPath,
   city,
   site,
+  district,
   onClose,
   onSelectSite,
   onBackToCity,
@@ -1055,16 +1345,20 @@ function CityInspector({
   }
 
   return (
-    <div
-      className="absolute top-3 right-3 bottom-3 w-80 rounded-[14px] border border-bezel-panel glass-bevel overflow-y-auto flex flex-col z-20"
-      style={PANEL_STYLE}
-      data-testid="city-inspector"
-    >
+    <div className={`${PANEL_CLASS} bottom-3 overflow-y-auto`} style={PANEL_STYLE} data-testid="city-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
         <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
           <span className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]" style={{ background: city.color }} />
           <span>City</span>
           <span className="font-mono normal-case tracking-normal text-text-secondary">#{task.taskNumber}</span>
+          {district && (
+            <span
+              className="normal-case tracking-normal truncate"
+              style={{ color: districtColor(district.hue, 1, false) }}
+            >
+              · {district.name}
+            </span>
+          )}
           <span className="flex-1" />
           <button
             type="button"
@@ -1198,11 +1492,7 @@ function SiteInspector({
     if (trimmed !== site.display.label) renameTerminal(site.ptyId, trimmed);
   };
   return (
-    <div
-      className="absolute top-3 right-3 w-80 rounded-[14px] border border-bezel-panel glass-bevel overflow-hidden flex flex-col z-20"
-      style={PANEL_STYLE}
-      data-testid="site-inspector"
-    >
+    <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="site-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
         <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
           <span>Site</span>
@@ -1253,14 +1543,142 @@ function SiteInspector({
   );
 }
 
-function TerminalDrawer({ ptyId, projectPath, onHide }: { ptyId: string; projectPath: string; onHide: () => void }) {
+function DistrictInspector({
+  projectPath,
+  district,
+  cities,
+  onClose,
+  onPickCity,
+}: {
+  projectPath: string;
+  district: District;
+  cities: CityModel[];
+  onClose: () => void;
+  onPickCity: (city: CityModel) => void;
+}) {
+  const [name, setName] = useState(district.name);
+  useEffect(() => setName(district.name), [district.name]);
+  const update = (patch: Partial<Omit<District, 'id'>>) => {
+    useCityMapStore.getState().updateDistrict(projectPath, district.id, patch);
+    persistCityMap(projectPath);
+  };
+  const commitName = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setName(district.name);
+      return;
+    }
+    if (trimmed !== district.name) update({ name: trimmed });
+  };
+  return (
+    <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="district-inspector">
+      <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
+        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+          <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: districtColor(district.hue, 1, false) }} />
+          <span>District</span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            className="text-text-tertiary hover:text-text-primary"
+            onClick={onClose}
+            aria-label="Close inspector"
+          >
+            <Icon name="x" className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <input
+          className="w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none"
+          value={name}
+          aria-label="District name"
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') setName(district.name);
+          }}
+        />
+        <div className="flex gap-1.5" role="radiogroup" aria-label="District colour">
+          {DISTRICT_HUES.map((hue) => (
+            <button
+              key={hue}
+              type="button"
+              role="radio"
+              aria-checked={district.hue === hue}
+              aria-label={`Hue ${hue}`}
+              className={`w-5 h-5 rounded-full border-2 ${district.hue === hue ? 'border-ink' : 'border-transparent'}`}
+              style={{ background: districtColor(hue, 0.85, false) }}
+              onClick={() => update({ hue })}
+            />
+          ))}
+        </div>
+        <p className="text-[11px] text-text-tertiary leading-snug">
+          Drag the district to move it with its cities; drag the corner to resize it.
+        </p>
+      </div>
+      <div className="p-4 flex flex-col gap-1.5 max-h-64 overflow-y-auto">
+        <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+          Cities inside <span className="font-mono font-medium">{cities.length}</span>
+        </h4>
+        {cities.length === 0 && <p className="text-[11px] text-text-tertiary">Drag cities in to assign them.</p>}
+        {cities.map((city) => (
+          <button
+            key={city.task.taskNumber}
+            type="button"
+            className="flex items-center gap-2 px-2 py-1 rounded-md text-left text-xs hover:bg-ink/[0.04]"
+            onClick={() => onPickCity(city)}
+          >
+            <span className="w-2 h-2 rounded-[2px] rotate-45" style={{ background: city.color }} />
+            <span className="truncate text-text-primary">{city.task.name}</span>
+            <span className="font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
+          </button>
+        ))}
+      </div>
+      <div className="p-4 pt-0 flex gap-2">
+        <button
+          type="button"
+          className="btn-secondary text-xs"
+          onClick={() => {
+            useCityMapStore.getState().removeDistrict(projectPath, district.id);
+            persistCityMap(projectPath);
+            onClose();
+          }}
+        >
+          Remove district
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TerminalDrawer({
+  ptyId,
+  projectPath,
+  width,
+  onHide,
+}: {
+  ptyId: string;
+  projectPath: string;
+  width: number;
+  onHide: () => void;
+}) {
   return (
     <div
-      className="absolute top-3 right-3 bottom-3 w-[min(62%,900px)] min-w-[480px] rounded-[14px] border border-bezel-panel glass-bevel overflow-hidden flex flex-col z-30"
-      style={{ background: 'var(--color-terminal-bg)', boxShadow: 'var(--shadow-panel)' }}
+      className="absolute top-3 right-3 bottom-3 max-w-[calc(100%-24px)] rounded-[14px] border border-bezel-panel glass-bevel flex flex-col z-30"
+      style={{ width, background: 'var(--color-terminal-bg)', boxShadow: 'var(--shadow-panel)' }}
       data-testid="terminal-drawer"
     >
-      <div className="flex items-stretch shrink-0">
+      <div className="absolute inset-y-0 -left-px flex">
+        <ResizeHandle
+          width={width}
+          onWidth={(next) => useUIStore.getState().setCityMapDrawerWidth(next)}
+          min={CITY_MAP_DRAWER_MIN_WIDTH}
+          max={CITY_MAP_DRAWER_MAX_WIDTH}
+          defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
+          label="Resize the terminal"
+          edge="start"
+        />
+      </div>
+      <div className="flex items-stretch shrink-0 rounded-t-[14px] overflow-hidden">
         <button
           type="button"
           className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
@@ -1274,7 +1692,7 @@ function TerminalDrawer({ ptyId, projectPath, onHide }: { ptyId: string; project
           <TerminalHeader ptyId={ptyId} isActive onClose={() => closeProjectTerminal(ptyId)} />
         </div>
       </div>
-      <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex flex-col flex-1 min-h-0 rounded-b-[14px] overflow-hidden">
         <TerminalBody ptyId={ptyId} projectPath={projectPath} />
       </div>
     </div>
