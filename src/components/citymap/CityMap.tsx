@@ -1661,13 +1661,15 @@ function TerminalDrawer({
   width: number;
   onHide: () => void;
 }) {
+  // The glass bevel forces its direct children into normal flow, so the
+  // handle hangs off a plain wrapper and the bevelled box sits beside it.
   return (
     <div
-      className="absolute top-3 right-3 bottom-3 max-w-[calc(100%-24px)] rounded-[14px] border border-bezel-panel glass-bevel flex flex-col z-30"
-      style={{ width, background: 'var(--color-terminal-bg)', boxShadow: 'var(--shadow-panel)' }}
+      className="absolute top-3 right-3 bottom-3 max-w-[calc(100%-24px)] z-30"
+      style={{ width }}
       data-testid="terminal-drawer"
     >
-      <div className="absolute inset-y-0 -left-px flex">
+      <div className="absolute inset-y-0 -left-px z-10 flex">
         <ResizeHandle
           width={width}
           onWidth={(next) => useUIStore.getState().setCityMapDrawerWidth(next)}
@@ -1678,22 +1680,27 @@ function TerminalDrawer({
           edge="start"
         />
       </div>
-      <div className="flex items-stretch shrink-0 rounded-t-[14px] overflow-hidden">
-        <button
-          type="button"
-          className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
-          onClick={onHide}
-          aria-label="Hide terminal"
-          title="Back to the map"
-        >
-          <Icon name="caret-right" className="w-3.5 h-3.5" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <TerminalHeader ptyId={ptyId} isActive onClose={() => closeProjectTerminal(ptyId)} />
+      <div
+        className="h-full rounded-[14px] border border-bezel-panel glass-bevel overflow-hidden flex flex-col"
+        style={{ background: 'var(--color-terminal-bg)', boxShadow: 'var(--shadow-panel)' }}
+      >
+        <div className="flex items-stretch shrink-0">
+          <button
+            type="button"
+            className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
+            onClick={onHide}
+            aria-label="Hide terminal"
+            title="Back to the map"
+          >
+            <Icon name="caret-right" className="w-3.5 h-3.5" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <TerminalHeader ptyId={ptyId} isActive onClose={() => closeProjectTerminal(ptyId)} />
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col flex-1 min-h-0 rounded-b-[14px] overflow-hidden">
-        <TerminalBody ptyId={ptyId} projectPath={projectPath} />
+        <div className="flex flex-col flex-1 min-h-0">
+          <TerminalBody ptyId={ptyId} projectPath={projectPath} />
+        </div>
       </div>
     </div>
   );
