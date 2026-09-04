@@ -167,6 +167,8 @@ contextBridge.exposeInMainWorld('api', {
       typedInvoke('task:set-merge-target', projectPath, taskNumber, mergeTarget),
     setName: (projectPath: string, taskNumber: number, name: string) =>
       typedInvoke('task:set-name', projectPath, taskNumber, name),
+    workspaceFile: (projectPath: string, taskNumber: number) =>
+      typedInvoke('task:workspace-file', projectPath, taskNumber),
     setDescription: (projectPath: string, taskNumber: number, description: string) =>
       typedInvoke('task:set-description', projectPath, taskNumber, description),
     reorder: (projectPath: string, taskNumber: number, newStatus: TaskStatus, targetIndex: number) =>

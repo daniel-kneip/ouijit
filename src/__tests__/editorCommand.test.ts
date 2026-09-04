@@ -22,4 +22,13 @@ describe('buildEditorCommand', () => {
   test('preserves editor commands that carry their own flags', () => {
     expect(buildEditorCommand('code --new-window', '/wt/T-7')).toBe("code --new-window '/wt/T-7'");
   });
+
+  test('VS Code and its forks open the task workspace file; other editors keep the worktree', () => {
+    const ws = '/ws/kiro-harness-7.code-workspace';
+    expect(buildEditorCommand('code', '/wt/kiro-harness-7', ws)).toBe(`code '${ws}'`);
+    expect(buildEditorCommand('code --new-window', '/wt/kiro-harness-7', ws)).toBe(`code --new-window '${ws}'`);
+    expect(buildEditorCommand('/usr/local/bin/cursor', '/wt/kiro-harness-7', ws)).toBe(`/usr/local/bin/cursor '${ws}'`);
+    expect(buildEditorCommand('hx', '/wt/kiro-harness-7', ws)).toBe("hx '/wt/kiro-harness-7'");
+    expect(buildEditorCommand('code', '/wt/kiro-harness-7')).toBe("code '/wt/kiro-harness-7'");
+  });
 });

@@ -717,9 +717,15 @@ export async function openWorktreeEditor(
   taskId: number | undefined,
   command: string,
 ): Promise<void> {
+  const workspaceFile = taskId != null ? await window.api.task.workspaceFile(projectPath, taskId) : null;
   await addProjectTerminal(
     projectPath,
-    { name: 'Editor', command: buildEditorCommand(command, worktree.path), source: 'custom', priority: 0 },
+    {
+      name: 'Editor',
+      command: buildEditorCommand(command, worktree.path, workspaceFile ?? undefined),
+      source: 'custom',
+      priority: 0,
+    },
     // A terminal editor only signals success once you quit it; a GUI editor's
     // launcher returns immediately. Either way the card tidies itself; a failed
     // launch exits non-zero and stays open.

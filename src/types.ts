@@ -397,6 +397,8 @@ export interface TaskAPI {
     mergeTarget: string,
   ): Promise<{ success: boolean; error?: string }>;
   setName(projectPath: string, taskNumber: number, name: string): Promise<{ success: boolean; error?: string }>;
+  /** Writes the task's VS Code workspace file and returns its path; null until the task has a worktree. */
+  workspaceFile(projectPath: string, taskNumber: number): Promise<string | null>;
   setDescription(
     projectPath: string,
     taskNumber: number,

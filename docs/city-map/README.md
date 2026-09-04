@@ -25,6 +25,10 @@ puts that context first:
   waiting for input (amber beacon, pulsing ring), problem (red smoke, warning
   sign), finished (green flag, crane gone). A finished site that is closed
   leaves a building behind, so a city visibly grows with the work done in it.
+- **Every city carries its ticket colour.** The ground ring, the number chip
+  and the sidebar swatch use the same hue the board badge and the terminal
+  header show, and the same hex the VS Code workspace file paints its title
+  bar with. A child task darkens its parent's hue, as chain badges do.
 - **Task chains are roads.** A child task's city is linked to its parent's by
   a path, the same relation the canvas draws as chain edges.
 - **A sidebar lists cities by status** with the attention counts first (how

@@ -2,6 +2,7 @@ import { typedHandle } from '../helpers';
 import { saveAttachment } from '../../attachments';
 import { createTaskWorktree, createTodoTask, checkTaskWorktree, recoverTaskWorktree } from '../../worktree';
 import { setTaskMergeTarget, setTaskName, setTaskParent } from '../../db';
+import { writeTaskWorkspace } from '../../taskWorkspace';
 import {
   beginTask,
   setTaskStatusWithHooks,
@@ -39,6 +40,8 @@ export function registerTaskHandlers(): void {
   );
 
   typedHandle('task:set-name', (projectPath, taskNumber, name) => setTaskName(projectPath, taskNumber, name));
+
+  typedHandle('task:workspace-file', (projectPath, taskNumber) => writeTaskWorkspace(projectPath, taskNumber));
 
   typedHandle('task:set-description', (projectPath, taskNumber, description) =>
     updateTaskDescription(projectPath, taskNumber, description),

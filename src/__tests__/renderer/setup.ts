@@ -116,6 +116,7 @@ const mockApi = {
     setMergeTarget: vi.fn().mockResolvedValue({ success: true }),
     setSandboxed: vi.fn().mockResolvedValue({ success: true }),
     setName: vi.fn().mockResolvedValue({ success: true }),
+    workspaceFile: vi.fn().mockResolvedValue(null),
     setDescription: vi.fn().mockResolvedValue({ success: true }),
     reorder: vi.fn().mockResolvedValue({ success: true }),
     // A test that spawns into the path this returns should mock it itself.

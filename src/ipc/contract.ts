@@ -172,6 +172,7 @@ export interface IpcInvokeContract {
     args: [projectPath: string, taskNumber: number, name: string];
     return: { success: boolean; error?: string };
   };
+  'task:workspace-file': { args: [projectPath: string, taskNumber: number]; return: string | null };
   'task:set-description': {
     args: [projectPath: string, taskNumber: number, description: string];
     return: { success: boolean; error?: string };

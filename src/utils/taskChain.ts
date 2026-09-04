@@ -86,6 +86,26 @@ export function getChainBgColor(rootTaskNumber: number, depth: number): string {
   return `hsla(${hue}, 55%, ${lightness}%, 0.15)`;
 }
 
+/** The same colour as `getChainColor`, for consumers that cannot take `hsl()` (VS Code's colour settings). */
+export function getChainHex(rootTaskNumber: number, depth: number): string {
+  const [hue, lightness] = getChainHsl(rootTaskNumber, depth);
+  return hslToHex(hue, 55, lightness);
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const sat = s / 100;
+  const light = l / 100;
+  const channel = (n: number): string => {
+    const k = (n + h / 30) % 12;
+    const a = sat * Math.min(light, 1 - light);
+    const value = light - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(value * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(8)}${channel(4)}`;
+}
+
 export function isDescendantOf(
   possibleDescendant: number,
   ancestor: number,

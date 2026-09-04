@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeBranchName, generateBranchName } from '../worktree';
+import { sanitizeBranchName, generateBranchName, worktreeDirName } from '../worktree';
 
 describe('sanitizeBranchName', () => {
   it('converts normal name to kebab-case', () => {
@@ -50,5 +50,13 @@ describe('generateBranchName', () => {
 
   it('falls back to task-N when name sanitizes to empty', () => {
     expect(generateBranchName('!!!', 3)).toBe('task-3');
+  });
+});
+
+describe('worktreeDirName', () => {
+  it('names the directory after the ticket, with the number keeping it unique', () => {
+    expect(worktreeDirName('Kiro harness', 42)).toBe('kiro-harness-42');
+    expect(worktreeDirName(undefined, 42)).toBe('task-42');
+    expect(worktreeDirName('???', 42)).toBe('task-42');
   });
 });

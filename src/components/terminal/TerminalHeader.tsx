@@ -21,6 +21,7 @@ import { openTaskInEditor, openWorktreeInEditor } from '../../services/openInEdi
 import { openPullRequestInPanel, createPullRequestForTask } from '../../services/githubTaskActions';
 import { BranchFromTaskDialog } from '../dialogs/BranchFromTaskDialog';
 import { describeDiffComparison, filesInDiff } from '../../diffSource';
+import { buildChainMap, getChainColor } from '../../utils/taskChain';
 
 const EMPTY_TAGS: string[] = [];
 const EMPTY_PANELS: TerminalPanel[] = [];
@@ -88,6 +89,12 @@ export const TerminalHeader = memo(function TerminalHeader({
 
   const availableSandboxProviders = useProjectStore((s) => s.availableSandboxProviders);
   const task = useProjectStore((s) => (taskId != null ? s.tasks.find((t) => t.taskNumber === taskId) : undefined));
+  const tasks = useProjectStore((s) => s.tasks);
+  const taskColor = useMemo(() => {
+    if (taskId == null) return null;
+    const info = buildChainMap(tasks).get(taskId);
+    return info ? getChainColor(info.rootTaskNumber, info.depth) : null;
+  }, [tasks, taskId]);
   const githubEnabled = useExperimentalStore((s) => s.flagsByProject[projectPath]?.github ?? false);
 
   const contextMenuItems = useMemo((): ContextMenuEntry[] => {
@@ -249,7 +256,16 @@ export const TerminalHeader = memo(function TerminalHeader({
       }}
     />
   ) : (
-    <TerminalHeaderName label={label} lastOscTitle={lastOscTitle} />
+    <>
+      {taskColor && (
+        <span
+          className="inline-block w-2 h-2 rounded-full shrink-0"
+          style={{ background: taskColor }}
+          title={task ? `#${task.taskNumber} ${task.name}` : undefined}
+        />
+      )}
+      <TerminalHeaderName label={label} lastOscTitle={lastOscTitle} />
+    </>
   );
 
   const tagsContent =

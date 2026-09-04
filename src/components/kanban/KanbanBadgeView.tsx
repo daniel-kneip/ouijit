@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { TaskChainInfo } from '../../utils/taskChain';
-import { getChainBgColor, getChainColor, isChainMember } from '../../utils/taskChain';
+import { getChainBgColor, getChainColor } from '../../utils/taskChain';
 import { Icon } from '../terminal/Icon';
 
 export interface KanbanBadgeViewProps {
@@ -29,15 +29,12 @@ export function KanbanBadgeView({
   dragHandleProps,
   detachButton,
 }: KanbanBadgeViewProps) {
-  const isInChain = isChainMember(chainInfo);
-  const color =
-    isInChain && chainInfo
-      ? getChainColor(chainInfo.rootTaskNumber, chainInfo.depth)
-      : 'color-mix(in srgb, var(--color-ink) 20%, transparent)';
-  const background =
-    isInChain && chainInfo
-      ? getChainBgColor(chainInfo.rootTaskNumber, chainInfo.depth)
-      : 'color-mix(in srgb, var(--color-ink) 4%, transparent)';
+  const color = chainInfo
+    ? getChainColor(chainInfo.rootTaskNumber, chainInfo.depth)
+    : 'color-mix(in srgb, var(--color-ink) 20%, transparent)';
+  const background = chainInfo
+    ? getChainBgColor(chainInfo.rootTaskNumber, chainInfo.depth)
+    : 'color-mix(in srgb, var(--color-ink) 4%, transparent)';
 
   const style: CSSProperties = {
     color,

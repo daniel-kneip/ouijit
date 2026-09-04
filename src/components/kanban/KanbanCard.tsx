@@ -59,13 +59,11 @@ export const KanbanCard = memo(function KanbanCard({
   const [initialRenamingLabel, setInitialRenamingLabel] = useState<string>('');
   const [isRenamingTask, setIsRenamingTask] = useState(false);
 
-  const isInChain = isChainMember(chainInfo);
   const githubEnabled = useExperimentalStore((s) => s.flagsByProject[projectPath]?.github ?? false);
 
   // Derived in selectors, so a badge drag re-renders only the cards involved.
   const activeBadgeDragSource = useProjectStore((s) => s.activeBadgeDrag);
   const isHoveredByBadgeDrag = useProjectStore((s) => s.badgeDragOverTask === task.taskNumber);
-  const optionKeyHeld = useProjectStore((s) => s.optionKeyHeld);
   const isBadgeDragActive = activeBadgeDragSource != null;
   const isValidBadgeTarget = useMemo(() => {
     if (activeBadgeDragSource == null || activeBadgeDragSource === task.taskNumber || !chainMap) return false;
@@ -73,7 +71,6 @@ export const KanbanCard = memo(function KanbanCard({
   }, [activeBadgeDragSource, task.taskNumber, chainMap]);
   const isHoveredBadgeTarget = isValidBadgeTarget && isHoveredByBadgeDrag;
   const isInvalidBadgeTarget = isBadgeDragActive && !isValidBadgeTarget;
-  const showBadge = isInChain || optionKeyHeld;
 
   // Shallow compare, so unrelated terminal updates don't re-render this card.
   const connectedDisplays = useTerminalStore(
@@ -273,12 +270,8 @@ export const KanbanCard = memo(function KanbanCard({
         isHoveredBadgeTarget={isHoveredBadgeTarget}
         isValidBadgeTarget={isValidBadgeTarget}
         isInvalidBadgeTarget={isInvalidBadgeTarget}
-        showBadge={showBadge}
-        badge={
-          showBadge ? (
-            <DraggableBadge task={task} projectPath={projectPath} chainInfo={chainInfo} chainMap={chainMap} />
-          ) : null
-        }
+        showBadge
+        badge={<DraggableBadge task={task} projectPath={projectPath} chainInfo={chainInfo} chainMap={chainMap} />}
         prBadge={
           githubEnabled && task.githubPrNumber != null ? (
             <KanbanPrBadgeView

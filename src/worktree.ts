@@ -422,6 +422,14 @@ export function generateBranchName(name: string | undefined, taskNumber: number)
 }
 
 /**
+ * The worktree directory carries the ticket title so an editor window titled
+ * after its folder says which ticket it holds. Same rule as the branch name.
+ */
+export function worktreeDirName(name: string | undefined, taskNumber: number): string {
+  return generateBranchName(name, taskNumber);
+}
+
+/**
  * Validate a branch name for git compatibility and conflicts
  */
 export async function validateBranchName(
@@ -557,7 +565,7 @@ async function startTaskImpl(
     // claim the same T-N. Prune has already completed above, so the probe
     // sees git's current view of existing worktrees.
     const worktreePath = await runExclusive(async () => {
-      let p = path.join(baseDir, `T-${taskNumber}`);
+      let p = path.join(baseDir, worktreeDirName(task.name, taskNumber));
       let dirNum = taskNumber;
       while (
         await fs.access(p).then(
@@ -566,7 +574,7 @@ async function startTaskImpl(
         )
       ) {
         dirNum++;
-        p = path.join(baseDir, `T-${dirNum}`);
+        p = path.join(baseDir, worktreeDirName(task.name, dirNum));
       }
       t.mark('pathProbe');
 
@@ -646,7 +654,7 @@ export async function createTaskWorktree(
     await fs.mkdir(baseDir, { recursive: true });
 
     let currentTaskNumber = taskNumber;
-    let worktreePath = path.join(baseDir, `T-${currentTaskNumber}`);
+    let worktreePath = path.join(baseDir, worktreeDirName(name, currentTaskNumber));
     while (
       await fs.access(worktreePath).then(
         () => true,
@@ -654,7 +662,7 @@ export async function createTaskWorktree(
       )
     ) {
       currentTaskNumber++;
-      worktreePath = path.join(baseDir, `T-${currentTaskNumber}`);
+      worktreePath = path.join(baseDir, worktreeDirName(name, currentTaskNumber));
     }
 
     const branch = branchName || generateBranchName(name, currentTaskNumber);
@@ -922,7 +930,7 @@ async function recoverTaskWorktreeImpl(projectPath: string, taskNumber: number):
     const baseDir = getWorktreeBaseDir(projectName);
     await fs.mkdir(baseDir, { recursive: true });
 
-    let worktreePath = path.join(baseDir, `T-${taskNumber}`);
+    let worktreePath = path.join(baseDir, worktreeDirName(task.name, taskNumber));
     let dirNum = taskNumber;
     while (
       await fs.access(worktreePath).then(
@@ -931,7 +939,7 @@ async function recoverTaskWorktreeImpl(projectPath: string, taskNumber: number):
       )
     ) {
       dirNum++;
-      worktreePath = path.join(baseDir, `T-${dirNum}`);
+      worktreePath = path.join(baseDir, worktreeDirName(task.name, dirNum));
     }
 
     const copyIgnored = await shouldCopyIgnoredFiles(projectPath);

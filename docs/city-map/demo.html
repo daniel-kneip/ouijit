@@ -224,6 +224,7 @@
   .inspector .eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
   .inspector .eyebrow .ticket { font-family: var(--font-mono); letter-spacing: 0; text-transform: none; color: var(--ink-2); font-size: 12px; }
   .inspector .eyebrow .close { margin-left: auto; }
+  .swatch-lg { width: 12px; height: 12px; border-radius: 3px; transform: rotate(45deg) scale(0.85); flex: none; }
   .name-input {
     width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 6px; margin: 0 -6px;
     font-family: var(--font-display); font-weight: 600; font-size: 21px; line-height: 1.2; color: var(--ink);
@@ -308,11 +309,11 @@
       <div class="item"><span class="dot" style="background: var(--waiting)"></span> Waiting for you</div>
       <div class="item"><span class="dot" style="background: var(--error)"></span> Problem</div>
       <div class="item"><span class="dot" style="background: var(--done)"></span> Finished</div>
-      <h4 style="margin-top: 6px">Cities</h4>
-      <div class="item"><span class="sq" style="border: 1.5px dashed var(--blueprint, var(--accent))"></span> To do · blueprint</div>
-      <div class="item"><span class="sq" style="background: #d9805c"></span> In progress · building</div>
-      <div class="item"><span class="sq" style="background: var(--review)"></span> In review · inspection flag</div>
-      <div class="item"><span class="sq" style="background: var(--exited)"></span> Done · settled, faded</div>
+      <h4 style="margin-top: 6px">Cities · ring and number carry the ticket colour</h4>
+      <div class="item"><span class="sq" style="border: 1.5px dashed hsl(200 55% 72%)"></span> To do · blueprint</div>
+      <div class="item"><span class="sq" style="background: hsl(200 55% 72%)"></span> In progress · building</div>
+      <div class="item"><span class="sq" style="background: hsl(200 55% 72%); outline: 2px solid var(--review); outline-offset: 1px"></span> In review · inspection flag</div>
+      <div class="item"><span class="sq" style="background: hsl(200 18% 72%)"></span> Done · settled, faded</div>
     </div>
     <canvas id="minimap" aria-label="Overview"></canvas>
   </main>
@@ -464,8 +465,15 @@
   new MutationObserver(readTokens).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   document.fonts?.ready.then(() => { dirty = true; });
 
+  function ticketColor(city, alpha) {
+    let root = city, depth = 0;
+    while (root.parent && cityByTicket(root.parent) && depth < 8) { root = cityByTicket(root.parent); depth++; }
+    const hue = (root.ticket * 137.508) % 360;
+    const light = Math.max(72 - depth * 14, 30);
+    const sat = city.status === 'done' ? 18 : 55;
+    return alpha == null ? `hsl(${hue.toFixed(1)} ${sat}% ${light}%)` : `hsl(${hue.toFixed(1)} ${sat}% ${light}% / ${alpha})`;
+  }
   const stateColor = (s) => ({ working: T.working, waiting: T.waiting, error: T.error, done: T.done, exited: T.exited })[s] || T.exited;
-  const statusSwatch = (st) => ({ todo: 'transparent', in_progress: '#d9805c', in_review: 'var(--review)', done: 'var(--exited)' })[st];
 
   // ── City layout (deterministic per ticket) ─────────────────────────
   const layoutCache = new Map();
@@ -666,11 +674,13 @@
     if (blueprint) {
       ctx.fillStyle = 'rgba(61,125,202,0.13)';
       diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.fill();
-      ctx.setLineDash([6, 5]); ctx.strokeStyle = T.accent; ctx.lineWidth = 1.5; diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.stroke(); ctx.setLineDash([]);
+      ctx.setLineDash([6, 5]); ctx.strokeStyle = ticketColor(city); ctx.lineWidth = 2; diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.stroke(); ctx.setLineDash([]);
     } else {
       ctx.fillStyle = faded ? tone('#b8cf9c', { s: 0.2, l: T.night ? -30 : 8 }) : tone('#b8cf9c', { l: T.night ? -32 : 0 });
       diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.fill();
-      ctx.strokeStyle = 'rgba(31,42,34,0.18)'; ctx.lineWidth = 1; diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.stroke();
+      ctx.strokeStyle = ticketColor(city); ctx.lineWidth = 2.5; diamond(0, 0, CITY_HALF_W, CITY_HALF_H); ctx.stroke();
+      ctx.fillStyle = ticketColor(city, 0.35); ctx.beginPath();
+      ctx.moveTo(0, CITY_HALF_H + 2); ctx.lineTo(CITY_HALF_W + 2, 0); ctx.lineTo(CITY_HALF_W + 2, 6); ctx.lineTo(0, CITY_HALF_H + 8); ctx.lineTo(-CITY_HALF_W - 2, 6); ctx.lineTo(-CITY_HALF_W - 2, 0); ctx.closePath(); ctx.fill();
     }
 
     const siteBySlot = new Map();
@@ -784,12 +794,13 @@
       ctx.font = `500 11px ${T_FONT_MONO}`;
       const tk = '#' + city.ticket;
       const tkW = ctx.measureText(tk).width;
-      const pad = 9, gap = 7, h = 26, w = pad + tkW + gap + nameW + pad;
+      const pad = 9, gap = 12, h = 26, w = pad + tkW + gap + nameW + pad;
       const x = s.x - w / 2, y = s.y - h - 8;
       ctx.globalAlpha = faded && !selected && !hovered ? 0.72 : 1;
       ctx.fillStyle = T.surface; ctx.strokeStyle = selected ? T.accent : T.border; ctx.lineWidth = selected ? 1.5 : 1;
       roundRect(x, y, w, h, 8); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = T.ink3; ctx.textBaseline = 'middle'; ctx.fillText(tk, x + pad, y + h / 2 + 0.5);
+      ctx.fillStyle = ticketColor(city, 0.28); roundRect(x + 4, y + 5, tkW + 10, h - 10, 6); ctx.fill();
+      ctx.fillStyle = T.night ? ticketColor(city) : T.ink; ctx.textBaseline = 'middle'; ctx.fillText(tk, x + pad, y + h / 2 + 0.5);
       ctx.font = `600 14px ${T_FONT_DISPLAY}`; ctx.fillStyle = T.ink;
       ctx.fillText(city.name, x + pad + tkW + gap, y + h / 2);
       if (hovered && !selected) { ctx.fillStyle = T.accent; ctx.fillRect(x + pad + tkW + gap, y + h - 6, nameW, 1.5); }
@@ -857,8 +868,8 @@
     const M = (x, y) => ({ x: ox + x * sc, y: oy + y * sc });
     for (const c of state.cities) {
       const p = M(c.pos.x, c.pos.y);
-      mctx.fillStyle = c.status === 'done' ? T.exited : c.status === 'todo' ? T.accent : c.status === 'in_review' ? T.review : '#d9805c';
-      mctx.globalAlpha = c.status === 'todo' ? 0.6 : 1;
+      mctx.fillStyle = ticketColor(c);
+      mctx.globalAlpha = c.status === 'todo' ? 0.55 : 1;
       mctx.beginPath(); mctx.moveTo(p.x, p.y - 5); mctx.lineTo(p.x + 8, p.y); mctx.lineTo(p.x, p.y + 5); mctx.lineTo(p.x - 8, p.y); mctx.closePath(); mctx.fill();
       mctx.globalAlpha = 1;
       const alert = c.sites.find((s) => s.state === 'waiting' || s.state === 'error');
@@ -1072,7 +1083,7 @@
         const sel = selection && selection.cityId === c.id;
         const dots = c.sites.map((s) => `<span class="dot" style="background: var(--${s.state})" title="${esc(s.name)} · ${SITE_LABEL[s.state]}"></span>`).join('');
         html += `<button class="city-row ${status} ${sel ? 'selected' : ''}" data-city="${c.id}">
-          <span class="swatch" style="background:${statusSwatch(status)}; ${status === 'todo' ? 'border:1.5px dashed var(--accent)' : ''}"></span>
+          <span class="swatch" style="background:${status === 'todo' ? 'transparent' : ticketColor(c)}; border:1.5px ${status === 'todo' ? 'dashed' : 'solid'} ${ticketColor(c)}"></span>
           <span class="name">${esc(c.name)}<span class="ticket">#${c.ticket}</span></span>
           <span class="sites">${dots}</span></button>`;
       }
@@ -1112,7 +1123,7 @@
       </div>`).join('');
     inspector.innerHTML = `
       <div class="head">
-        <div class="eyebrow"><span>City</span><span class="ticket">#${city.ticket}</span>${parent ? `<span>· part of <button class="link" data-goto="${parent.id}">#${parent.ticket}</button></span>` : ''}<button class="btn quiet small close" data-action="close" aria-label="Close inspector">✕</button></div>
+        <div class="eyebrow"><span class="swatch-lg" style="background:${ticketColor(city)}"></span><span>City</span><span class="ticket">#${city.ticket}</span>${parent ? `<span>· part of <button class="link" data-goto="${parent.id}">#${parent.ticket}</button></span>` : ''}<button class="btn quiet small close" data-action="close" aria-label="Close inspector">✕</button></div>
         <input class="name-input" data-field="name" value="${esc(city.name)}" aria-label="Ticket name">
         <div class="field"><label for="statusSel">Status</label><select id="statusSel" data-field="status">${statusOpts}</select></div>
       </div>
