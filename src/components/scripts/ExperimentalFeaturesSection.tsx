@@ -8,6 +8,7 @@ interface ExperimentalFeaturesSectionProps {
 export function ExperimentalFeaturesSection({ projectPath }: ExperimentalFeaturesSectionProps) {
   const flags = useExperimentalStore((s) => s.flagsByProject[projectPath]);
   const canvasEnabled = flags?.canvas ?? false;
+  const cityMapEnabled = flags?.cityMap ?? false;
   const nonoEnabled = flags?.nono ?? false;
   const githubEnabled = flags?.github ?? false;
   const analysisEnabled = flags?.analysis ?? false;
@@ -16,6 +17,14 @@ export function ExperimentalFeaturesSection({ projectPath }: ExperimentalFeature
     const next = !canvasEnabled;
     await useExperimentalStore.getState().setFlag(projectPath, 'canvas', next);
     if (!next && useProjectStore.getState().terminalLayout === 'canvas') {
+      useProjectStore.getState().setTerminalLayout('stack');
+    }
+  };
+
+  const handleToggleCityMap = async () => {
+    const next = !cityMapEnabled;
+    await useExperimentalStore.getState().setFlag(projectPath, 'cityMap', next);
+    if (!next && useProjectStore.getState().terminalLayout === 'map') {
       useProjectStore.getState().setTerminalLayout('stack');
     }
   };
@@ -42,6 +51,12 @@ export function ExperimentalFeaturesSection({ projectPath }: ExperimentalFeature
         description="React-flow based free-form terminal canvas with grouping and chain edges."
         checked={canvasEnabled}
         onChange={handleToggleCanvas}
+      />
+      <ToggleRow
+        label="City map layout"
+        description="Every task a city on a persistent map, every open terminal a construction site inside it."
+        checked={cityMapEnabled}
+        onChange={handleToggleCityMap}
       />
       <ToggleRow
         label="nono sandbox"

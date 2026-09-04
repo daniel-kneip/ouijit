@@ -14,6 +14,7 @@ import { useAppStore } from '../stores/appStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useTerminalStore, setActiveTerminal, terminalMatchesTag } from '../stores/terminalStore';
 import { useCanvasStore } from '../stores/canvasStore';
+import { useCityMapStore } from '../stores/cityMapStore';
 import { useUIStore } from '../stores/uiStore';
 import { addProjectTerminal, reconnectOrphanedSessions } from './terminal/terminalActions';
 import { makePlaceholderId, surfaceStartWarnings } from '../services/taskStartService';
@@ -110,12 +111,17 @@ export async function focusTerminal(ptyId: string, projectPath?: string): Promis
 
   await showProjectTerminals(ownerPath, project);
 
-  if (useProjectStore.getState().terminalLayout === 'canvas') {
+  const layout = useProjectStore.getState().terminalLayout;
+  if (layout === 'canvas') {
     const canvas = useCanvasStore.getState().canvasByProject[ownerPath];
     if (canvas) {
       const nodes = canvas.nodes.map((node) => ({ ...node, selected: node.id === ptyId }));
       useCanvasStore.getState().loadCanvas(ownerPath, { ...canvas, nodes });
     }
+  } else if (layout === 'map') {
+    const map = useCityMapStore.getState();
+    map.setOpenPty(ownerPath, ptyId);
+    if (display.taskId != null) map.setSelection(ownerPath, { type: 'site', taskNumber: display.taskId, ptyId });
   } else {
     setActiveTerminal(ownerPath, ptyId);
   }

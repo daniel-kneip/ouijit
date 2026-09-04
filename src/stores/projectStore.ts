@@ -12,7 +12,7 @@ import type { RunHookResult } from '../components/dialogs/RunHookDialog';
 import { queuePrompt, settlePrompt, settleAllPrompts, type Pending } from './promptQueue';
 import { useAppStore } from './appStore';
 
-export type TerminalLayout = 'stack' | 'canvas';
+export type TerminalLayout = 'stack' | 'canvas' | 'map';
 
 export interface RunHookInput {
   projectPath: string;

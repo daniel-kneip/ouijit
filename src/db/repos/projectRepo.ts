@@ -3,10 +3,11 @@ import type Database from 'better-sqlite3';
 /**
  * Global-settings keys of the form `<prefix><projectPath>`. Must stay in sync
  * with the renderer stores that write them: canvasStore ('canvas:'),
- * worktreeSettingsStore ('worktree:'), experimentalStore ('experimental:').
+ * cityMapStore ('citymap:'), worktreeSettingsStore ('worktree:'),
+ * experimentalStore ('experimental:').
  * Any new path-keyed setting prefix must be added here so updatePath migrates it.
  */
-const PATH_KEYED_SETTING_PREFIXES = ['canvas:', 'worktree:', 'experimental:'];
+const PATH_KEYED_SETTING_PREFIXES = ['canvas:', 'citymap:', 'worktree:', 'experimental:'];
 
 export interface ProjectRow {
   path: string;

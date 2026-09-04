@@ -1,9 +1,10 @@
 # City map: tickets as cities, terminals as construction sites
 
 An experimental layout for a project, next to the terminal stack and the
-React Flow canvas. `demo.html` in this folder is a self-contained interactive
-mock of the idea; open it in a browser. It runs on seed data and simulates
-agents, so nothing in it touches the app.
+React Flow canvas. Switch it on under Project Settings → Experimental → "City
+map layout"; the title bar then gets a map button and `Cmd+L` cycles through
+the enabled layouts. `demo.html` in this folder is the self-contained mock the
+layout was designed from; it runs on seed data and simulates agents.
 
 ## The idea
 
@@ -73,22 +74,24 @@ and takes the first spot at least one city width from every existing one.
 Slot order inside a city is a seeded shuffle of the non-road cells, empty lots
 first, so the same task always lays out the same way.
 
-## Where it plugs in
+## Where it lives
 
-- `experimentalFlags.ts`: a `cityMap` flag next to `canvas`; toggle in
+- `experimentalFlags.ts`: the `cityMap` flag next to `canvas`; toggle in
   `ExperimentalFeaturesSection`.
-- `projectStore.terminalLayout`: a third value `'map'` beside `'stack'` and
-  `'canvas'`; `Cmd+L` cycles through the enabled layouts.
-- `src/components/citymap/`: `CityMap.tsx` (2D canvas renderer plus HTML
-  overlays for labels, sidebar and inspector) and `cityMapStore.ts` with a
-  `syncMapWithTerminals` mirroring `syncCanvasWithTerminals`.
-- Clicking a site calls `focusTerminal(ptyId)` from `navigation.ts`. Whether
-  that switches to the stack or opens the terminal in a drawer over the map is
-  the main open question; the demo only shows a toast.
-- "New city" reuses the kanban composer (`StandaloneComposerSheet`) so a task
-  created from the map is the same task as one created from the board.
-- "New terminal" on a city goes through `taskStartService`, so the site
-  appears through the normal sync once the PTY exists.
+- `projectStore.terminalLayout`: `'map'` beside `'stack'` and `'canvas'`.
+- `src/components/citymap/`: `cityGeometry.ts` (layout, lots, placement, site
+  state), `drawCity.ts` (canvas drawing), `CityMap.tsx` (the layout: sidebar,
+  map, inspector, terminal drawer). `stores/cityMapStore.ts` holds positions
+  and lots and syncs them with the terminal store.
+- A site opens its terminal in a drawer over the map, with the same header the
+  stack and canvas use, so diff, panels, hooks and the context menu are all
+  there. `focusTerminal` lands in the drawer when the map is the layout.
+- The city's context menu is the kanban card's: Open in, Move to, Trash, plus
+  "Show on board". "New ticket" opens the task composer; "New terminal" on a
+  city goes through `openTaskShell`, so the site appears through the normal
+  sync once the PTY exists.
+- Terminals without a task are counted in the sidebar with a jump to the
+  stack; they have no city to stand in.
 
 The renderer is a plain 2D canvas rather than React Flow nodes: a city is a
 few hundred small shapes with ambient animation, and the map should stay
@@ -114,8 +117,7 @@ stay drawn, since they animate.
 
 ## Open questions
 
-- Terminal on click: drawer over the map, or switch to the stack and back.
 - Whether `done` cities should be archived off the map after a while, or
-  stay as history (the demo keeps them, faded).
-- Whether a terminal without a task deserves its own lot or should not appear
-  on the map at all.
+  stay as history (they stay, faded, for now).
+- Whether a terminal without a task deserves a lot on the outskirts.
+- Kenney sprites in place of the procedural drawing.

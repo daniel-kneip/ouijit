@@ -32,6 +32,9 @@ export function TitleBar({ mode }: TitleBarProps) {
   const canvasEnabled = useExperimentalStore((s) =>
     activeProjectPath ? (s.flagsByProject[activeProjectPath]?.canvas ?? false) : false,
   );
+  const cityMapEnabled = useExperimentalStore((s) =>
+    activeProjectPath ? (s.flagsByProject[activeProjectPath]?.cityMap ?? false) : false,
+  );
   const githubEnabled = useExperimentalStore((s) =>
     activeProjectPath ? (s.flagsByProject[activeProjectPath]?.github ?? false) : false,
   );
@@ -68,7 +71,7 @@ export function TitleBar({ mode }: TitleBarProps) {
   }, [activeProjectPath, cloning]);
 
   const handleToggleView = useCallback(
-    (view: 'board' | 'stack' | 'canvas' | 'settings' | 'pull-requests' | 'analysis') => {
+    (view: 'board' | 'stack' | 'canvas' | 'map' | 'settings' | 'pull-requests' | 'analysis') => {
       const store = useProjectStore.getState();
       if (view === 'settings' || view === 'pull-requests' || view === 'analysis') {
         store.setActivePanel(view);
@@ -187,6 +190,15 @@ export function TitleBar({ mode }: TitleBarProps) {
                       onClick={() => handleToggleView('canvas')}
                     >
                       <CanvasIcon />
+                    </TooltipButton>
+                  )}
+                  {cityMapEnabled && (
+                    <TooltipButton
+                      text="City map"
+                      className={`w-9 h-full flex items-center justify-center text-text-secondary transition-all duration-150 ease-out hover:text-text-primary hover:bg-background-tertiary [&>svg]:w-5 [&>svg]:h-5${activePanel === 'terminals' && !kanbanVisible && terminalLayout === 'map' ? ' text-text-primary bg-background-tertiary' : ''}`}
+                      onClick={() => handleToggleView('map')}
+                    >
+                      <Icon name="map-trifold" />
                     </TooltipButton>
                   )}
                   {githubEnabled && (

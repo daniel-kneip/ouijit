@@ -9,6 +9,8 @@
 export interface ExperimentalFlags {
   /** React-flow free-form terminal canvas. */
   canvas: boolean;
+  /** Tasks as cities on a persistent map, terminals as construction sites inside them. */
+  cityMap: boolean;
   /** The nono sandbox backend (still maturing; gated off by default). */
   nono: boolean;
   /** GitHub pull request inbox and review surface. Panel and polling stay dark until on. */
@@ -19,6 +21,7 @@ export interface ExperimentalFlags {
 
 export const DEFAULT_EXPERIMENTAL_FLAGS: ExperimentalFlags = {
   canvas: false,
+  cityMap: false,
   nono: false,
   github: false,
   analysis: false,
