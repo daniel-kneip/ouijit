@@ -40,6 +40,7 @@ import { openInEntry, moveToEntry, STATUS_LABELS, type TaskMenuActions } from '.
 import { openTaskShell } from '../navigation';
 import { openTaskInEditor } from '../../services/openInEditor';
 import { completeTask } from '../../services/taskCompletion';
+import { bulkTransitionTasks } from '../../services/taskStartService';
 import { revealInFileManager } from '../../utils/fileManager';
 import { openTaskComposer } from '../../utils/openTaskComposer';
 import {
@@ -173,6 +174,16 @@ function distanceToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + u * dx), p.y - (a.y + u * dy));
 }
 
+/**
+ * The board's status change, not a bare write: it creates the worktree, opens
+ * the terminal and runs the start, continue or review hook the way a drop on
+ * a column does.
+ */
+function transitionTask(projectPath: string, task: TaskWithWorkspace, status: TaskStatus): void {
+  if (task.status === status) return;
+  void bulkTransitionTasks(projectPath, [task.taskNumber], status);
+}
+
 interface CityMapProps {
   projectPath: string;
 }
@@ -299,6 +310,31 @@ export function CityMap({ projectPath }: CityMapProps) {
     },
     [projectPath],
   );
+
+  // A terminal the selected city just gained, such as the one a status change
+  // opened, shows up in the drawer the way the board shows it in the stack.
+  const knownSites = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const seen = new Set<string>();
+    let fresh: { taskNumber: number; ptyId: string } | null = null;
+    for (const city of cities) {
+      for (const site of city.sites) {
+        seen.add(site.ptyId);
+        if (knownSites.current && !knownSites.current.has(site.ptyId)) {
+          fresh = { taskNumber: city.task.taskNumber, ptyId: site.ptyId };
+        }
+      }
+    }
+    const before = knownSites.current;
+    knownSites.current = seen;
+    if (!before || !fresh) return;
+    const current = useCityMapStore.getState().selection[projectPath];
+    if (!current || current.type === 'district' || current.type === 'road' || current.taskNumber !== fresh.taskNumber) {
+      return;
+    }
+    select({ type: 'site', taskNumber: fresh.taskNumber, ptyId: fresh.ptyId });
+    openTerminal(fresh.ptyId);
+  }, [cities, projectPath, select, openTerminal]);
 
   const surface = useMapSurface({
     projectPath,
@@ -927,10 +963,7 @@ function useMapSurface(input: MapSurfaceInput) {
         openTerminal: (provider) => void openTaskShellOnMap(projectPath, task, provider, openTerminal),
         openEditor: () => void openTaskInEditor(projectPath, task),
         openFolder: () => void revealInFileManager(task.worktreePath!),
-        setStatus: async (status) => {
-          await window.api.task.setStatus(projectPath, task.taskNumber, status);
-          store.loadTasks(projectPath);
-        },
+        setStatus: (status) => transitionTask(projectPath, task, status),
         completeToDone: () => void completeTask({ projectPath, task }),
         trash: async () => {
           await window.api.task.trash(projectPath, task.taskNumber);
@@ -1790,14 +1823,7 @@ function CityInspector({
     await window.api.task.setName(projectPath, task.taskNumber, trimmed);
     useProjectStore.getState().loadTasks(projectPath);
   };
-  const setStatus = async (status: TaskStatus) => {
-    if (status === 'done') {
-      await completeTask({ projectPath, task });
-      return;
-    }
-    await window.api.task.setStatus(projectPath, task.taskNumber, status);
-    useProjectStore.getState().loadTasks(projectPath);
-  };
+  const setStatus = (status: TaskStatus) => transitionTask(projectPath, task, status);
 
   if (site) {
     return (
@@ -1852,7 +1878,7 @@ function CityInspector({
           className="text-xs bg-transparent border border-border rounded-md px-2 py-1 text-text-primary outline-none focus:border-accent"
           value={task.status}
           aria-label="Status"
-          onChange={(e) => void setStatus(e.target.value as TaskStatus)}
+          onChange={(e) => setStatus(e.target.value as TaskStatus)}
         >
           {STATUS_ORDER.map((s) => (
             <option key={s} value={s}>

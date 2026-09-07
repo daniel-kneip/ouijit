@@ -135,7 +135,20 @@ describe('the city map', () => {
       expect(state.cities[7].lots).toEqual({ 'alpha-7': 0, 'alpha-7b': 1 });
     });
 
+    // A terminal the selected city gains opens in the drawer by itself.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    useTerminalStore.getState().addTerminal(project.path, 'alpha-7c', {
+      label: 'Fresh agent',
+      taskId: 7,
+      summaryType: 'thinking',
+    });
+    await waitFor(() => expect(screen.getByTestId('terminal-drawer').textContent).toContain('alpha-7c'));
+    fireEvent.click(screen.getByLabelText('Hide terminal'));
+    useTerminalStore.getState().removeTerminal('alpha-7c');
+
     // A terminal that finished and closed leaves a building; one closed mid-work frees its lot.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    fireEvent.click(await screen.findByTestId('site-row-alpha-7b'));
     useTerminalStore.getState().updateDisplay('alpha-7b', { summaryType: 'success' });
     await waitFor(() => expect(screen.getByTestId('site-inspector').textContent).toContain('Finished'));
     useTerminalStore.getState().removeTerminal('alpha-7b');
@@ -260,5 +273,20 @@ describe('the city map', () => {
     expect(sidebar.textContent).toContain('No district');
     expect(screen.getByTestId('fit-all')).toBeTruthy();
     expect(screen.getByTestId('minimap')).toBeTruthy();
+  });
+
+  test('a status change on the map goes through the board’s transition, hooks included', async () => {
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('city-row-11');
+    vi.mocked(window.api.task.setStatus).mockClear();
+    vi.mocked(window.api.hooks.get).mockClear();
+
+    fireEvent.click(screen.getByTestId('city-row-11'));
+    const inspector = await screen.findByTestId('city-inspector');
+    fireEvent.change(within(inspector).getByLabelText('Status'), { target: { value: 'in_progress' } });
+
+    await waitFor(() => expect(window.api.task.setStatus).toHaveBeenCalledWith(project.path, 11, 'in_progress'));
+    // A bare status write never asks for hooks; the transition does, to run the start hook.
+    await waitFor(() => expect(window.api.hooks.get).toHaveBeenCalledWith(project.path));
   });
 });
