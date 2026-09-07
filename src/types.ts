@@ -371,6 +371,8 @@ export interface TaskWithWorkspace {
   githubPrNumber?: number;
   /** Linked GitHub issue, if the task was created from one. */
   githubIssueNumber?: number;
+  /** Set while the task is off the board and the map; everything else about it stays. */
+  archivedAt?: string;
 }
 
 export interface HooksAPI {
@@ -408,6 +410,7 @@ export interface TaskAPI {
   create(projectPath: string, name?: string, prompt?: string): Promise<TaskWorktreeResult>;
   createAndStart(projectPath: string, name?: string, prompt?: string, branchName?: string): Promise<TaskWorktreeResult>;
   start(projectPath: string, taskNumber: number, branchName?: string): Promise<TaskWorktreeResult>;
+  /** Live tasks only; archived ones come from `getArchived`. */
   getAll(projectPath: string): Promise<TaskWithWorkspace[]>;
   getByNumber(projectPath: string, taskNumber: number): Promise<TaskWithWorkspace | null>;
   setStatus(
@@ -416,7 +419,9 @@ export interface TaskAPI {
     status: TaskStatus,
   ): Promise<{ success: boolean; error?: string; hookWarning?: string }>;
   delete(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
-  trash(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string; trashed?: boolean }>;
+  archive(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
+  unarchive(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
+  getArchived(projectPath: string): Promise<TaskWithWorkspace[]>;
   setMergeTarget(
     projectPath: string,
     taskNumber: number,

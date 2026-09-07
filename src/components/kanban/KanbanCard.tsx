@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { TaskWithWorkspace, SandboxProviderId } from '../../types';
 import { openInEntry, moveToEntry, githubEntries, STATUS_LABELS, type TaskMenuActions } from './taskMenu';
 import { completeTask } from '../../services/taskCompletion';
+import { archiveTasks, deleteTasks } from '../../services/taskArchive';
 import { useTerminalStore, type TerminalDisplayState } from '../../stores/terminalStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { terminalInstances } from '../terminal/terminalReact';
@@ -140,7 +141,7 @@ export const KanbanCard = memo(function KanbanCard({
   const selectedCount = useProjectStore((s) => s.selectedTaskNumbers.size);
   const contextMenuItems = useMemo((): ContextMenuEntry[] => {
     if (isSelected && selectedCount > 1) {
-      const bulkActions: Pick<TaskMenuActions, 'setStatus' | 'trash'> = {
+      const bulkActions: Pick<TaskMenuActions, 'setStatus' | 'archive' | 'remove'> = {
         setStatus: async (status) => {
           const selected = [...useProjectStore.getState().selectedTaskNumbers];
           await Promise.allSettled(selected.map((n) => window.api.task.setStatus(projectPath, n, status)));
@@ -148,13 +149,8 @@ export const KanbanCard = memo(function KanbanCard({
           useProjectStore.getState().clearSelection();
           useProjectStore.getState().addToast(`Moved ${selected.length} tasks to ${STATUS_LABELS[status]}`, 'success');
         },
-        trash: async () => {
-          const selected = [...useProjectStore.getState().selectedTaskNumbers];
-          await Promise.allSettled(selected.map((n) => window.api.task.trash(projectPath, n)));
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().clearSelection();
-          useProjectStore.getState().addToast(`Moved ${selected.length} tasks to trash`, 'success');
-        },
+        archive: () => void archiveTasks(projectPath, [...useProjectStore.getState().selectedTaskNumbers]),
+        remove: () => deleteTasks(projectPath, [...useProjectStore.getState().selectedTaskNumbers]),
       };
       const items: ContextMenuEntry[] = [
         moveToEntry(bulkActions),
@@ -195,11 +191,8 @@ export const KanbanCard = memo(function KanbanCard({
         useProjectStore.getState().loadTasks(projectPath);
       },
       completeToDone: () => void completeTask({ projectPath, task }),
-      trash: async () => {
-        await window.api.task.trash(projectPath, task.taskNumber);
-        useProjectStore.getState().loadTasks(projectPath);
-        useProjectStore.getState().addToast('Task moved to trash', 'success');
-      },
+      archive: () => void archiveTasks(projectPath, [task.taskNumber]),
+      remove: () => deleteTasks(projectPath, [task.taskNumber]),
     };
     items.push(openInEntry(availableSandboxProviders, !!(task.worktreePath && task.branch), actions));
 

@@ -3,10 +3,6 @@
  * Extracted from IPC handlers to keep handlers as thin one-liner delegations.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { trashItem } from './platform';
 import {
   getProjectTasks,
   getTaskByNumber,
@@ -15,6 +11,7 @@ import {
   setTaskStatus,
   setTaskDescription,
   deleteTaskByNumber,
+  setTaskArchived,
   clearParentReferences,
   reorderTask,
   type TaskStatus,
@@ -25,8 +22,6 @@ import type { TaskWithWorkspace, TaskWorktreeResult, WorktreeInfo } from './type
 import { getCachedHealth } from './healthCheck';
 import { getLogger } from './logger';
 import { deleteOrphanedAttachments, extractAttachmentPaths } from './attachments';
-
-const execFileAsync = promisify(execFile);
 
 const taskLog = getLogger().scope('task');
 
@@ -213,60 +208,23 @@ export async function deleteTaskWithWorktree(
 }
 
 /**
- * Delete a task, moving its worktree directory to the OS trash (recoverable)
- * instead of permanently deleting it with `git worktree remove --force`.
+ * Take a task off the board and the map without touching its worktree,
+ * branch or history; `unarchiveTask` brings it back as it was.
  */
-export async function trashTaskWithWorktree(
+export async function archiveTask(
   projectPath: string,
   taskNumber: number,
-): Promise<{ success: boolean; error?: string; trashed?: boolean }> {
-  const task = await getTaskByNumber(projectPath, taskNumber);
+): Promise<{ success: boolean; error?: string }> {
+  taskLog.info('archiving task', { taskNumber });
+  return setTaskArchived(projectPath, taskNumber, true);
+}
 
-  // Clear parent references on children before deleting
-  await clearParentReferences(projectPath, taskNumber);
-
-  // Resolve the worktree path — prefer the DB path, fall back to git worktree list
-  let worktreePath: string | undefined;
-  if (task?.worktreePath && existsSync(task.worktreePath)) {
-    worktreePath = task.worktreePath;
-  } else if (task?.branch) {
-    const worktrees = await listWorktrees(projectPath);
-    const wt = worktrees.find((w) => w.branch === task.branch);
-    if (wt) worktreePath = wt.path;
-  }
-
-  if (worktreePath) {
-    taskLog.info('trashing task worktree', { taskNumber, worktreePath });
-    try {
-      await trashItem(worktreePath);
-      await execFileAsync('git', ['worktree', 'prune'], { cwd: projectPath, encoding: 'utf8' });
-    } catch (trashError) {
-      const msg = trashError instanceof Error ? trashError.message : String(trashError);
-      taskLog.error('trashItem failed', { taskNumber, error: msg });
-      return { success: false, error: `Failed to move worktree to trash: ${msg}` };
-    }
-
-    if (task?.branch) {
-      try {
-        await execFileAsync('git', ['branch', '-D', task.branch], { cwd: projectPath, encoding: 'utf8' });
-      } catch {
-        // Branch may already be deleted
-      }
-    }
-
-    const dbResult = await deleteTaskByNumber(projectPath, taskNumber);
-    if (dbResult.success) {
-      await cleanupAttachments(projectPath, extractAttachmentPaths(task?.prompt), taskNumber);
-    }
-    return { ...dbResult, trashed: true };
-  }
-
-  taskLog.info('trashing task (metadata-only)', { taskNumber });
-  const dbResult = await deleteTaskByNumber(projectPath, taskNumber);
-  if (dbResult.success) {
-    await cleanupAttachments(projectPath, extractAttachmentPaths(task?.prompt), taskNumber);
-  }
-  return dbResult;
+export async function unarchiveTask(
+  projectPath: string,
+  taskNumber: number,
+): Promise<{ success: boolean; error?: string }> {
+  taskLog.info('restoring task from archive', { taskNumber });
+  return setTaskArchived(projectPath, taskNumber, false);
 }
 
 /** A stored task plus its resolved worktree, in the shape the renderer takes. */
@@ -285,15 +243,25 @@ function toTaskWithWorkspace(task: TaskMetadata, worktree: WorktreeInfo | undefi
     parentTaskNumber: task.parentTaskNumber,
     githubPrNumber: task.githubPrNumber,
     githubIssueNumber: task.githubIssueNumber,
+    archivedAt: task.archivedAt,
   };
 }
 
 /**
- * Get all tasks with their resolved worktree paths.
+ * The project's live tasks with their resolved worktree paths; archived ones
+ * come from `getArchivedTasksWithWorkspaces`.
  */
 export async function getTasksWithWorkspaces(projectPath: string): Promise<TaskWithWorkspace[]> {
+  return tasksWithWorkspaces(projectPath, false);
+}
+
+export async function getArchivedTasksWithWorkspaces(projectPath: string): Promise<TaskWithWorkspace[]> {
+  return tasksWithWorkspaces(projectPath, true);
+}
+
+async function tasksWithWorkspaces(projectPath: string, archived: boolean): Promise<TaskWithWorkspace[]> {
   const worktrees = await listWorktrees(projectPath);
-  const tasks = await getProjectTasks(projectPath);
+  const tasks = (await getProjectTasks(projectPath)).filter((t) => !!t.archivedAt === archived);
   const worktreeMap = new Map(worktrees.map((wt) => [wt.branch, wt]));
 
   return tasks.map((task) => toTaskWithWorkspace(task, task.branch ? worktreeMap.get(task.branch) : undefined));

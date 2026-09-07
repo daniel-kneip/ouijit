@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import { createTask, getTaskByNumber } from '../db';
 import { saveAttachment } from '../attachments';
-import { trashTaskWithWorktree, updateTaskDescription } from '../taskLifecycle';
+import { deleteTaskWithWorktree, updateTaskDescription } from '../taskLifecycle';
 
 const PROJECT = '/test/attachment-cleanup';
 
@@ -50,22 +50,22 @@ describe('attachment cleanup', () => {
     expect(fs.existsSync(dropped)).toBe(false);
   });
 
-  test('trashTaskWithWorktree removes the task’s attachments', async () => {
+  test('deleteTaskWithWorktree removes the task’s attachments', async () => {
     const filePath = await makeAttachment();
     await updateTaskDescription(PROJECT, 1, `with ![](${filePath})`);
 
-    const result = await trashTaskWithWorktree(PROJECT, 1);
+    const result = await deleteTaskWithWorktree(PROJECT, 1);
 
     expect(result.success).toBe(true);
     expect(fs.existsSync(filePath)).toBe(false);
   });
 
-  test('trashTaskWithWorktree keeps attachments still referenced by other tasks', async () => {
+  test('deleteTaskWithWorktree keeps attachments still referenced by other tasks', async () => {
     const shared = await makeAttachment();
     await updateTaskDescription(PROJECT, 1, `mine ![](${shared})`);
     await updateTaskDescription(PROJECT, 2, `mine too ![](${shared})`);
 
-    await trashTaskWithWorktree(PROJECT, 1);
+    await deleteTaskWithWorktree(PROJECT, 1);
 
     expect(fs.existsSync(shared)).toBe(true);
   });

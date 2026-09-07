@@ -40,9 +40,11 @@ import { openInEntry, moveToEntry, STATUS_LABELS, type TaskMenuActions } from '.
 import { openTaskShell } from '../navigation';
 import { openTaskInEditor } from '../../services/openInEditor';
 import { completeTask } from '../../services/taskCompletion';
+import { archiveTasks, deleteTasks } from '../../services/taskArchive';
 import { bulkTransitionTasks } from '../../services/taskStartService';
 import { revealInFileManager } from '../../utils/fileManager';
 import { openTaskComposer } from '../../utils/openTaskComposer';
+import { ArchivedTaskList } from '../kanban/ArchivedTasks';
 import {
   BIOME_LABEL,
   CITY_HALF_H,
@@ -408,6 +410,7 @@ export function CityMap({ projectPath }: CityMapProps) {
       data-testid="city-map"
     >
       <CitySidebar
+        projectPath={projectPath}
         width={sidebarWidth}
         cities={cities}
         districts={districts}
@@ -990,11 +993,8 @@ function useMapSurface(input: MapSurfaceInput) {
         openFolder: () => void revealInFileManager(task.worktreePath!),
         setStatus: (status) => transitionTask(projectPath, task, status),
         completeToDone: () => void completeTask({ projectPath, task }),
-        trash: async () => {
-          await window.api.task.trash(projectPath, task.taskNumber);
-          store.loadTasks(projectPath);
-          store.addToast('Task moved to trash', 'success');
-        },
+        archive: () => void archiveTasks(projectPath, [task.taskNumber]),
+        remove: () => deleteTasks(projectPath, [task.taskNumber]),
       };
       items.push(openInEntry(input.availableSandboxProviders, !!(task.worktreePath && task.branch), actions));
       items.push(moveToEntry(actions));
@@ -1541,6 +1541,7 @@ function AlertBadge({ count, state }: { count: number; state: 'waiting' | 'error
 }
 
 interface CitySidebarProps {
+  projectPath: string;
   width: number;
   cities: CityModel[];
   districts: District[];
@@ -1554,6 +1555,7 @@ interface CitySidebarProps {
 }
 
 function CitySidebar({
+  projectPath,
   width,
   cities,
   districts,
@@ -1724,8 +1726,9 @@ function CitySidebar({
           })}
         </div>
       ))}
+      <SidebarArchive projectPath={projectPath} />
       {looseTerminals > 0 && (
-        <div className="mt-auto px-4 py-3 text-[11px] text-text-tertiary border-t border-border">
+        <div className="px-4 py-3 text-[11px] text-text-tertiary border-t border-border">
           {looseTerminals} terminal{looseTerminals > 1 ? 's' : ''} outside any ticket.{' '}
           <button
             type="button"
@@ -1737,6 +1740,28 @@ function CitySidebar({
         </div>
       )}
     </aside>
+  );
+}
+
+/** Archived tickets have no city on the map; the list is the only way back. */
+function SidebarArchive({ projectPath }: { projectPath: string }) {
+  const count = useProjectStore((s) => s.archivedTasks.length);
+  const [open, setOpen] = useState(false);
+  if (count === 0) return null;
+  return (
+    <div className="mt-auto px-2 pt-2 pb-1 border-t border-border">
+      <button
+        type="button"
+        className="mx-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary hover:text-text-primary flex items-center gap-2"
+        aria-expanded={open}
+        data-testid="sidebar-archive-toggle"
+        onClick={() => setOpen((o) => !o)}
+      >
+        Archive
+        <span className="font-mono font-medium">{count}</span>
+      </button>
+      {open && <ArchivedTaskList projectPath={projectPath} />}
+    </div>
   );
 }
 

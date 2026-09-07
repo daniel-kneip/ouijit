@@ -68,6 +68,7 @@ export interface PendingCliCompletion {
 
 interface ProjectStoreState {
   tasks: TaskWithWorkspace[];
+  archivedTasks: TaskWithWorkspace[];
   kanbanVisible: boolean;
   terminalLayout: TerminalLayout;
   activePanel: 'terminals' | 'settings' | 'pull-requests' | 'analysis';
@@ -214,6 +215,7 @@ let scriptsLoadVersion = 0;
 
 export const useProjectStore = create<ProjectStore>()((set, get) => ({
   tasks: [],
+  archivedTasks: [],
   kanbanVisible: false,
   terminalLayout: 'stack',
   activePanel: 'terminals',
@@ -318,6 +320,7 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     settleAllPrompts(get().runHookQueue, (): RunHookResult | null => null);
     set({
       tasks: [],
+      archivedTasks: [],
       kanbanVisible: false,
       terminalLayout: 'stack',
       activePanel: 'terminals',
@@ -380,9 +383,12 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
   loadTasks: async (projectPath) => {
     const version = ++get()._version;
     try {
-      const tasks = await window.api.task.getAll(projectPath);
+      const [tasks, archivedTasks] = await Promise.all([
+        window.api.task.getAll(projectPath),
+        window.api.task.getArchived(projectPath),
+      ]);
       if (get()._version !== version) return;
-      set({ tasks });
+      set({ tasks, archivedTasks });
       useAppStore.getState().updateProjectTaskCache(projectPath, tasks);
     } catch (err) {
       if (get()._version !== version) return;

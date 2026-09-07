@@ -43,6 +43,7 @@ export interface TaskMetadata {
   parentTaskNumber?: number;
   githubPrNumber?: number;
   githubIssueNumber?: number;
+  archivedAt?: string;
 }
 
 // ── Lazy singleton repos ─────────────────────────────────────────────
@@ -128,6 +129,7 @@ function rowToTask(row: TaskRow): TaskMetadata {
     // drops a 0, and nothing guarantees these numbers stay 1-based.
     ...(row.github_pr_number != null && { githubPrNumber: row.github_pr_number }),
     ...(row.github_issue_number != null && { githubIssueNumber: row.github_issue_number }),
+    ...(row.archived_at && { archivedAt: row.archived_at }),
   };
 }
 
@@ -493,6 +495,21 @@ export async function deleteDiffLens(projectPath: string, subjectKey: string): P
   const { diffLensRepo: dl } = repos();
   dl.delete(projectPath, subjectKey);
   return { success: true };
+}
+
+export async function setTaskArchived(
+  projectPath: string,
+  taskNumber: number,
+  archived: boolean,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { taskRepo: tr } = repos();
+    if (!tr.getByTaskNumber(projectPath, taskNumber)) return { success: false, error: 'Task not found' };
+    tr.setArchived(projectPath, taskNumber, archived);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
 }
 
 export async function deleteTaskByNumber(

@@ -18,6 +18,7 @@ export interface TaskRow {
   parent_task_number: number | null;
   github_pr_number: number | null;
   github_issue_number: number | null;
+  archived_at: string | null;
 }
 
 export class TaskRepo {
@@ -250,6 +251,12 @@ export class TaskRepo {
         'UPDATE tasks SET parent_task_number = NULL, merge_target = NULL WHERE project_path = ? AND parent_task_number = ?',
       )
       .run(projectPath, parentTaskNumber);
+  }
+
+  setArchived(projectPath: string, taskNumber: number, archived: boolean): void {
+    this.db
+      .prepare('UPDATE tasks SET archived_at = ? WHERE project_path = ? AND task_number = ?')
+      .run(archived ? new Date().toISOString() : null, projectPath, taskNumber);
   }
 
   delete(projectPath: string, taskNumber: number): void {

@@ -161,10 +161,9 @@ export interface IpcInvokeContract {
     return: { success: boolean; error?: string; hookWarning?: string };
   };
   'task:delete': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
-  'task:trash': {
-    args: [projectPath: string, taskNumber: number];
-    return: { success: boolean; error?: string; trashed?: boolean };
-  };
+  'task:archive': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
+  'task:unarchive': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
+  'task:get-archived': { args: [projectPath: string]; return: TaskWithWorkspace[] };
   'task:set-merge-target': {
     args: [projectPath: string, taskNumber: number, mergeTarget: string];
     return: { success: boolean; error?: string };

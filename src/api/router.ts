@@ -42,6 +42,8 @@ import {
   beginTask,
   setTaskStatusWithHooks,
   deleteTaskWithWorktree,
+  archiveTask,
+  unarchiveTask,
   getTasksWithWorkspaces,
   getTaskWithWorkspace,
 } from '../taskLifecycle';
@@ -455,6 +457,20 @@ const routes: Route[] = [
       if (typeof r.body.mergeTarget !== 'string') throw new HttpError(400, 'Missing mergeTarget in body');
       return setTaskMergeTarget(project, num, r.body.mergeTarget);
     },
+    true,
+  ),
+
+  route(
+    'POST',
+    'tasks/:number/archive',
+    (r) => archiveTask(requireProject(r.query), requireInt(r.segments[1], 'Task number')),
+    true,
+  ),
+
+  route(
+    'POST',
+    'tasks/:number/unarchive',
+    (r) => unarchiveTask(requireProject(r.query), requireInt(r.segments[1], 'Task number')),
     true,
   ),
 

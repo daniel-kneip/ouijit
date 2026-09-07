@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { terminalInstances } from './terminalReact';
 import { addProjectTerminal, renameTerminal, startRunner } from './terminalActions';
 import { completeTask } from '../../services/taskCompletion';
+import { archiveTasks, deleteTasks } from '../../services/taskArchive';
 import { Icon } from './Icon';
 import { TagInput } from './TagInput';
 import { TerminalHeaderView, TerminalHeaderName } from './TerminalHeaderView';
@@ -131,11 +132,8 @@ export const TerminalHeader = memo(function TerminalHeader({
           useProjectStore.getState().loadTasks(projectPath);
         },
         completeToDone: task ? () => void completeTask({ projectPath, task }) : undefined,
-        trash: async () => {
-          await window.api.task.trash(projectPath, taskId!);
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().addToast('Task moved to trash', 'success');
-        },
+        archive: () => void archiveTasks(projectPath, [taskId!]),
+        remove: () => deleteTasks(projectPath, [taskId!]),
       };
 
       items.push(openInEntry(availableSandboxProviders, hasWorktree, actions));

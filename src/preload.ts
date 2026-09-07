@@ -162,7 +162,9 @@ contextBridge.exposeInMainWorld('api', {
     setStatus: (projectPath: string, taskNumber: number, status: TaskStatus) =>
       typedInvoke('task:set-status', projectPath, taskNumber, status),
     delete: (projectPath: string, taskNumber: number) => typedInvoke('task:delete', projectPath, taskNumber),
-    trash: (projectPath: string, taskNumber: number) => typedInvoke('task:trash', projectPath, taskNumber),
+    archive: (projectPath: string, taskNumber: number) => typedInvoke('task:archive', projectPath, taskNumber),
+    unarchive: (projectPath: string, taskNumber: number) => typedInvoke('task:unarchive', projectPath, taskNumber),
+    getArchived: (projectPath: string) => typedInvoke('task:get-archived', projectPath),
     setMergeTarget: (projectPath: string, taskNumber: number, mergeTarget: string) =>
       typedInvoke('task:set-merge-target', projectPath, taskNumber, mergeTarget),
     setName: (projectPath: string, taskNumber: number, name: string) =>

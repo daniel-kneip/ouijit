@@ -8,8 +8,10 @@ import {
   setTaskStatusWithHooks,
   reorderTaskWithHooks,
   deleteTaskWithWorktree,
-  trashTaskWithWorktree,
+  archiveTask,
+  unarchiveTask,
   getTasksWithWorkspaces,
+  getArchivedTasksWithWorkspaces,
   getTaskWithWorkspace,
   createBranchFromTask,
   updateTaskDescription,
@@ -33,7 +35,11 @@ export function registerTaskHandlers(): void {
 
   typedHandle('task:delete', (projectPath, taskNumber) => deleteTaskWithWorktree(projectPath, taskNumber));
 
-  typedHandle('task:trash', (projectPath, taskNumber) => trashTaskWithWorktree(projectPath, taskNumber));
+  typedHandle('task:archive', (projectPath, taskNumber) => archiveTask(projectPath, taskNumber));
+
+  typedHandle('task:unarchive', (projectPath, taskNumber) => unarchiveTask(projectPath, taskNumber));
+
+  typedHandle('task:get-archived', (projectPath) => getArchivedTasksWithWorkspaces(projectPath));
 
   typedHandle('task:set-merge-target', (projectPath, taskNumber, mergeTarget) =>
     setTaskMergeTarget(projectPath, taskNumber, mergeTarget),

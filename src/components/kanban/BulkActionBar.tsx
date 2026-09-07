@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useProjectStore } from '../../stores/projectStore';
 import type { TaskWithWorkspace, TaskStatus, SandboxProviderId } from '../../types';
 import { bulkTransitionTasks } from '../../services/taskStartService';
+import { archiveTasks, deleteTasks } from '../../services/taskArchive';
 import { Icon } from '../terminal/Icon';
 
 interface BulkActionBarProps {
@@ -31,28 +32,12 @@ export function BulkActionBar({ projectPath, onOpenTerminal }: BulkActionBarProp
     [projectPath],
   );
 
-  const handleDelete = useCallback(async () => {
-    const store = useProjectStore.getState();
-    const selected = [...store.selectedTaskNumbers];
-    if (selected.length > 5) {
-      store.addToast(`Move ${selected.length} tasks to trash?`, {
-        type: 'info',
-        persistent: true,
-        actionLabel: 'Move to Trash',
-        onAction: async () => {
-          const nums = [...useProjectStore.getState().selectedTaskNumbers];
-          await Promise.allSettled(nums.map((n) => window.api.task.trash(projectPath, n)));
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().clearSelection();
-          useProjectStore.getState().addToast(`Moved ${nums.length} tasks to trash`, 'success');
-        },
-      });
-      return;
-    }
-    await Promise.allSettled(selected.map((n) => window.api.task.trash(projectPath, n)));
-    useProjectStore.getState().loadTasks(projectPath);
-    useProjectStore.getState().clearSelection();
-    useProjectStore.getState().addToast(`Moved ${selected.length} tasks to trash`, 'success');
+  const handleArchive = useCallback(() => {
+    void archiveTasks(projectPath, [...useProjectStore.getState().selectedTaskNumbers]);
+  }, [projectPath]);
+
+  const handleDelete = useCallback(() => {
+    deleteTasks(projectPath, [...useProjectStore.getState().selectedTaskNumbers]);
   }, [projectPath]);
 
   const handleOpenTerminals = useCallback(() => {
@@ -104,7 +89,8 @@ export function BulkActionBar({ projectPath, onOpenTerminal }: BulkActionBarProp
       <Divider />
       <ActionButton icon="terminal" label="Terminal" onClick={handleOpenTerminals} />
       <Divider />
-      <ActionButton icon="trash" label="Move to Trash" onClick={handleDelete} danger />
+      <ActionButton icon="archive" label="Archive" onClick={handleArchive} />
+      <ActionButton icon="trash" label="Delete" onClick={handleDelete} danger />
     </div>
   );
 

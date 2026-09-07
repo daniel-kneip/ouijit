@@ -148,7 +148,9 @@ stay drawn, since they animate.
 
 ## Open questions
 
-- Whether `done` cities should be archived off the map after a while, or
-  stay as history (they stay, faded, for now).
+- Whether `done` cities should leave the map on their own after a while.
+  Archiving is by hand for now: "Move to → Archive" takes a city off the map
+  and the board with its worktree and branch intact, the sidebar's Archive
+  list brings it back, and "Delete…" is the one that removes the worktree.
 - Whether a terminal without a task deserves a lot on the outskirts.
 - Kenney sprites in place of the procedural drawing.
