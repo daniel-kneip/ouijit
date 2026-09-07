@@ -46,6 +46,14 @@ puts that context first:
   itself; while the city a road leads from is not done, the destination's
   label says what it waits for. The project's tag filter applies to the map:
   cities without a matching terminal fade out and leave the list.
+- **No two cities look alike.** The root of a task chain fixes a landscape
+  (meadow, forest, desert, tundra, tropical) and an architecture (modern, old
+  town, Mediterranean, Nordic, pagoda, adobe), so a family of tasks shares a
+  look and unrelated ones differ. The season follows the ticket's age: spring
+  for the first days, summer within two weeks, autumn within six, winter
+  after that, with snow where the climate allows. The sky follows the sites:
+  clouds drift over a city with an agent at work, rain falls on one with a
+  problem. The inspector names the mix.
 - **A sidebar lists cities by status or by district** with the attention
   counts first (how many sites wait for the user, how many hit a problem) and
   a "Next" jump. Cities and districts snap to the cell lattice when dragged.
@@ -57,26 +65,29 @@ puts that context first:
 Nothing new has to be modelled. The map is a view over what the stores
 already hold:
 
-| Map                    | App                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------ |
-| City                   | `TaskWithWorkspace` (`taskNumber`, `name`, `prompt`, `status`, `parentTaskNumber`)               |
-| City presence          | `TaskStatus`: `todo` / `in_progress` / `in_review` / `done`                                      |
-| Site                   | A terminal whose `TerminalDisplayState.taskId` is the city's task                                |
-| Site name              | `display.label`, falling back to `lastOscTitle`; rename via the existing `pty.setLabel`          |
-| Site state             | `summaryType` + `hookStatus` + `exited`: thinking → working, ready → waiting, error, success     |
-| Road                   | `parentTaskNumber`                                                                               |
-| Positions, lots, roads, districts | New per-project blob, stored the way `canvasStore` stores `canvas:<projectPath>`      |
+| Map                               | App                                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| City                              | `TaskWithWorkspace` (`taskNumber`, `name`, `prompt`, `status`, `parentTaskNumber`)           |
+| City presence                     | `TaskStatus`: `todo` / `in_progress` / `in_review` / `done`                                  |
+| Site                              | A terminal whose `TerminalDisplayState.taskId` is the city's task                            |
+| Site name                         | `display.label`, falling back to `lastOscTitle`; rename via the existing `pty.setLabel`      |
+| Site state                        | `summaryType` + `hookStatus` + `exited`: thinking → working, ready → waiting, error, success |
+| Road                              | `parentTaskNumber`                                                                           |
+| Positions, lots, roads, districts | New per-project blob, stored the way `canvasStore` stores `canvas:<projectPath>`             |
 
 Persisted per project (`citymap:<projectPath>` in global settings):
 
 ```ts
 interface CityMapState {
   viewport: { x: number; y: number; zoom: number };
-  cities: Record<number /* taskNumber */, {
-    pos: { x: number; y: number };
-    lots: Record<string /* ptyId */, number /* slot */>;
-    built: number[]; // slots whose session finished and closed
-  }>;
+  cities: Record<
+    number /* taskNumber */,
+    {
+      pos: { x: number; y: number };
+      lots: Record<string /* ptyId */, number /* slot */>;
+      built: number[]; // slots whose session finished and closed
+    }
+  >;
   roads: { id: string; from: number; to: number; note?: string }[];
   // x,y is the top corner; w runs down-right along (1, ½), h down-left along (−1, ½)
   districts: { id: string; name: string; x: number; y: number; w: number; h: number; hue: number }[];
@@ -100,7 +111,7 @@ first, so the same task always lays out the same way.
   `ExperimentalFeaturesSection`.
 - `projectStore.terminalLayout`: `'map'` beside `'stack'` and `'canvas'`.
 - `src/components/citymap/`: `cityGeometry.ts` (layout, lots, placement, site
-  state), `drawCity.ts` (canvas drawing), `CityMap.tsx` (the layout: sidebar,
+  state, style, season and weather), `drawCity.ts` (canvas drawing), `CityMap.tsx` (the layout: sidebar,
   map, inspector, terminal drawer). `stores/cityMapStore.ts` holds positions
   and lots and syncs them with the terminal store.
 - A site opens its terminal in a drawer over the map, with the same header the

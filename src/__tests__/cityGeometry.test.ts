@@ -1,5 +1,15 @@
 import { describe, test, expect } from 'vitest';
-import { N, cityLayout, cityPresence, freePosition, nextFreeSlot, siteState } from '../components/citymap/cityGeometry';
+import {
+  N,
+  cityLayout,
+  cityPresence,
+  cityStyle,
+  freePosition,
+  nextFreeSlot,
+  seasonFor,
+  siteState,
+  weatherFor,
+} from '../components/citymap/cityGeometry';
 
 describe('a city is laid out from its task number', () => {
   test('the same task always gets the same city, roads through the middle, sites on lots first', () => {
@@ -55,5 +65,24 @@ describe('a city is laid out from its task number', () => {
       'review',
       'settled',
     ]);
+  });
+
+  test('a chain shares one landscape and architecture, the calendar sets the season, the sites set the sky', () => {
+    expect(cityStyle(7)).toEqual(cityStyle(7));
+    const styles = new Set(Array.from({ length: 40 }, (_, n) => JSON.stringify(cityStyle(n + 1))));
+    expect(styles.size).toBeGreaterThan(8);
+
+    const now = Date.parse('2026-09-07T12:00:00Z');
+    const daysAgo = (d: number) => new Date(now - d * 86400000).toISOString();
+    expect(seasonFor(daysAgo(0), now)).toBe('spring');
+    expect(seasonFor(daysAgo(5), now)).toBe('summer');
+    expect(seasonFor(daysAgo(20), now)).toBe('autumn');
+    expect(seasonFor(daysAgo(90), now)).toBe('winter');
+    expect(seasonFor('not a date', now)).toBe('spring');
+
+    expect(weatherFor([])).toBe('clear');
+    expect(weatherFor(['waiting', 'done'])).toBe('clear');
+    expect(weatherFor(['waiting', 'working'])).toBe('clouds');
+    expect(weatherFor(['working', 'error', 'done'])).toBe('rain');
   });
 });

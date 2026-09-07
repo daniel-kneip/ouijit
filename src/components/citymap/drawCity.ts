@@ -5,12 +5,18 @@ import {
   STOREY,
   TH,
   TW,
+  WALLS,
   cellCenter,
   cityLayout,
   hash2,
+  type Biome,
   type CityPresence,
+  type CityStyle,
+  type Culture,
   type Point,
+  type Season,
   type SiteState,
+  type Weather,
 } from './cityGeometry';
 
 export interface MapTokens {
@@ -44,6 +50,59 @@ export interface DrawCity {
   color: string;
   sites: DrawSite[];
   built: number[];
+  style: CityStyle;
+  season: Season;
+  weather: Weather;
+}
+
+const CULTURE_WALLS: Record<Culture, string[]> = {
+  modern: WALLS,
+  oldtown: ['#f3e6c8', '#e9d3a6', '#d9c3a0', '#f0dcc0', '#e6cfae', '#f5ead4', '#dcc8a8', '#efe0c4'],
+  mediterranean: ['#f7f1e6', '#f1e4cf', '#efe8dc', '#f5efe3', '#eadfcb', '#f8f3ea', '#e9dcc4', '#f3ebdd'],
+  nordic: ['#6b4a35', '#8a5a3c', '#a04a3d', '#c9b08a', '#7a5540', '#b0603f', '#5e4130', '#d2bb96'],
+  pagoda: ['#e9d8b8', '#d9c19a', '#b8473f', '#e2cfa8', '#c9ad7f', '#a63f38', '#efe0c2', '#d1b78f'],
+  adobe: ['#e3c39a', '#d8b184', '#efd3ac', '#dcb98f', '#e8c9a0', '#cfa97c', '#f0d8b4', '#d6b58a'],
+};
+const CULTURE_ROOF: Record<Culture, string> = {
+  modern: '',
+  oldtown: '#b5493a',
+  mediterranean: '#c96b3a',
+  nordic: '#2f2f38',
+  pagoda: '#3d4d5c',
+  adobe: '#c9a072',
+};
+
+interface Ground {
+  base: string;
+  park: string;
+  lot: string;
+}
+
+/** Ground colours by biome, with the season laid over the temperate ones. */
+function groundFor(biome: Biome, season: Season): Ground {
+  const snow = { base: '#e9eef0', park: '#dfe6ea', lot: '#d3d9dc' };
+  switch (biome) {
+    case 'desert':
+      return { base: '#e5d3a1', park: '#d9c78f', lot: '#d2bd86' };
+    case 'tropical':
+      return { base: '#cfd9a0', park: '#a9cc7a', lot: '#dccf9a' };
+    case 'tundra':
+      return season === 'summer' ? { base: '#c6d3c4', park: '#b3c7ad', lot: '#bdc4bb' } : snow;
+    case 'forest':
+      if (season === 'winter') return snow;
+      if (season === 'autumn') return { base: '#a8ac72', park: '#8f9b62', lot: '#b8a97c' };
+      return { base: '#8fb37e', park: '#6f9a62', lot: '#a8a880' };
+    case 'meadow':
+    default:
+      if (season === 'winter') return snow;
+      if (season === 'autumn') return { base: '#c9c58a', park: '#b7b06d', lot: '#c3b995' };
+      if (season === 'spring') return { base: '#c4dca4', park: '#a9d08c', lot: '#c8c39a' };
+      return { base: '#b8cf9c', park: '#9cc27a', lot: '#c3b995' };
+  }
+}
+
+function snowy(biome: Biome, season: Season): boolean {
+  return season === 'winter' ? biome !== 'desert' && biome !== 'tropical' : biome === 'tundra';
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -160,9 +219,246 @@ function isoBox(
   }
 }
 
-function tree(ctx: Ctx, t: MapTokens, cx: number, cy: number, scale = 1, faded = false): void {
-  const g = faded ? tone('#5f9a4c', 0.25, 12) : tone('#5f9a4c', 1, t.night ? -10 : 0);
-  const g2 = faded ? tone('#4a7f3a', 0.25, 12) : tone('#4a7f3a', 1, t.night ? -10 : 0);
+interface BuildingOptions extends BoxOptions {
+  culture: Culture;
+  snow: boolean;
+  /** Stable per building, so the same one always gets the dome or the tier. */
+  seed: number;
+}
+
+/**
+ * A building in the city's culture: the same box, then the roof the culture
+ * builds on it. Flat roofs are the box's own top face.
+ */
+function drawBuilding(
+  ctx: Ctx,
+  t: MapTokens,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  height: number,
+  wall: string,
+  o: BuildingOptions,
+): void {
+  const palette = CULTURE_WALLS[o.culture];
+  const colour = palette[Math.max(0, WALLS.indexOf(wall)) % palette.length];
+  isoBox(ctx, t, cx, cy, w, h, height, colour, o);
+  const roof = CULTURE_ROOF[o.culture];
+  const roofColour = o.faded ? tone(roof || colour, 0.2, 10) : roof || colour;
+  const top = cy - height;
+  switch (o.culture) {
+    case 'oldtown':
+    case 'nordic': {
+      const ridge = o.culture === 'nordic' ? h * 1.6 : h * 1.1;
+      pitchedRoof(ctx, cx, top, w, h, ridge, roofColour);
+      break;
+    }
+    case 'mediterranean': {
+      ctx.strokeStyle = roofColour;
+      ctx.lineWidth = 2;
+      diamond(ctx, cx, top, w, h);
+      ctx.stroke();
+      if (o.seed > 0.6) dome(ctx, cx, top, w * 0.45, o.faded ? tone('#3b6fb6', 0.2, 20) : '#3b6fb6');
+      break;
+    }
+    case 'pagoda': {
+      ctx.fillStyle = roofColour;
+      diamond(ctx, cx, top, w * 1.25, h * 1.25);
+      ctx.fill();
+      isoBox(ctx, t, cx, top - 2, w * 0.6, h * 0.6, 9, colour, { s: o.s, l: o.l });
+      ctx.fillStyle = roofColour;
+      diamond(ctx, cx, top - 11, w * 0.85, h * 0.85);
+      ctx.fill();
+      break;
+    }
+    case 'adobe': {
+      if (o.seed > 0.55) dome(ctx, cx, top, w * 0.4, roofColour);
+      break;
+    }
+    case 'modern':
+    default:
+      break;
+  }
+  if (o.snow) {
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    diamond(
+      ctx,
+      cx,
+      top - (o.culture === 'pagoda' ? 11 : 0),
+      w * (o.culture === 'pagoda' ? 0.85 : 1),
+      h * (o.culture === 'pagoda' ? 0.85 : 1),
+    );
+    ctx.fill();
+  }
+}
+
+function pitchedRoof(ctx: Ctx, cx: number, top: number, w: number, h: number, ridge: number, colour: string): void {
+  const a = { x: cx - w / 2, y: top - h / 2 - ridge };
+  const b = { x: cx + w / 2, y: top + h / 2 - ridge };
+  ctx.fillStyle = tone(colour, 1, 6);
+  ctx.beginPath();
+  ctx.moveTo(cx - w, top);
+  ctx.lineTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(cx, top + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = tone(colour, 1, -10);
+  ctx.beginPath();
+  ctx.moveTo(cx, top - h);
+  ctx.lineTo(cx + w, top);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(a.x, a.y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function dome(ctx: Ctx, cx: number, top: number, r: number, colour: string): void {
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  ctx.arc(cx, top, r, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.3, top - r * 0.2, r * 0.35, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** What grows in a park: the biome's plant, in the season's colour. */
+function plant(
+  ctx: Ctx,
+  t: MapTokens,
+  biome: Biome,
+  season: Season,
+  cx: number,
+  cy: number,
+  scale: number,
+  faded: boolean,
+): void {
+  const snow = snowy(biome, season);
+  switch (biome) {
+    case 'forest':
+    case 'tundra':
+      conifer(
+        ctx,
+        cx,
+        cy,
+        scale,
+        faded,
+        snow || biome === 'tundra' ? '#5f8f7a' : season === 'autumn' ? '#8a8a3c' : '#3f7a4a',
+        snow,
+      );
+      break;
+    case 'desert':
+      cactus(ctx, cx, cy, scale, faded);
+      break;
+    case 'tropical':
+      palm(ctx, cx, cy, scale, faded);
+      break;
+    case 'meadow':
+    default:
+      tree(
+        ctx,
+        t,
+        cx,
+        cy,
+        scale,
+        faded,
+        snow ? '#f2f5f4' : season === 'autumn' ? '#d98a3a' : season === 'spring' ? '#e9a7c4' : undefined,
+      );
+      break;
+  }
+}
+
+function conifer(ctx: Ctx, cx: number, cy: number, scale: number, faded: boolean, colour: string, snow: boolean): void {
+  const green = faded ? tone(colour, 0.25, 12) : colour;
+  ctx.fillStyle = 'rgba(31,42,34,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 1, 5 * scale, 2.5 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#6b4a35';
+  ctx.fillRect(cx - scale, cy - 5 * scale, 2 * scale, 5 * scale);
+  for (const [w, y0, y1] of [
+    [7, 5, 14],
+    [5.5, 10, 18],
+    [4, 15, 22],
+  ]) {
+    ctx.fillStyle = tone(green, 1, (y0 - 5) * 0.6);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - y1 * scale);
+    ctx.lineTo(cx + w * scale, cy - y0 * scale);
+    ctx.lineTo(cx - w * scale, cy - y0 * scale);
+    ctx.closePath();
+    ctx.fill();
+    if (snow) {
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - y1 * scale);
+      ctx.lineTo(cx + w * 0.55 * scale, cy - (y0 + (y1 - y0) * 0.45) * scale);
+      ctx.lineTo(cx - w * 0.55 * scale, cy - (y0 + (y1 - y0) * 0.45) * scale);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
+function cactus(ctx: Ctx, cx: number, cy: number, scale: number, faded: boolean): void {
+  const green = faded ? tone('#5f9a5c', 0.25, 12) : '#5f9a5c';
+  ctx.fillStyle = 'rgba(31,42,34,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 1, 4 * scale, 2 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = green;
+  ctx.beginPath();
+  ctx.roundRect(cx - 2 * scale, cy - 16 * scale, 4 * scale, 16 * scale, 2 * scale);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(cx - 7 * scale, cy - 11 * scale, 3 * scale, 6 * scale, 1.5 * scale);
+  ctx.fill();
+  ctx.fillRect(cx - 7 * scale, cy - 7 * scale, 5 * scale, 2 * scale);
+  ctx.beginPath();
+  ctx.roundRect(cx + 4 * scale, cy - 13 * scale, 3 * scale, 6 * scale, 1.5 * scale);
+  ctx.fill();
+  ctx.fillRect(cx + 2 * scale, cy - 9 * scale, 5 * scale, 2 * scale);
+}
+
+function palm(ctx: Ctx, cx: number, cy: number, scale: number, faded: boolean): void {
+  const green = faded ? tone('#4f9f5a', 0.25, 12) : '#4f9f5a';
+  ctx.fillStyle = 'rgba(31,42,34,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 1, 5 * scale, 2.5 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#9a7048';
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.quadraticCurveTo(cx + 3 * scale, cy - 10 * scale, cx + 5 * scale, cy - 18 * scale);
+  ctx.stroke();
+  ctx.strokeStyle = green;
+  ctx.lineWidth = 2.2 * scale;
+  ctx.lineCap = 'round';
+  const tx = cx + 5 * scale;
+  const ty = cy - 18 * scale;
+  for (const a of [-2.6, -2.0, -1.2, -0.5, 0.2, 0.9]) {
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.quadraticCurveTo(
+      tx + Math.cos(a) * 7 * scale,
+      ty + Math.sin(a) * 7 * scale - 3 * scale,
+      tx + Math.cos(a) * 10 * scale,
+      ty + Math.sin(a) * 6 * scale + 3 * scale,
+    );
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+
+function tree(ctx: Ctx, t: MapTokens, cx: number, cy: number, scale = 1, faded = false, canopy?: string): void {
+  const g = faded ? tone(canopy ?? '#5f9a4c', 0.25, 12) : tone(canopy ?? '#5f9a4c', 1, t.night ? -10 : 0);
+  const g2 = faded ? tone(canopy ?? '#4a7f3a', 0.25, 12) : tone(canopy ?? '#4a7f3a', 1, t.night ? -18 : -8);
   ctx.fillStyle = 'rgba(31,42,34,0.18)';
   ctx.beginPath();
   ctx.ellipse(cx, cy + 1, 6 * scale, 3 * scale, 0, 0, Math.PI * 2);
@@ -377,6 +673,11 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
   const faded = city.presence === 'settled';
   const blueprint = city.presence === 'blueprint';
   const opts: BoxOptions = faded ? { s: 0.22, l: t.night ? -6 : 10 } : { l: t.night ? -12 : 0 };
+  const { biome, culture } = city.style;
+  const ground = groundFor(biome, city.season);
+  const snow = snowy(biome, city.season);
+  const shade = (hex: string, dark: number, light = 0) =>
+    faded ? tone(hex, 0.2, light) : tone(hex, 1, t.night ? dark : 0);
   ctx.save();
   ctx.translate(city.pos.x, city.pos.y);
 
@@ -391,7 +692,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
     ctx.stroke();
     ctx.setLineDash([]);
   } else {
-    ctx.fillStyle = faded ? tone('#b8cf9c', 0.2, t.night ? -30 : 8) : tone('#b8cf9c', 1, t.night ? -32 : 0);
+    ctx.fillStyle = shade(ground.base, -32, 8);
     diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
     ctx.fill();
     ctx.strokeStyle = city.color;
@@ -451,24 +752,35 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
       drawSite(ctx, t, site, here.slot, time, animate && !faded, faded);
       continue;
     }
+    const seed = hash2(city.taskNumber * 31 + cell.i, cell.j);
     if (built && here) {
-      isoBox(ctx, t, x, y, TW * 0.7, TH * 0.7, STOREY * here.slot.storeys, here.slot.wall, {
+      drawBuilding(ctx, t, x, y, TW * 0.7, TH * 0.7, STOREY * here.slot.storeys, here.slot.wall, {
         ...opts,
         windows: true,
         faded,
+        culture,
+        snow,
+        seed,
       });
       continue;
     }
     if (cell.type === 'building') {
-      isoBox(ctx, t, x, y, TW * 0.72, TH * 0.72, STOREY * cell.storeys, cell.wall, { ...opts, windows: true, faded });
+      drawBuilding(ctx, t, x, y, TW * 0.72, TH * 0.72, STOREY * cell.storeys, cell.wall, {
+        ...opts,
+        windows: true,
+        faded,
+        culture,
+        snow,
+        seed,
+      });
     } else if (cell.type === 'park') {
-      ctx.fillStyle = faded ? tone('#9cc27a', 0.2, t.night ? -28 : 10) : tone('#9cc27a', 1, t.night ? -30 : 0);
+      ctx.fillStyle = shade(ground.park, -30, 10);
       diamond(ctx, x, y, TW * 0.9, TH * 0.9);
       ctx.fill();
-      tree(ctx, t, x - 4, y + 2, 0.9, faded);
-      if (cell.trees > 1) tree(ctx, t, x + 6, y - 2, 0.7, faded);
+      plant(ctx, t, biome, city.season, x - 4, y + 2, 0.9, faded);
+      if (cell.trees > 1) plant(ctx, t, biome, city.season, x + 6, y - 2, 0.7, faded);
     } else {
-      ctx.fillStyle = faded ? tone('#c3b995', 0.2, t.night ? -25 : 8) : tone('#c3b995', 1, t.night ? -28 : 0);
+      ctx.fillStyle = shade(ground.lot, -28, 8);
       diamond(ctx, x, y, TW * 0.8, TH * 0.8);
       ctx.fill();
     }
@@ -505,7 +817,65 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
     ctx.fillRect(-8, -26, 12, 1.5);
     ctx.fillRect(-8, -22, 8, 1.5);
   }
+  if (!blueprint && !faded) drawWeather(ctx, city.weather, city.taskNumber, time, animate);
   ctx.restore();
+}
+
+/** Clouds drift over a city at work; a city with a problem sits under rain. */
+function drawWeather(ctx: Ctx, weather: Weather, seed: number, time: number, animate: boolean): void {
+  if (weather === 'clear') return;
+  const rain = weather === 'rain';
+  const drift = animate ? ((time / 90 + seed * 37) % (CITY_HALF_W * 2 + 120)) - CITY_HALF_W - 60 : -20;
+  const y = -CITY_HALF_H - 62;
+  const clouds = rain
+    ? [{ x: drift, s: 1.15 }]
+    : [
+        { x: drift, s: 1 },
+        { x: drift - 90, s: 0.7 },
+      ];
+  for (const c of clouds) {
+    ctx.fillStyle = rain ? 'rgba(88,96,108,0.92)' : 'rgba(255,255,255,0.85)';
+    for (const [dx, dy, r] of [
+      [0, 0, 11],
+      [-12, 4, 8],
+      [13, 3, 9],
+      [4, -6, 8],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(c.x + dx * c.s, y + dy * c.s, r * c.s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = rain ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.07)';
+    ctx.beginPath();
+    ctx.ellipse(c.x, -6, 26 * c.s, 13 * c.s, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (!rain) return;
+  const cx = clouds[0].x;
+  ctx.strokeStyle = 'rgba(120,150,200,0.7)';
+  ctx.lineWidth = 1;
+  const fall = animate ? (time / 12) % 14 : 6;
+  for (let k = -2; k <= 2; k++) {
+    const x = cx + k * 8;
+    for (let d = 0; d < 3; d++) {
+      const yy = y + 14 + ((fall + d * 14 + k * 3) % 42);
+      ctx.beginPath();
+      ctx.moveTo(x + 1.5, yy);
+      ctx.lineTo(x, yy + 6);
+      ctx.stroke();
+    }
+  }
+  const flash = animate && (time + seed * 700) % 4200 < 110;
+  if (flash) {
+    ctx.strokeStyle = '#ffe98a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + 4, y + 10);
+    ctx.lineTo(cx - 2, y + 26);
+    ctx.lineTo(cx + 3, y + 26);
+    ctx.lineTo(cx - 4, y + 44);
+    ctx.stroke();
+  }
 }
 
 export function drawSelectionRing(

@@ -44,19 +44,29 @@ import { bulkTransitionTasks } from '../../services/taskStartService';
 import { revealInFileManager } from '../../utils/fileManager';
 import { openTaskComposer } from '../../utils/openTaskComposer';
 import {
+  BIOME_LABEL,
   CITY_HALF_H,
   CITY_HALF_W,
+  CULTURE_LABEL,
+  SEASON_LABEL,
   SITE_STATE_LABEL,
   TH,
   TW,
   cellCenter,
   cityLayout,
   cityPresence,
+  cityStyle,
   pointInCity,
+  seasonFor,
   siteState,
   snapToCells,
+  weatherFor,
+  type CityStyle,
   type Point,
+  type Season,
   type SiteState,
+  type Weather,
+  WEATHER_LABEL,
 } from './cityGeometry';
 import {
   cityEdgePoint,
@@ -97,6 +107,9 @@ interface CityModel {
   plot: CityPlot;
   color: string;
   sites: SiteModel[];
+  style: CityStyle;
+  season: Season;
+  weather: Weather;
   /** Filtered out by the project's tag filter: drawn faint, listed nowhere. */
   hidden: boolean;
 }
@@ -248,7 +261,16 @@ export function CityMap({ projectPath }: CityMapProps) {
         sites.push({ ptyId, slot, state: siteState(display), label: siteLabel(display), display });
       }
       const hidden = !!tagFilter && !sites.some((s) => terminalMatchesTag(s.display, tagFilter));
-      result.push({ task, plot, color, sites, hidden });
+      result.push({
+        task,
+        plot,
+        color,
+        sites,
+        style: cityStyle(info?.rootTaskNumber ?? task.taskNumber),
+        season: seasonFor(task.createdAt),
+        weather: weatherFor(sites.map((s) => s.state)),
+        hidden,
+      });
     }
     return result;
   }, [mapState, tasks, chainMap, displayStates, tagFilter]);
@@ -826,6 +848,9 @@ function useMapSurface(input: MapSurfaceInput) {
           color: city.color,
           sites: city.sites.map((s) => ({ slot: s.slot, state: s.state })),
           built: city.plot.built,
+          style: city.style,
+          season: city.season,
+          weather: city.weather,
         };
         drawCity(ctx, t, drawable, time, animate && !city.hidden);
         ctx.globalAlpha = 1;
@@ -1895,6 +1920,10 @@ function CityInspector({
           ))}
         </div>
       )}
+      <p className="px-4 py-2 border-b border-border text-[11px] text-text-tertiary" data-testid="city-climate">
+        {BIOME_LABEL[city.style.biome]} · {CULTURE_LABEL[city.style.culture]} · {SEASON_LABEL[city.season]}
+        {city.weather !== 'clear' && ` · ${WEATHER_LABEL[city.weather]}`}
+      </p>
       <div className="p-4 border-b border-border">
         <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary mb-2">Description</h4>
         {task.prompt ? (

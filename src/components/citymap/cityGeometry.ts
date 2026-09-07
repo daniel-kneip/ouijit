@@ -157,6 +157,79 @@ export function cityPresence(status: TaskStatus): CityPresence {
   }
 }
 
+export type Biome = 'meadow' | 'forest' | 'desert' | 'tundra' | 'tropical';
+export type Culture = 'modern' | 'oldtown' | 'mediterranean' | 'nordic' | 'pagoda' | 'adobe';
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export type Weather = 'clear' | 'clouds' | 'rain';
+
+export interface CityStyle {
+  biome: Biome;
+  culture: Culture;
+}
+
+const BIOMES: Biome[] = ['meadow', 'forest', 'desert', 'tundra', 'tropical'];
+const CULTURES: Culture[] = ['modern', 'oldtown', 'mediterranean', 'nordic', 'pagoda', 'adobe'];
+
+/**
+ * A city's landscape and architecture, fixed by the root of its task chain so
+ * a family of tasks shares a look and unrelated ones differ.
+ */
+export function cityStyle(rootTaskNumber: number): CityStyle {
+  const rnd = mulberry32(rootTaskNumber * 104729 + 7);
+  return {
+    biome: BIOMES[Math.floor(rnd() * BIOMES.length)],
+    culture: CULTURES[Math.floor(rnd() * CULTURES.length)],
+  };
+}
+
+const DAY = 86400000;
+
+/** How long the task has existed, read as a season: fresh work is spring, old work is winter. */
+export function seasonFor(createdAt: string, now = Date.now()): Season {
+  const age = now - Date.parse(createdAt);
+  if (!Number.isFinite(age) || age < 3 * DAY) return 'spring';
+  if (age < 14 * DAY) return 'summer';
+  if (age < 45 * DAY) return 'autumn';
+  return 'winter';
+}
+
+export const BIOME_LABEL: Record<Biome, string> = {
+  meadow: 'Meadow',
+  forest: 'Forest',
+  desert: 'Desert',
+  tundra: 'Tundra',
+  tropical: 'Tropical',
+};
+export const CULTURE_LABEL: Record<Culture, string> = {
+  modern: 'Modern',
+  oldtown: 'Old town',
+  mediterranean: 'Mediterranean',
+  nordic: 'Nordic',
+  pagoda: 'Pagoda',
+  adobe: 'Adobe',
+};
+/** The sky over a city follows its sites: a problem brings rain, work under way brings clouds. */
+export function weatherFor(states: Iterable<SiteState>): Weather {
+  let weather: Weather = 'clear';
+  for (const state of states) {
+    if (state === 'error') return 'rain';
+    if (state === 'working') weather = 'clouds';
+  }
+  return weather;
+}
+
+export const WEATHER_LABEL: Record<Weather, string> = {
+  clear: 'Clear',
+  clouds: 'Overcast',
+  rain: 'Rain',
+};
+export const SEASON_LABEL: Record<Season, string> = {
+  spring: 'Spring',
+  summer: 'Summer',
+  autumn: 'Autumn',
+  winter: 'Winter',
+};
+
 /** The nearest point on the lattice one cell step apart along both iso axes. */
 export function snapToCells(p: Point): Point {
   const s = Math.round((p.x / TW + p.y / TH) / 2);
