@@ -20,6 +20,7 @@ import arrowsIn from '@phosphor-icons/core/assets/regular/arrows-in.svg?raw';
 import arrowsOut from '@phosphor-icons/core/assets/regular/arrows-out.svg?raw';
 import arrowsOutLineHorizontal from '@phosphor-icons/core/assets/regular/arrows-out-line-horizontal.svg?raw';
 import arrowsOutLineVertical from '@phosphor-icons/core/assets/regular/arrows-out-line-vertical.svg?raw';
+import arrowsInLineVertical from '@phosphor-icons/core/assets/regular/arrows-in-line-vertical.svg?raw';
 import binoculars from '@phosphor-icons/core/assets/regular/binoculars.svg?raw';
 import bug from '@phosphor-icons/core/assets/regular/bug.svg?raw';
 import arrowElbowDownLeft from '@phosphor-icons/core/assets/regular/arrow-elbow-down-left.svg?raw';
@@ -113,6 +114,7 @@ export const iconMap: Record<string, string> = {
   'arrows-out': arrowsOut,
   'arrows-out-line-horizontal': arrowsOutLineHorizontal,
   'arrows-out-line-vertical': arrowsOutLineVertical,
+  'arrows-in-line-vertical': arrowsInLineVertical,
   binoculars: binoculars,
   bug: bug,
   'arrow-elbow-down-left': arrowElbowDownLeft,

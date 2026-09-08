@@ -10,6 +10,7 @@ import {
 import { terminalInstances, refreshTerminalGitStatus } from '../terminal/terminalReact';
 import { DiffFileTree, treeFileOrder } from './DiffFileTree';
 import { DiffFileSection } from './DiffFileSection';
+import { WHOLE_FILE_CONTEXT } from './expandDiff';
 import { DeferredMount } from './DeferredMount';
 import { scrollToSection, fileSelector } from './scrollToSection';
 import { useLensReveal } from './lensReveal';
@@ -139,16 +140,42 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
     if (inst) refreshTerminalGitStatus(inst);
   }, [ptyId]);
 
-  useBatchedDiffs(
-    files,
-    filesFingerprint,
-    (file) => {
+  const readDiff = useCallback(
+    (file: ChangedFile, contextLines?: number) => {
       const against = baseToReadAgainst(base, file.status);
       return against
-        ? window.api.worktree.getFileDiff(gitPath, against, file.path, file.oldPath)
-        : window.api.getFileDiff(gitPath, file.path, undefined, file.status === '?');
+        ? window.api.worktree.getFileDiff(gitPath, against, file.path, file.oldPath, contextLines)
+        : window.api.getFileDiff(gitPath, file.path, contextLines, file.status === '?');
     },
-    setDiffs,
+    [gitPath, base],
+  );
+  useBatchedDiffs(files, filesFingerprint, readDiff, setDiffs);
+
+  // Read once per file and kept: a note written on an unfolded line takes its
+  // snippet from here, since the hunks alone do not hold that line.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const fullDiffs = useRef(new Map<string, Promise<FileDiff | null>>());
+  const fullDiffValues = useRef(new Map<string, FileDiff | null>());
+  useEffect(() => {
+    fullDiffs.current = new Map();
+    fullDiffValues.current = new Map();
+  }, [filesFingerprint]);
+  const loadFullDiff = useCallback(
+    (path: string) => {
+      let loading = fullDiffs.current.get(path);
+      if (!loading) {
+        const file = filesRef.current.find((f) => f.path === path);
+        loading = file ? readDiff(file, WHOLE_FILE_CONTEXT) : Promise.resolve(null);
+        loading = loading.then((full) => {
+          fullDiffValues.current.set(path, full);
+          return full;
+        });
+        fullDiffs.current.set(path, loading);
+      }
+      return loading;
+    },
+    [readDiff],
   );
 
   const lenses = useProjectLenses(projectPath);
@@ -227,7 +254,9 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
                   line: composing.line,
                   startLine: composing.startLine,
                   side: composing.side,
-                  snippet: blockAt(diffsRef.current.get(path), composing),
+                  snippet:
+                    blockAt(diffsRef.current.get(path), composing) ??
+                    blockAt(fullDiffValues.current.get(path), composing),
                   body,
                 })
               }
@@ -321,6 +350,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
           collapsed={folded.has(section)}
           sectionId={section}
           onCollapsedChange={toggleFolded}
+          loadFullDiff={loadFullDiff}
         />
       </DeferredMount>
     );
