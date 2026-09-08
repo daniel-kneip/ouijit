@@ -1036,9 +1036,21 @@ export function cityEdgePoint(center: Point, towards: Point): Point {
 
 const CAR_COLOURS = ['#e0524d', '#3f7fd8', '#f2b134', '#3fa66b', '#f0f0f0', '#7a5cc9'];
 
+/** The rows of the map a road touches, signpost included, so a caller can skip the bands it is not in. */
+export function roadSpan(from: Point, to: Point): { y0: number; y1: number } {
+  const a = cityEdgePoint(from, to);
+  const b = cityEdgePoint(to, from);
+  return { y0: Math.min(a.y, b.y) - 60, y1: Math.max(a.y, b.y) + 30 };
+}
+
 /**
  * A one-way road from one city's edge to another's, with cars driving the
  * way the arrows point. `seed` staggers the cars between roads.
+ *
+ * Cities are painted back to front, and a road lies on the ground between
+ * them: drawn all at once it would sit under every city's ground slab or over
+ * every city's buildings. `band` limits the drawing to the rows between two
+ * cities' depths, so a caller paints the road slice by slice as it goes.
  */
 export function drawRoad(
   ctx: Ctx,
@@ -1050,6 +1062,7 @@ export function drawRoad(
   seed: number,
   highlighted: boolean,
   destination: string,
+  band?: { y0: number; y1: number },
 ): void {
   const a = cityEdgePoint(from, to);
   const b = cityEdgePoint(to, from);
@@ -1060,6 +1073,14 @@ export function drawRoad(
   const angle = Math.atan2(dy, dx);
 
   ctx.save();
+  if (band) {
+    // A non-finite rect is no rect at all to the canvas, and would clip everything away.
+    const y0 = Math.max(band.y0, -1e7);
+    const y1 = Math.min(band.y1, 1e7);
+    ctx.beginPath();
+    ctx.rect(-1e7, y0, 2e7, y1 - y0);
+    ctx.clip();
+  }
   ctx.lineCap = 'round';
   ctx.strokeStyle = highlighted ? t.accent : t.night ? '#4b5450' : '#8d938c';
   ctx.lineWidth = 12;

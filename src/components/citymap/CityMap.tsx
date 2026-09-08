@@ -80,6 +80,7 @@ import {
   drawGrid,
   drawPath,
   drawRoad,
+  roadSpan,
   drawSelectionRing,
   drawTerrain,
   withAlpha,
@@ -824,18 +825,32 @@ function useMapSurface(input: MapSurfaceInput) {
         if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
       }
       const selectedTask = selectedTaskNumber(sel);
-      currentRoads.forEach((road, index) => {
+      const roadDraws = currentRoads.flatMap((road, index) => {
         const from = byNumber.get(road.from);
         const to = byNumber.get(road.to);
-        if (!from || !to) return;
+        if (!from || !to) return [];
         const touches =
           (sel?.type === 'road' && sel.id === road.id) ||
           (selectedTask != null && (road.from === selectedTask || road.to === selectedTask));
-        drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches, `#${road.to}`);
+        const span = roadSpan(from.plot.pos, to.plot.pos);
+        return [
+          (band: { y0: number; y1: number }) => {
+            if (span.y1 < band.y0 || span.y0 >= band.y1) return;
+            drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches, `#${road.to}`, band);
+          },
+        ];
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
+      let painted = -Infinity;
+      const roadsUpTo = (y: number) => {
+        if (y <= painted) return;
+        const band = { y0: painted, y1: y };
+        for (const draw of roadDraws) draw(band);
+        painted = y;
+      };
       for (const city of ordered) {
         const p = city.plot.pos;
+        roadsUpTo(p.y);
         if (
           p.x + CITY_HALF_W < tl.x - 60 ||
           p.x - CITY_HALF_W > br.x + 60 ||
@@ -861,6 +876,7 @@ function useMapSurface(input: MapSurfaceInput) {
         drawCity(ctx, t, drawable, time, animate && !city.hidden);
         ctx.globalAlpha = 1;
       }
+      roadsUpTo(Infinity);
       drawMinimap();
     };
 
