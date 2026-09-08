@@ -1,7 +1,15 @@
 import { typedHandle } from '../helpers';
 import { saveAttachment } from '../../attachments';
 import { createTaskWorktree, createTodoTask, checkTaskWorktree, recoverTaskWorktree } from '../../worktree';
-import { setTaskMergeTarget, setTaskName, setTaskParent } from '../../db';
+import {
+  addTaskComment,
+  deleteTaskComment,
+  getTaskComments,
+  setTaskMergeTarget,
+  setTaskName,
+  setTaskParent,
+  updateTaskComment,
+} from '../../db';
 import { writeTaskWorkspace } from '../../taskWorkspace';
 import {
   beginTask,
@@ -40,6 +48,14 @@ export function registerTaskHandlers(): void {
   typedHandle('task:unarchive', (projectPath, taskNumber) => unarchiveTask(projectPath, taskNumber));
 
   typedHandle('task:get-archived', (projectPath) => getArchivedTasksWithWorkspaces(projectPath));
+
+  typedHandle('task:comments', (projectPath) => getTaskComments(projectPath));
+
+  typedHandle('task:comment-add', (projectPath, taskNumber, body) => addTaskComment(projectPath, taskNumber, body));
+
+  typedHandle('task:comment-update', (projectPath, id, body) => updateTaskComment(projectPath, id, body));
+
+  typedHandle('task:comment-delete', (projectPath, id) => deleteTaskComment(projectPath, id));
 
   typedHandle('task:set-merge-target', (projectPath, taskNumber, mergeTarget) =>
     setTaskMergeTarget(projectPath, taskNumber, mergeTarget),

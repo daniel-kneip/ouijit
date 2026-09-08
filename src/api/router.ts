@@ -27,6 +27,9 @@ import {
   getTaskByNumber,
   getGlobalSetting,
   setGlobalSetting,
+  getTaskComments,
+  addTaskComment,
+  deleteTaskComment,
 } from '../db';
 import {
   THEME_PREFERENCE_KEY,
@@ -457,6 +460,32 @@ const routes: Route[] = [
       if (typeof r.body.mergeTarget !== 'string') throw new HttpError(400, 'Missing mergeTarget in body');
       return setTaskMergeTarget(project, num, r.body.mergeTarget);
     },
+    true,
+  ),
+
+  route('GET', 'tasks/:number/comments', async (r) => {
+    const project = requireProject(r.query);
+    const num = requireInt(r.segments[1], 'Task number');
+    return (await getTaskComments(project)).filter((c) => c.taskNumber === num);
+  }),
+
+  route(
+    'POST',
+    'tasks/:number/comments',
+    (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      if (typeof r.body.body !== 'string') throw new HttpError(400, 'Missing body in body');
+      const author = typeof r.body.author === 'string' ? r.body.author : undefined;
+      return addTaskComment(project, num, r.body.body, author);
+    },
+    true,
+  ),
+
+  route(
+    'DELETE',
+    'tasks/:number/comments/:id',
+    (r) => deleteTaskComment(requireProject(r.query), requireInt(r.segments[3], 'Comment id')),
     true,
   ),
 

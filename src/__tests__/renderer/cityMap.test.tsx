@@ -106,11 +106,24 @@ describe('the city map', () => {
     expect(screen.getByTestId('city-alert-waiting').textContent).toBe('1');
     expect(screen.queryByTestId('city-alert-error')).toBeNull();
 
-    // The city's inspector shows the ticket and its sites.
+    // The city's inspector shows the ticket, its comments and its sites; the newest comment sits on the label.
     fireEvent.click(screen.getByTestId('city-row-7'));
     const inspector = await screen.findByTestId('city-inspector');
     expect((within(inspector).getByLabelText('Ticket name') as HTMLInputElement).value).toBe('Seven');
     expect(inspector.textContent).toContain('Wire the kiro flags');
+    expect(screen.queryByTestId('city-note-7')).toBeNull();
+    vi.mocked(window.api.task.comments).mockResolvedValue([
+      { id: 1, taskNumber: 7, body: 'Waiting for the API key from ops', createdAt: '2026-07-02T00:00:00.000Z' },
+    ]);
+    fireEvent.change(within(inspector).getByLabelText('New comment'), {
+      target: { value: 'Waiting for the API key from ops' },
+    });
+    fireEvent.keyDown(within(inspector).getByLabelText('New comment'), { key: 'Enter', metaKey: true, ctrlKey: true });
+    await waitFor(() =>
+      expect(window.api.task.addComment).toHaveBeenCalledWith(project.path, 7, 'Waiting for the API key from ops'),
+    );
+    await waitFor(() => expect(screen.getByTestId('city-note-7').textContent).toContain('Waiting for the API key'));
+    expect(within(inspector).getByTestId('comment-1').textContent).toContain('Waiting for the API key from ops');
     expect(within(inspector).getByTestId('site-row-alpha-7').textContent).toContain('Waiting for you');
     expect(within(inspector).getByTestId('site-row-alpha-7b').textContent).toContain('Fix hook tests');
     expect(within(inspector).getByTestId('site-row-alpha-7b').textContent).toContain('Agent working');

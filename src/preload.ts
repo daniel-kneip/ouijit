@@ -165,6 +165,12 @@ contextBridge.exposeInMainWorld('api', {
     archive: (projectPath: string, taskNumber: number) => typedInvoke('task:archive', projectPath, taskNumber),
     unarchive: (projectPath: string, taskNumber: number) => typedInvoke('task:unarchive', projectPath, taskNumber),
     getArchived: (projectPath: string) => typedInvoke('task:get-archived', projectPath),
+    comments: (projectPath: string) => typedInvoke('task:comments', projectPath),
+    addComment: (projectPath: string, taskNumber: number, body: string) =>
+      typedInvoke('task:comment-add', projectPath, taskNumber, body),
+    updateComment: (projectPath: string, id: number, body: string) =>
+      typedInvoke('task:comment-update', projectPath, id, body),
+    deleteComment: (projectPath: string, id: number) => typedInvoke('task:comment-delete', projectPath, id),
     setMergeTarget: (projectPath: string, taskNumber: number, mergeTarget: string) =>
       typedInvoke('task:set-merge-target', projectPath, taskNumber, mergeTarget),
     setName: (projectPath: string, taskNumber: number, name: string) =>

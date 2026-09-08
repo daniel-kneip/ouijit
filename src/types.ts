@@ -36,7 +36,7 @@ import type { DiffLensTarget } from './lens/worktreeSubject';
 import type { LensChangedPayload } from './lens/subjectKeys';
 import type { LensInput, LensSummary } from './lens/config';
 import type { StoredLens } from './lens/readLens';
-import type { TaskStatus, TagRow } from './db';
+import type { TaskStatus, TagRow, TaskComment } from './db';
 import type { ActiveSession } from './ptyManager';
 import type { LimaStatus } from './lima/types';
 import type { SandboxProviderId, SandboxProviderStatus, NonoConfig } from './sandbox/types';
@@ -60,7 +60,7 @@ export type {
   DiffBases,
 } from './git';
 export type { TaskWorktreeResult, WorktreeInfo, WorktreeRemoveResult, CheckWorktreeResult } from './worktree';
-export type { TaskStatus, TaskMetadata } from './db';
+export type { TaskStatus, TaskMetadata, TaskComment } from './db';
 export type { TagRow } from './db';
 export type { ActiveSession } from './ptyManager';
 export type { LimaStatus } from './lima/types';
@@ -422,6 +422,15 @@ export interface TaskAPI {
   archive(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
   unarchive(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
   getArchived(projectPath: string): Promise<TaskWithWorkspace[]>;
+  /** Every comment in the project, oldest first; the renderer groups them by task. */
+  comments(projectPath: string): Promise<TaskComment[]>;
+  addComment(
+    projectPath: string,
+    taskNumber: number,
+    body: string,
+  ): Promise<{ success: boolean; error?: string; comment?: TaskComment }>;
+  updateComment(projectPath: string, id: number, body: string): Promise<{ success: boolean; error?: string }>;
+  deleteComment(projectPath: string, id: number): Promise<{ success: boolean; error?: string }>;
   setMergeTarget(
     projectPath: string,
     taskNumber: number,

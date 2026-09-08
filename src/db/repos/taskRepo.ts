@@ -260,6 +260,11 @@ export class TaskRepo {
   }
 
   delete(projectPath: string, taskNumber: number): void {
-    this.db.prepare('DELETE FROM tasks WHERE project_path = ? AND task_number = ?').run(projectPath, taskNumber);
+    this.db.transaction(() => {
+      this.db
+        .prepare('DELETE FROM task_comments WHERE project_path = ? AND task_number = ?')
+        .run(projectPath, taskNumber);
+      this.db.prepare('DELETE FROM tasks WHERE project_path = ? AND task_number = ?').run(projectPath, taskNumber);
+    })();
   }
 }

@@ -13,6 +13,7 @@ import { TaskRepo, type TaskStatus, type TaskRow } from './repos/taskRepo';
 import { HookRepo, type HookType, type HookRow } from './repos/hookRepo';
 import { HarnessRepo, type HarnessHookRow } from './repos/harnessRepo';
 import { TagRepo, type TagRow } from './repos/tagRepo';
+import { TaskCommentRepo, type TaskCommentRow } from './repos/taskCommentRepo';
 import { GlobalSettingsRepo } from './repos/globalSettingsRepo';
 import { ScriptRepo, type ScriptRow } from './repos/scriptRepo';
 import { ReviewDraftRepo, type ReviewDraftRow } from './repos/reviewDraftRepo';
@@ -46,6 +47,16 @@ export interface TaskMetadata {
   archivedAt?: string;
 }
 
+export interface TaskComment {
+  id: number;
+  taskNumber: number;
+  body: string;
+  /** Who wrote it when it was not the user: an agent or the CLI naming itself. */
+  author?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 // ── Lazy singleton repos ─────────────────────────────────────────────
 
 let projectRepo: ProjectRepo | null = null;
@@ -58,6 +69,7 @@ let reviewDraftRepo: ReviewDraftRepo | null = null;
 let diffLensRepo: DiffLensRepo | null = null;
 let diffNoteRepo: DiffNoteRepo | null = null;
 let harnessRepo: HarnessRepo | null = null;
+let taskCommentRepo: TaskCommentRepo | null = null;
 
 function repos() {
   if (!taskRepo) {
@@ -72,6 +84,7 @@ function repos() {
     diffLensRepo = new DiffLensRepo(db);
     diffNoteRepo = new DiffNoteRepo(db);
     harnessRepo = new HarnessRepo(db);
+    taskCommentRepo = new TaskCommentRepo(db);
   }
   return {
     projectRepo: projectRepo!,
@@ -84,6 +97,7 @@ function repos() {
     diffLensRepo: diffLensRepo!,
     diffNoteRepo: diffNoteRepo!,
     harnessRepo: harnessRepo!,
+    taskCommentRepo: taskCommentRepo!,
   };
 }
 
@@ -101,6 +115,7 @@ export function _resetCacheForTesting(): void {
   diffLensRepo = new DiffLensRepo(db);
   diffNoteRepo = new DiffNoteRepo(db);
   harnessRepo = new HarnessRepo(db);
+  taskCommentRepo = new TaskCommentRepo(db);
 }
 
 // ── Row → TaskMetadata conversion ────────────────────────────────────
@@ -495,6 +510,57 @@ export async function deleteDiffLens(projectPath: string, subjectKey: string): P
   const { diffLensRepo: dl } = repos();
   dl.delete(projectPath, subjectKey);
   return { success: true };
+}
+
+// ── Task comments ────────────────────────────────────────────────────
+
+function rowToComment(row: TaskCommentRow): TaskComment {
+  return {
+    id: row.id,
+    taskNumber: row.task_number,
+    body: row.body,
+    createdAt: row.created_at,
+    ...(row.author && { author: row.author }),
+    ...(row.updated_at && { updatedAt: row.updated_at }),
+  };
+}
+
+export async function getTaskComments(projectPath: string): Promise<TaskComment[]> {
+  return repos().taskCommentRepo.getAllForProject(projectPath).map(rowToComment);
+}
+
+export async function addTaskComment(
+  projectPath: string,
+  taskNumber: number,
+  body: string,
+  author?: string,
+): Promise<{ success: boolean; error?: string; comment?: TaskComment }> {
+  const trimmed = body.trim();
+  if (!trimmed) return { success: false, error: 'A comment needs a body' };
+  const { taskRepo: tr, taskCommentRepo: cr } = repos();
+  if (!tr.getByTaskNumber(projectPath, taskNumber)) return { success: false, error: 'Task not found' };
+  return { success: true, comment: rowToComment(cr.add(projectPath, taskNumber, trimmed, author?.trim() || null)) };
+}
+
+export async function updateTaskComment(
+  projectPath: string,
+  id: number,
+  body: string,
+): Promise<{ success: boolean; error?: string }> {
+  const trimmed = body.trim();
+  if (!trimmed) return { success: false, error: 'A comment needs a body' };
+  return repos().taskCommentRepo.update(projectPath, id, trimmed)
+    ? { success: true }
+    : { success: false, error: 'Comment not found' };
+}
+
+export async function deleteTaskComment(
+  projectPath: string,
+  id: number,
+): Promise<{ success: boolean; error?: string }> {
+  return repos().taskCommentRepo.remove(projectPath, id)
+    ? { success: true }
+    : { success: false, error: 'Comment not found' };
 }
 
 export async function setTaskArchived(

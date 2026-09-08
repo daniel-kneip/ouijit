@@ -45,6 +45,8 @@ import { bulkTransitionTasks } from '../../services/taskStartService';
 import { revealInFileManager } from '../../utils/fileManager';
 import { openTaskComposer } from '../../utils/openTaskComposer';
 import { ArchivedTaskList } from '../kanban/ArchivedTasks';
+import { TaskComments } from '../kanban/TaskComments';
+import { latestComment, selectTaskComments, useTaskCommentStore } from '../../stores/taskCommentStore';
 import {
   BIOME_LABEL,
   CITY_HALF_H,
@@ -588,6 +590,7 @@ type Hit =
 
 function useMapSurface(input: MapSurfaceInput) {
   const { projectPath, ready, cities, roads, districts, selection, flashing, viewport, select, openTerminal } = input;
+  const commentsByTask = useTaskCommentStore((s) => s.byTask);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1362,6 +1365,7 @@ function useMapSurface(input: MapSurfaceInput) {
       const waiting = city.sites.filter((s) => s.state === 'waiting').length;
       const problems = city.sites.filter((s) => s.state === 'error').length;
       const waitingOn = openSources(city, roads, byNumber);
+      const note = latestComment(commentsByTask[city.task.taskNumber] ?? []);
       nodes.push(
         <button
           key={`city-${city.task.taskNumber}`}
@@ -1398,6 +1402,16 @@ function useMapSurface(input: MapSurfaceInput) {
             >
               <Icon name="arrow-left" className="w-2.5 h-2.5" />
               {waitingOn.length === 1 ? `#${waitingOn[0].task.taskNumber}` : waitingOn.length}
+            </span>
+          )}
+          {note && !faded && (
+            <span
+              className="inline-flex items-center gap-1 max-w-[180px] truncate text-[11px] text-text-secondary"
+              title={note.body}
+              data-testid={`city-note-${city.task.taskNumber}`}
+            >
+              <Icon name="chat-circle" className="w-3 h-3 shrink-0 text-text-tertiary" />
+              <span className="truncate">{note.body}</span>
             </span>
           )}
         </button>,
@@ -1454,6 +1468,7 @@ function useMapSurface(input: MapSurfaceInput) {
     selection,
     linking,
     flashing,
+    commentsByTask,
     toScreen,
     select,
     openTerminal,
@@ -1957,6 +1972,7 @@ function CityInspector({
           <p className="text-xs text-text-tertiary italic">No description yet. Add one on the board.</p>
         )}
       </div>
+      <CityComments projectPath={projectPath} taskNumber={task.taskNumber} />
       <div className="p-4 border-b border-border flex flex-col gap-2">
         <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary flex items-center">
           Sites
@@ -2013,6 +2029,19 @@ function CityInspector({
           Show on board
         </button>
       </div>
+    </div>
+  );
+}
+
+function CityComments({ projectPath, taskNumber }: { projectPath: string; taskNumber: number }) {
+  const count = useTaskCommentStore(selectTaskComments(taskNumber)).length;
+  return (
+    <div className="p-4 border-b border-border">
+      <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary mb-2 flex items-center gap-2">
+        Comments
+        {count > 0 && <span className="font-mono font-medium">{count}</span>}
+      </h4>
+      <TaskComments projectPath={projectPath} taskNumber={taskNumber} />
     </div>
   );
 }

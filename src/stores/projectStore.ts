@@ -11,6 +11,7 @@ import type {
 import type { RunHookResult } from '../components/dialogs/RunHookDialog';
 import { queuePrompt, settlePrompt, settleAllPrompts, type Pending } from './promptQueue';
 import { useAppStore } from './appStore';
+import { useTaskCommentStore } from './taskCommentStore';
 
 export type TerminalLayout = 'stack' | 'canvas' | 'map';
 
@@ -390,6 +391,7 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       if (get()._version !== version) return;
       set({ tasks, archivedTasks });
       useAppStore.getState().updateProjectTaskCache(projectPath, tasks);
+      void useTaskCommentStore.getState().load(projectPath);
     } catch (err) {
       if (get()._version !== version) return;
       get().addToast(`Failed to load tasks: ${err instanceof Error ? err.message : String(err)}`, 'error');

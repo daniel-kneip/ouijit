@@ -32,6 +32,7 @@ import type {
   TaskWorktreeResult,
   CheckWorktreeResult,
   TaskWithWorkspace,
+  TaskComment,
   CliHookMode,
   TaskStatus,
   ScriptHook,
@@ -164,6 +165,16 @@ export interface IpcInvokeContract {
   'task:archive': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
   'task:unarchive': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
   'task:get-archived': { args: [projectPath: string]; return: TaskWithWorkspace[] };
+  'task:comments': { args: [projectPath: string]; return: TaskComment[] };
+  'task:comment-add': {
+    args: [projectPath: string, taskNumber: number, body: string];
+    return: { success: boolean; error?: string; comment?: TaskComment };
+  };
+  'task:comment-update': {
+    args: [projectPath: string, id: number, body: string];
+    return: { success: boolean; error?: string };
+  };
+  'task:comment-delete': { args: [projectPath: string, id: number]; return: { success: boolean; error?: string } };
   'task:set-merge-target': {
     args: [projectPath: string, taskNumber: number, mergeTarget: string];
     return: { success: boolean; error?: string };

@@ -54,6 +54,11 @@ puts that context first:
   after that, with snow where the climate allows. The sky follows the sites:
   clouds drift over a city with an agent at work, rain falls on one with a
   problem. The inspector names the mix.
+- **A city carries its comments.** The inspector has a comment thread on the
+  ticket, the same one the board's expanded card shows, and the newest comment
+  sits on the city's label. A note like "waiting for ops" on a city parked in
+  a Waiting district says why it is there. Agents can leave one too, through
+  `POST /api/tasks/:number/comments` with an `author`.
 - **A sidebar lists cities by status or by district** with the attention
   counts first (how many sites wait for the user, how many hit a problem) and
   a "Next" jump. Cities and districts snap to the cell lattice when dragged.

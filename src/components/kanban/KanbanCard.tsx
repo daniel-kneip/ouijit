@@ -20,6 +20,8 @@ import { openTaskInEditor } from '../../services/openInEditor';
 import { KanbanCardView } from './KanbanCardView';
 import { KanbanBadgeView } from './KanbanBadgeView';
 import { KanbanPrBadgeView } from './KanbanPrBadgeView';
+import { TaskComments } from './TaskComments';
+import { latestComment, selectTaskComments, useTaskCommentStore } from '../../stores/taskCommentStore';
 import { useExperimentalStore } from '../../stores/experimentalStore';
 import { openPullRequestInPanel, createPullRequestForTask } from '../../services/githubTaskActions';
 
@@ -61,6 +63,8 @@ export const KanbanCard = memo(function KanbanCard({
   const [isRenamingTask, setIsRenamingTask] = useState(false);
 
   const githubEnabled = useExperimentalStore((s) => s.flagsByProject[projectPath]?.github ?? false);
+  const comments = useTaskCommentStore(selectTaskComments(task.taskNumber));
+  const newestComment = latestComment(comments);
 
   // Derived in selectors, so a badge drag re-renders only the cards involved.
   const activeBadgeDragSource = useProjectStore((s) => s.activeBadgeDrag);
@@ -273,6 +277,21 @@ export const KanbanCard = memo(function KanbanCard({
             />
           ) : null
         }
+        commentBadge={
+          newestComment ? (
+            <span
+              className="inline-flex items-center gap-1 max-w-[220px] font-mono text-[11px] leading-none px-2 py-1 rounded-full text-text-secondary"
+              style={{ background: 'var(--color-background-tertiary)' }}
+              title={newestComment.body}
+              data-testid={`comment-badge-${task.taskNumber}`}
+            >
+              <Icon name="chat-circle" className="w-3 h-3 shrink-0" />
+              {comments.length}
+              <span className="truncate font-sans">{newestComment.body}</span>
+            </span>
+          ) : null
+        }
+        comments={<TaskComments projectPath={projectPath} taskNumber={task.taskNumber} />}
         formattedDate={formattedDate}
         onSelect={onSelect}
         onPlainClick={handlePlainClick}
