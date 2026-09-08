@@ -296,6 +296,17 @@ ouijit task set-description <number> <text>
 ouijit task set-merge-target <number> <branch>
 ouijit task delete <number>                   # removes task and its worktree
 
+## Task Comments and Review Notes
+A task carries a thread of comments the user reads on its card and on the map. Leave one when you are blocked, waiting on something, or hand the task back. Default task: the one owning this terminal.
+ouijit task comments [number]                 # → [{id, taskNumber, body, author?, createdAt}]
+ouijit task comment "<text>"                  # add a comment to this terminal's task (author: cli)
+ouijit task comment --task <number> --author <you> "<text>"
+
+The user writes review notes on your diff in the app. Read them before you continue, and resolve each one you have addressed:
+ouijit task notes --text                      # the notes as text: path:line, the quoted code, the note
+ouijit task notes                             # the same as JSON, with ids
+ouijit task resolve-note <id>                 # discard a note you have handled
+
 ## Tag Commands
 ouijit tag list                               # → all tags across projects
 ouijit tag list --task <number>               # → tags for one task

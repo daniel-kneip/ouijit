@@ -50,6 +50,9 @@ import {
   getTasksWithWorkspaces,
   getTaskWithWorkspace,
 } from '../taskLifecycle';
+import { discardNote, liveNotes } from '../diffNotesService';
+import { formatNotesForAgent } from '../diffNotes';
+import { diffSubject } from '../diffSource';
 import {
   getAvailability as getGithubAvailability,
   getInbox as getGithubInbox,
@@ -244,6 +247,23 @@ function route(
   return { method, pattern: pattern.split('/').filter(Boolean), handler, mutating, minScope };
 }
 
+/** A sandboxed session reaches its own task and no other. */
+function assertOwnTaskIfSandboxed(r: ParsedRequest, project: string, taskNumber: number): void {
+  if (r.auth.scope !== 'sandbox') return;
+  const ctx = getPtyTaskContext(r.auth.ptyId);
+  if (!ctx || ctx.projectPath !== project || ctx.taskId !== taskNumber) {
+    throw new HttpError(403, 'Sandboxed sessions may only reach their own task');
+  }
+}
+
+/** The task's diff notes, followed to where their code went, and the same as text for an agent. */
+async function taskNotes(project: string, taskNumber: number) {
+  const task = await getTaskWithWorkspace(project, taskNumber);
+  if (!task) throw new HttpError(404, `Task ${taskNumber} not found`);
+  const notes = task.worktreePath ? await liveNotes(task.worktreePath) : [];
+  return { notes, text: formatNotesForAgent(notes, diffSubject(task.mergeTarget ?? null, task.branch ?? null)) };
+}
+
 // ── Pull request helpers ─────────────────────────────────────────────
 
 function prNumber(r: ParsedRequest): number {
@@ -356,13 +376,7 @@ const routes: Route[] = [
     (r) => {
       const project = requireProject(r.query);
       const num = requireInt(r.segments[1], 'Task number');
-      // A sandboxed session may read only its own task, never an arbitrary one.
-      if (r.auth.scope === 'sandbox') {
-        const ctx = getPtyTaskContext(r.auth.ptyId);
-        if (!ctx || ctx.projectPath !== project || ctx.taskId !== num) {
-          throw new HttpError(403, 'Sandboxed sessions may only read their own task');
-        }
-      }
+      assertOwnTaskIfSandboxed(r, project, num);
       return getTaskWithWorkspace(project, num);
     },
     false,
@@ -463,11 +477,18 @@ const routes: Route[] = [
     true,
   ),
 
-  route('GET', 'tasks/:number/comments', async (r) => {
-    const project = requireProject(r.query);
-    const num = requireInt(r.segments[1], 'Task number');
-    return (await getTaskComments(project)).filter((c) => c.taskNumber === num);
-  }),
+  route(
+    'GET',
+    'tasks/:number/comments',
+    async (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      return (await getTaskComments(project)).filter((c) => c.taskNumber === num);
+    },
+    false,
+    'sandbox',
+  ),
 
   route(
     'POST',
@@ -476,8 +497,35 @@ const routes: Route[] = [
       const project = requireProject(r.query);
       const num = requireInt(r.segments[1], 'Task number');
       if (typeof r.body.body !== 'string') throw new HttpError(400, 'Missing body in body');
-      const author = typeof r.body.author === 'string' ? r.body.author : undefined;
+      const author = typeof r.body.author === 'string' && r.body.author.trim() ? r.body.author : 'cli';
       return addTaskComment(project, num, r.body.body, author);
+    },
+    true,
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/notes',
+    (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      return taskNotes(project, num);
+    },
+    false,
+    'sandbox',
+  ),
+
+  route(
+    'DELETE',
+    'tasks/:number/notes/:id',
+    async (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      const id = r.segments[3];
+      const { notes } = await taskNotes(project, num);
+      if (!notes.some((n) => n.id === id)) throw new HttpError(404, `Note ${id} not found on task ${num}`);
+      return discardNote(id);
     },
     true,
   ),

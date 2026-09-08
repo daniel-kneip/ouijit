@@ -37,6 +37,12 @@ vi.mock('../worktree', () => ({
 }));
 
 vi.mock('../db', () => ({
+  getTaskComments: vi.fn(async () => [{ id: 1, taskNumber: 7, body: 'hi', createdAt: '' }]),
+  addTaskComment: vi.fn(async (_p: string, taskNumber: number, body: string, author?: string) => ({
+    success: true,
+    comment: { id: 2, taskNumber, body, author, createdAt: '' },
+  })),
+  deleteTaskComment: vi.fn(async () => ({ success: true })),
   setTaskMergeTarget: vi.fn(),
   setTaskName: vi.fn(),
   setTaskDescription: vi.fn(),
@@ -61,6 +67,23 @@ vi.mock('../taskLifecycle', () => ({
   deleteTaskWithWorktree: vi.fn(async () => ({})),
   getTasksWithWorkspaces: vi.fn(async () => []),
   getTaskWithWorkspace: vi.fn(async () => null),
+}));
+
+vi.mock('../diffNotesService', () => ({
+  liveNotes: vi.fn(async () => [
+    {
+      id: 'n1',
+      worktreePath: '/wt/7',
+      path: 'src/a.ts',
+      line: 3,
+      startLine: 3,
+      side: 'RIGHT',
+      snippet: 'x',
+      body: 'rename',
+      createdAt: '',
+    },
+  ]),
+  discardNote: vi.fn(async () => ({ success: true })),
 }));
 
 vi.mock('../projectList', () => ({
@@ -210,6 +233,48 @@ describe('sandbox read-only, own-task scope', () => {
     const token = issueToken('pty-sbx', 'sandbox');
     const res = await request('PATCH', `/api/tasks/7/status?project=${PROJECT}`, token, { status: 'done' });
     expect(res.status).toBe(403);
+  });
+
+  test('an agent reads and writes its task’s comments and reads its review notes; a sandbox only reads its own', async () => {
+    const own7 = { taskNumber: 7, worktreePath: '/wt/7', branch: 'seven-7', mergeTarget: 'main' };
+    vi.mocked(getTaskWithWorkspace).mockResolvedValue(own7 as never);
+    const host = issueToken('pty-host', 'host');
+
+    let res = await request('GET', `/api/tasks/7/comments?project=${PROJECT}`, host);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: 1, taskNumber: 7, body: 'hi', createdAt: '' }]);
+
+    // The author defaults to `cli`, so a comment written from a terminal never reads as the user's.
+    res = await request('POST', `/api/tasks/7/comments?project=${PROJECT}`, host, { body: 'on it' });
+    expect(res.status).toBe(200);
+    expect((res.body.data as { comment: { author: string } }).comment.author).toBe('cli');
+    res = await request('POST', `/api/tasks/7/comments?project=${PROJECT}`, host, { body: 'red', author: 'kiro' });
+    expect((res.body.data as { comment: { author: string } }).comment.author).toBe('kiro');
+    res = await request('POST', `/api/tasks/7/comments?project=${PROJECT}`, host, {});
+    expect(res.status).toBe(400);
+
+    res = await request('GET', `/api/tasks/7/notes?project=${PROJECT}`, host);
+    expect(res.status).toBe(200);
+    const notes = res.body.data as { notes: { id: string }[]; text: string };
+    expect(notes.notes.map((n) => n.id)).toEqual(['n1']);
+    expect(notes.text).toContain('1 note on the changes against main.');
+    expect(notes.text).toContain('src/a.ts:3');
+    res = await request('DELETE', `/api/tasks/7/notes/n1?project=${PROJECT}`, host);
+    expect(res.status).toBe(200);
+    res = await request('DELETE', `/api/tasks/7/notes/nope?project=${PROJECT}`, host);
+    expect(res.status).toBe(404);
+
+    getPtyTaskContextMock.mockReturnValue(OWN);
+    const sandbox = issueToken('pty-sbx', 'sandbox');
+    expect((await request('GET', `/api/tasks/7/comments?project=${PROJECT}`, sandbox)).status).toBe(200);
+    expect((await request('GET', `/api/tasks/7/notes?project=${PROJECT}`, sandbox)).status).toBe(200);
+    expect((await request('GET', `/api/tasks/9/comments?project=${PROJECT}`, sandbox)).status).toBe(403);
+    expect((await request('GET', `/api/tasks/9/notes?project=${PROJECT}`, sandbox)).status).toBe(403);
+    expect((await request('POST', `/api/tasks/7/comments?project=${PROJECT}`, sandbox, { body: 'x' })).status).toBe(
+      403,
+    );
+    expect((await request('DELETE', `/api/tasks/7/notes/n1?project=${PROJECT}`, sandbox)).status).toBe(403);
+    vi.mocked(getTaskWithWorkspace).mockReset();
   });
 
   test('host token still reads any task by number', async () => {

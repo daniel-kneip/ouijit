@@ -99,6 +99,10 @@ ouijit task create "Fix flaky login test"
 ouijit task set-status 5 in_review
 # "run claude on every task I start"
 ouijit hook set start --command 'claude "$OUIJIT_TASK_DESCRIPTION"'
+# "note on the ticket why you are waiting"
+ouijit task comment "Waiting for the API key from ops"
+# "read the review notes I left on your diff"
+ouijit task notes --text
 # "leave a review comment on PR 116"
 ouijit pr draft add 116 --file src/api.ts --line 88 --body "throws when the token is missing"
 # "switch to dracula"

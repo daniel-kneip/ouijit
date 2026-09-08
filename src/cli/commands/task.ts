@@ -103,6 +103,11 @@ Examples:
   ouijit task bulk-set-status done 5 6 7
   ouijit task bulk-set-status done 5 6 7 --skip-hook
   ouijit task set-name 5 "Better name"
+  ouijit task comments            # the comments on this terminal's task
+  ouijit task comment "Waiting for the API key from ops"
+  ouijit task comment --task 5 --author kiro "Tests are red on main too"
+  ouijit task notes --text        # the review notes on this terminal's task, ready to act on
+  ouijit task resolve-note 3f2c…  # a note you have addressed
   ouijit task delete 5`,
     );
 
@@ -315,6 +320,73 @@ Examples:
       const project = requireProject();
       const result = await patch(`/api/tasks/${num}/merge-target${projectQuery(project)}`, { mergeTarget: branch });
       printJson(result);
+    });
+
+  /** The task named on the command line, or the one owning this terminal. */
+  async function resolveTaskNumber(arg: string | undefined): Promise<number> {
+    if (arg !== undefined) {
+      const num = parseInt(arg, 10);
+      if (isNaN(num)) printError('Task number must be an integer');
+      return num;
+    }
+    if (!process.env['OUIJIT_PTY_ID'])
+      printError('No task given and OUIJIT_PTY_ID not set — run from an Ouijit terminal');
+    const current = await get<{ taskNumber: number } | null>('/api/tasks/current');
+    if (!current) printError('Current terminal is not associated with a task; pass --task <number>');
+    return current.taskNumber;
+  }
+
+  task
+    .command('comments')
+    .description("List a task's comments (default: this terminal's task)")
+    .argument('[number]', 'task number')
+    .action(async (number?: string) => {
+      const num = await resolveTaskNumber(number);
+      const project = requireProject();
+      printJson(await get(`/api/tasks/${num}/comments${projectQuery(project)}`));
+    });
+
+  task
+    .command('comment')
+    .description("Add a comment to a task (default: this terminal's task)")
+    .argument('<text...>', 'comment text')
+    .option('--task <number>', 'task number')
+    .option('--author <name>', 'who is writing, shown on the comment (default: cli)')
+    .action(async (textParts: string[], opts: { task?: string; author?: string }) => {
+      const body = textParts.join(' ').trim();
+      if (!body) return printError('Usage: ouijit task comment [--task <number>] <text>');
+      const num = await resolveTaskNumber(opts.task);
+      const project = requireProject();
+      const result = await post<{ success: boolean; error?: string }>(
+        `/api/tasks/${num}/comments${projectQuery(project)}`,
+        { body, author: opts.author },
+      );
+      if (!result.success) return printError(result.error || 'Failed to add comment');
+      printJson(result);
+    });
+
+  task
+    .command('notes')
+    .description("The review notes on a task's diff (default: this terminal's task)")
+    .argument('[number]', 'task number')
+    .option('--text', 'print the notes as the text the app hands an agent, not JSON')
+    .action(async (number: string | undefined, opts: { text?: boolean }) => {
+      const num = await resolveTaskNumber(number);
+      const project = requireProject();
+      const result = await get<{ notes: unknown[]; text: string }>(`/api/tasks/${num}/notes${projectQuery(project)}`);
+      if (opts.text) process.stdout.write(result.text ? result.text + '\n' : '');
+      else printJson(result.notes);
+    });
+
+  task
+    .command('resolve-note')
+    .description('Discard a review note you have addressed')
+    .argument('<id>', 'note id, from `ouijit task notes`')
+    .option('--task <number>', "task number (default: this terminal's task)")
+    .action(async (id: string, opts: { task?: string }) => {
+      const num = await resolveTaskNumber(opts.task);
+      const project = requireProject();
+      printJson(await del(`/api/tasks/${num}/notes/${encodeURIComponent(id)}${projectQuery(project)}`));
     });
 
   task
