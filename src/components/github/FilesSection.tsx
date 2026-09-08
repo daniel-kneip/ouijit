@@ -20,6 +20,7 @@ import {
 } from '../../diffAnchor';
 import { describeLines } from '../../diffAnchor';
 import { sectionKey, type ResolvedGroup, type ResolvedSlice } from '../../lens/lens';
+import { sectionAfter } from '../diff/documentOrder';
 import { isSectionViewed } from '../../github/viewedSections';
 import { unanchoredThreads } from './reviewAnchors';
 import { Icon } from '../terminal/Icon';
@@ -52,6 +53,8 @@ interface FilesSectionProps {
   groups: ResolvedGroup[] | null;
   /** The grouping has just arrived, so its parts lay themselves in. */
   revealing?: boolean;
+  /** Puts a section at the top of the pane; the one after a file marked viewed goes there. */
+  onJumpTo?: (path: string, group?: string) => void;
 }
 
 export interface FilesSectionHandle {
@@ -169,7 +172,7 @@ const FileSection = memo(function FileSection({
  * capped at what a patch would carry.
  */
 export const FilesSection = forwardRef<FilesSectionHandle, FilesSectionProps>(function FilesSection(
-  { projectPath, detail, order, groups, revealing },
+  { projectPath, detail, order, groups, revealing, onJumpTo },
   ref,
 ) {
   const files = useGithubStore((s) => s.files);
@@ -408,11 +411,16 @@ export const FilesSection = forwardRef<FilesSectionHandle, FilesSectionProps>(fu
     return byFile;
   }, [groups]);
 
+  const document = useRef({ order, groups });
+  document.current = { order, groups };
   const setViewed = useCallback(
     (section: string, path: string, next: boolean) => {
       useGithubStore.getState().markSectionViewed(path, section, partsOf.get(path) ?? [path], next);
+      if (!next) return;
+      const following = sectionAfter(document.current.order, document.current.groups, section);
+      if (following) onJumpTo?.(following.path, following.group);
     },
-    [partsOf],
+    [partsOf, onJumpTo],
   );
 
   const setGroupCollapsed = useGithubStore((s) => s.setGroupCollapsed);

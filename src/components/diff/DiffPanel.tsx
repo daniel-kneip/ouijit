@@ -13,6 +13,7 @@ import { DiffFileSection } from './DiffFileSection';
 import { WHOLE_FILE_CONTEXT } from './expandDiff';
 import { DeferredMount } from './DeferredMount';
 import { scrollToSection, fileSelector } from './scrollToSection';
+import { sectionAfter } from './documentOrder';
 import { useLensReveal } from './lensReveal';
 import { useDiffSlices } from './diffSlice';
 import { ResizeHandle } from '../common/ResizeHandle';
@@ -301,9 +302,20 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
   const revealing = useLensReveal(lens.landed, contentRef);
   const sliceFor = useDiffSlices();
 
-  const toggleFolded = useCallback((section: string, next: boolean) => {
-    setFolded((prev) => toggleIn(prev, section, next));
-  }, []);
+  // Folding a file takes its height out from above the reader, so the next one
+  // is put where the folded one was rather than wherever the shift left it.
+  const document = useRef({ order, groups: lens.shown });
+  document.current = { order, groups: lens.shown };
+  const toggleFolded = useCallback(
+    (section: string, next: boolean) => {
+      setFolded((prev) => toggleIn(prev, section, next));
+      if (!next) return;
+      const following = sectionAfter(document.current.order, document.current.groups, section);
+      if (following) scrollToFile(following.path, following.group);
+    },
+    [scrollToFile],
+  );
+  const isFolded = useCallback((_path: string, section: string) => folded.has(section), [folded]);
 
   const toggleGroup = useCallback((id: string, next: boolean) => {
     setCollapsed((prev) => toggleIn(prev, id, next));
@@ -379,6 +391,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
             lens={{ groups: lens.shown, collapsed, onCollapsedChange: toggleGroup }}
             onFileClick={scrollToFile}
             renderFileTrailing={analysisSignals ? railTrailing : undefined}
+            isViewed={isFolded}
             revealing={revealing}
           />
         </div>

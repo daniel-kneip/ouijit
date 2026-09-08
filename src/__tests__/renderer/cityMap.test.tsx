@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 import { CityMap } from '../../components/citymap/CityMap';
 import { useAppStore } from '../../stores/appStore';
@@ -301,5 +301,33 @@ describe('the city map', () => {
     await waitFor(() => expect(window.api.task.setStatus).toHaveBeenCalledWith(project.path, 11, 'in_progress'));
     // A bare status write never asks for hooks; the transition does, to run the start hook.
     await waitFor(() => expect(window.api.hooks.get).toHaveBeenCalledWith(project.path));
+  });
+
+  test('a focused city sits in the middle of what the panels leave visible, and follows them', async () => {
+    // Reduced motion lands the camera at once, so the label position is the answer.
+    const matchMedia = window.matchMedia;
+    window.matchMedia = (query: string) => ({ ...matchMedia(query), matches: query.includes('reduced-motion') });
+    try {
+      render(<CityMap projectPath={project.path} />);
+      await screen.findByTestId('city-row-7');
+      // With a 0×0 canvas, a label's left is (world x − camera x) · zoom: zero when centred on the canvas.
+      const left = () => parseFloat(screen.getByTestId('city-label-7').style.left);
+
+      // Picking the city opens the inspector (332px over the right edge), so the city moves half that left.
+      fireEvent.click(screen.getByTestId('city-row-7'));
+      await waitFor(() => expect(left()).toBeCloseTo(-166, 0));
+
+      // The drawer (680px) covers more; hiding it again gives the width back.
+      act(() => useCityMapStore.getState().setOpenPty(project.path, 'alpha-7'));
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
+      act(() => useCityMapStore.getState().setOpenPty(project.path, null));
+      await waitFor(() => expect(left()).toBeCloseTo(-166, 0));
+
+      // Nothing over the map: the city is in the middle of the canvas.
+      act(() => useCityMapStore.getState().setSelection(project.path, null));
+      await waitFor(() => expect(left()).toBeCloseTo(0, 0));
+    } finally {
+      window.matchMedia = matchMedia;
+    }
   });
 });

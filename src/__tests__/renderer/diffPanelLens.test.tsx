@@ -234,11 +234,20 @@ describe('the diff panel, read through a lens', () => {
     fireEvent.click(chapter.querySelector('[data-path="src/db/repo.ts"]')!);
     expect(landed[0].closest('[data-group]')).toBe(partNamed('What reads it'));
 
-    // Folding one copy leaves the other open.
+    // Folding one copy leaves the other open, and marks that copy alone in the rail.
     fireEvent.click(read.querySelector('button[aria-label="Collapse"]')!);
     expect(read.querySelector('button[aria-pressed="true"]')).toBeTruthy();
     expect(stored.querySelector('button[aria-pressed="true"]')).toBeNull();
     expect(stored.textContent).toContain('+5');
+    const storedChapter = screen.getAllByRole('button', { name: /Where it is stored/ })[0].parentElement!;
+    expect(chapter.querySelector('[data-path="src/db/repo.ts"][data-viewed]')).toBeTruthy();
+    expect(storedChapter.querySelector('[data-path="src/db/repo.ts"][data-viewed]')).toBeNull();
+
+    // Folding a file puts the one after it where the reader is looking.
+    landed.length = 0;
+    fireEvent.click(stored.querySelector('button[aria-label="Collapse"]')!);
+    expect(landed[0].closest('[data-group]')).toBe(partNamed('What reads it'));
+    expect(storedChapter.querySelector('[data-path="src/db/repo.ts"][data-viewed]')).toBeTruthy();
   });
 
   test('a grouping that arrives lays its parts in; one the pane opened on does not', async () => {

@@ -363,6 +363,11 @@ export function CityMap({ projectPath }: CityMapProps) {
     openTerminal(fresh.ptyId);
   }, [cities, projectPath, select, openTerminal]);
 
+  const sidebarWidth = useUIStore((s) => s.cityMapSidebarWidth);
+  const drawerWidth = useUIStore((s) => s.cityMapDrawerWidth);
+  const drawerOpen = !!openPtyId && !!displayStates[openPtyId];
+  // The drawer sits over the inspector, so whichever is open is what covers the map.
+  const coverRight = drawerOpen ? drawerWidth + 12 : selection ? INSPECTOR_COVER : 0;
   const surface = useMapSurface({
     projectPath,
     ready,
@@ -372,6 +377,7 @@ export function CityMap({ projectPath }: CityMapProps) {
     selection,
     flashing,
     viewport: mapState?.viewport,
+    coverRight,
     select,
     openTerminal,
     availableSandboxProviders,
@@ -402,8 +408,6 @@ export function CityMap({ projectPath }: CityMapProps) {
   const linkingCity = linking != null ? cities.find((c) => c.task.taskNumber === linking) : undefined;
   const byNumber = useMemo(() => new Map(cities.map((c) => [c.task.taskNumber, c])), [cities]);
 
-  const sidebarWidth = useUIStore((s) => s.cityMapSidebarWidth);
-  const drawerWidth = useUIStore((s) => s.cityMapDrawerWidth);
   const sidebarGroup = useUIStore((s) => s.cityMapSidebarGroup);
 
   return (
@@ -550,7 +554,7 @@ export function CityMap({ projectPath }: CityMapProps) {
             }}
           />
         )}
-        {openPtyId && displayStates[openPtyId] && (
+        {drawerOpen && (
           <TerminalDrawer
             ptyId={openPtyId}
             projectPath={projectPath}
@@ -576,6 +580,8 @@ interface MapSurfaceInput {
   selection: CityMapSelection | null;
   flashing: Record<number, number>;
   viewport: CityMapViewport | undefined;
+  /** Width of the panels laid over the map's right edge, which a centred city must clear. */
+  coverRight: number;
   select: (s: CityMapSelection | null) => void;
   openTerminal: (ptyId: string | null) => void;
   availableSandboxProviders: SandboxProviderId[];
@@ -591,6 +597,10 @@ type Hit =
 
 function useMapSurface(input: MapSurfaceInput) {
   const { projectPath, ready, cities, roads, districts, selection, flashing, viewport, select, openTerminal } = input;
+  const cover = useRef(input.coverRight);
+  cover.current = input.coverRight;
+  /** What the camera was last sent to, kept centred while the panels around the map change. */
+  const focus = useRef<{ target: Point; zoom: number } | null>(null);
   const commentsByTask = useTaskCommentStore((s) => s.byTask);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
@@ -668,16 +678,20 @@ function useMapSurface(input: MapSurfaceInput) {
     [saveViewport],
   );
 
+  // The centre of what the panels leave visible, not of the canvas: a panel
+  // over the right edge shifts it left by half its width, in map units.
   const flyTo = useCallback(
     (target: Point, zoom: number) => {
-      glide({
-        x: target.x,
-        y: target.y + 10,
-        zoom: zoom > 0 ? Math.max(camera.current.zoom, zoom) : camera.current.zoom,
-      });
+      const level = zoom > 0 ? Math.max(camera.current.zoom, zoom) : camera.current.zoom;
+      focus.current = { target, zoom: level };
+      glide({ x: target.x + cover.current / (2 * level), y: target.y + 10, zoom: level });
     },
     [glide],
   );
+
+  useEffect(() => {
+    if (focus.current) flyTo(focus.current.target, 0);
+  }, [input.coverRight, flyTo]);
 
   const mapBounds = useCallback(() => {
     const { cities: current, districts: currentDistricts } = model.current;
@@ -706,8 +720,10 @@ function useMapSurface(input: MapSurfaceInput) {
   const fitAll = useCallback(() => {
     const b = mapBounds();
     const { w, h } = size.current;
-    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(w / (b.x1 - b.x0 + 120), h / (b.y1 - b.y0 + 120))));
-    glide({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, zoom });
+    const width = Math.max(120, w - cover.current);
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(width / (b.x1 - b.x0 + 120), h / (b.y1 - b.y0 + 120))));
+    focus.current = null;
+    glide({ x: (b.x0 + b.x1) / 2 + cover.current / (2 * zoom), y: (b.y0 + b.y1) / 2, zoom });
   }, [glide, mapBounds]);
 
   // Resize + draw loop.
@@ -1229,6 +1245,7 @@ function useMapSurface(input: MapSurfaceInput) {
           h: Math.round((pointer.size.y + alongH) / TW) * TW,
         });
       } else {
+        focus.current = null;
         camera.current = { ...camera.current, x: camera.current.x - dx / zoom, y: camera.current.y - dy / zoom };
       }
       pointer.x = e.offsetX;
@@ -1832,6 +1849,8 @@ function AttentionRow({
 const PANEL_STYLE: CSSProperties = { background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' };
 const PANEL_CLASS =
   'absolute top-3 right-3 w-80 rounded-[14px] border border-bezel-panel glass-bevel flex flex-col z-20';
+/** `w-80` plus `right-3`: how much of the map an open inspector hides. */
+const INSPECTOR_COVER = 320 + 12;
 const NAME_INPUT_CLASS =
   'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none';
 const EYEBROW_CLASS =

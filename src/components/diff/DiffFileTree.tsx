@@ -102,6 +102,8 @@ export interface DiffFileTreeProps {
   header?: ReactNode;
   /** The section in view, marked in the rail — the path itself when no lens splits it. */
   activeSection?: string | null;
+  /** Whether a section has been read and folded, so the rail can show it done. */
+  isViewed?: (path: string, section: string) => boolean;
   /** The grouping has just arrived, so its parts lay themselves in. */
   revealing?: boolean;
   footer?: ReactNode;
@@ -113,12 +115,14 @@ export function DiffFileTreeNodes<T extends ChangedFile>({
   onFileClick,
   renderFileTrailing,
   activePath,
+  isViewed,
 }: {
   files: readonly T[];
   onFileClick: (path: string) => void;
   renderFileTrailing?: (file: T) => ReactNode;
   /** The file being read, or null when it is not one of these. */
   activePath?: string | null;
+  isViewed?: (path: string) => boolean;
 }) {
   const paths = useMemo(() => files.map((file) => file.path).join('\n'), [files]);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the fingerprint is the point: it changes only when the list does
@@ -135,6 +139,7 @@ export function DiffFileTreeNodes<T extends ChangedFile>({
           onFileClick={onFileClick}
           renderFileTrailing={renderFileTrailing}
           activePath={activePath}
+          isViewed={isViewed}
         />
       ))}
     </>
@@ -149,6 +154,7 @@ function DiffFileTreeChapters<T extends ChangedFile>({
   onFileClick,
   renderFileTrailing,
   activeSection,
+  isViewed,
   revealing,
 }: {
   groups: ResolvedGroup[];
@@ -158,6 +164,7 @@ function DiffFileTreeChapters<T extends ChangedFile>({
   onFileClick: (path: string, group: string) => void;
   renderFileTrailing?: FileTrailing<T>;
   activeSection?: string | null;
+  isViewed?: (path: string, section: string) => boolean;
   revealing?: boolean;
 }) {
   // `DiffFileTreeNodes` memoises its tree on the array it is handed, so rebuilding
@@ -211,6 +218,7 @@ function DiffFileTreeChapters<T extends ChangedFile>({
                     ? (file) => renderFileTrailing(file, hunks.get(file.path), sectionKey(group.id, file.path))
                     : undefined
                 }
+                isViewed={isViewed ? (path) => isViewed(path, sectionKey(group.id, path)) : undefined}
               />
             )}
           </div>
@@ -227,6 +235,7 @@ export function DiffFileTree({
   renderFileTrailing,
   header,
   activeSection,
+  isViewed,
   revealing,
   footer,
 }: DiffFileTreeProps) {
@@ -247,6 +256,7 @@ export function DiffFileTree({
           onFileClick={onFileClick}
           renderFileTrailing={renderFileTrailing}
           activeSection={activeSection}
+          isViewed={isViewed}
           revealing={revealing}
         />
       ) : (
@@ -255,6 +265,7 @@ export function DiffFileTree({
           onFileClick={onFileClick}
           renderFileTrailing={renderFileTrailing}
           activePath={activeSection}
+          isViewed={isViewed ? (path) => isViewed(path, path) : undefined}
         />
       )}
       {footer}
@@ -268,28 +279,33 @@ function TreeNodeView<T extends ChangedFile>({
   onFileClick,
   renderFileTrailing,
   activePath,
+  isViewed,
 }: {
   node: TreeNode;
   byPath: Map<string, T>;
   onFileClick: (path: string) => void;
   renderFileTrailing?: (file: T) => ReactNode;
   activePath?: string | null;
+  isViewed?: (path: string) => boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const file = node.isFile ? byPath.get(node.fullPath) : undefined;
 
   if (file) {
     const isActive = activePath === file.path;
+    const viewed = isViewed?.(file.path) ?? false;
     return (
       <div
         className={`flex items-center gap-1.5 py-1 pl-3 pr-3 text-[13px] transition-colors duration-150 ease-out hover:bg-ink/5 ${
-          isActive ? 'bg-ink/[0.07] text-ink' : 'text-ink/70'
+          isActive ? 'bg-ink/[0.07] text-ink' : viewed ? 'text-ink/40' : 'text-ink/70'
         }`}
         data-path={file.path}
+        data-viewed={viewed || undefined}
         onClick={() => onFileClick(file.path)}
       >
         <Icon name={statusIcon(file.status)} className={`w-4 h-4 ${statusColorClass(file.status)}`} />
-        <span className="flex-1 min-w-0 truncate">{node.name}</span>
+        <span className={`flex-1 min-w-0 truncate ${viewed ? 'line-through decoration-ink/30' : ''}`}>{node.name}</span>
+        {viewed && <Icon name="check" className="shrink-0 w-3 h-3 text-accent/70" />}
         {renderFileTrailing?.(file)}
         {file.status === '?' && (
           <span className={`shrink-0 text-[11px] px-1 py-px rounded font-medium ${badgeColorClass('?')}`}>
@@ -326,6 +342,7 @@ function TreeNodeView<T extends ChangedFile>({
               onFileClick={onFileClick}
               renderFileTrailing={renderFileTrailing}
               activePath={activePath}
+              isViewed={isViewed}
             />
           ))}
         </div>
