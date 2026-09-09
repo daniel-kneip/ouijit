@@ -32,10 +32,21 @@ puts that context first:
   bar with. A child task darkens its parent's hue, as chain badges do.
 - **Task chains are paths.** A child task's city is linked to its parent's by
   a dirt path, the same relation the canvas draws as chain edges.
+- **The land is on the grid too.** Every cell of ground is a pure function of
+  its lattice position: rolling relief from layered noise, meadow, dry grass,
+  forest, heath and rock by height and moisture, lakes where it is low and
+  wet, and one river winding across the map with sandy shores. A city's
+  climate reaches a few cells into the land around it, so a desert ticket
+  stands in sand. Close up, forest cells grow trees, rock cells stones,
+  meadows the odd flower; further out the colours stand for them. The light
+  follows the clock: cool early, warm from five, blue at night, with the
+  windows lit from dusk.
 - **Roads are yours to draw.** "Road from here…" on a city, then a click on
   the city it leads to, lays a one-way road: a signpost at the start with the
   arrow the traffic takes and the destination's number, arrows on the
-  asphalt, a large one where it arrives, and cars driving that way. A
+  asphalt, a large one where it arrives, and cars driving that way. A road
+  runs along the lattice: out of one city's edge, one bend, in at the
+  other's, and it crosses every cell of water on a plank bridge. A
   dependency you want to see, not one the data knows. Remove it from either
   end's context menu.
 - **Districts group cities.** "New district here" on empty ground makes a

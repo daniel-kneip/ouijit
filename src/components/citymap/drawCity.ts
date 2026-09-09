@@ -18,6 +18,7 @@ import {
   type SiteState,
   type Weather,
 } from './cityGeometry';
+import { isWater, routeCells } from './terrain';
 
 export interface MapTokens {
   ground: string;
@@ -35,6 +36,8 @@ export interface MapTokens {
   exited: string;
   review: string;
   night: boolean;
+  /** Windows glow: at night in the theme, or in the evening by the clock. */
+  lit: boolean;
 }
 
 export interface DrawSite {
@@ -197,7 +200,7 @@ function isoBox(
 
   if (!o.windows || height < STOREY) return;
   const storeys = Math.floor(height / STOREY);
-  const lit = t.night && !o.faded;
+  const lit = t.lit && !o.faded;
   for (let s = 0; s < storeys; s++) {
     const base = height - s * STOREY - 4;
     for (const face of [-1, 1]) {
@@ -328,7 +331,7 @@ function dome(ctx: Ctx, cx: number, top: number, r: number, colour: string): voi
 }
 
 /** What grows in a park: the biome's plant, in the season's colour. */
-function plant(
+export function plant(
   ctx: Ctx,
   t: MapTokens,
   biome: Biome,
@@ -897,43 +900,6 @@ export function drawSelectionRing(
   ctx.restore();
 }
 
-export function drawTerrain(
-  ctx: Ctx,
-  t: MapTokens,
-  visible: { x0: number; y0: number; x1: number; y1: number },
-  cities: readonly Point[],
-): void {
-  const step = 170;
-  const i0 = Math.floor(visible.x0 / step) - 1;
-  const i1 = Math.ceil(visible.x1 / step) + 1;
-  const j0 = Math.floor(visible.y0 / step) - 1;
-  const j1 = Math.ceil(visible.y1 / step) + 1;
-  for (let i = i0; i <= i1; i++) {
-    for (let j = j0; j <= j1; j++) {
-      const h = hash2(i, j);
-      if (h > 0.22) continue;
-      const x = i * step + (hash2(i + 7, j) - 0.5) * 120;
-      const y = j * step + (hash2(i, j + 7) - 0.5) * 120;
-      if (cities.some((c) => Math.abs(c.x - x) < CITY_HALF_W + 50 && Math.abs(c.y - y) < CITY_HALF_H + 60)) continue;
-      if (h < 0.03) {
-        ctx.fillStyle = t.water;
-        ctx.beginPath();
-        ctx.ellipse(x, y, 34, 17, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.beginPath();
-        ctx.ellipse(x - 8, y - 4, 10, 4, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        const n = 1 + Math.floor(h * 14);
-        for (let k = 0; k < n; k++) {
-          tree(ctx, t, x + (hash2(i + k, j) - 0.5) * 50, y + (hash2(i, j + k) - 0.5) * 30, 0.8 + hash2(k, i) * 0.5);
-        }
-      }
-    }
-  }
-}
-
 export function drawPath(ctx: Ctx, t: MapTokens, from: Point, to: Point): void {
   ctx.strokeStyle = t.path;
   ctx.lineWidth = 7;
@@ -1024,28 +990,53 @@ export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: 
 }
 
 /** Where a straight road leaves a city: on the edge of its ground diamond. */
-export function cityEdgePoint(center: Point, towards: Point): Point {
-  const dx = towards.x - center.x;
-  const dy = towards.y - center.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-  const reach = 1 / (Math.abs(ux) / CITY_HALF_W + Math.abs(uy) / CITY_HALF_H);
-  return { x: center.x + ux * reach * 1.04, y: center.y + uy * reach * 1.04 };
-}
-
 const CAR_COLOURS = ['#e0524d', '#3f7fd8', '#f2b134', '#3fa66b', '#f0f0f0', '#7a5cc9'];
 
 /** The rows of the map a road touches, signpost included, so a caller can skip the bands it is not in. */
-export function roadSpan(from: Point, to: Point): { y0: number; y1: number } {
-  const a = cityEdgePoint(from, to);
-  const b = cityEdgePoint(to, from);
-  return { y0: Math.min(a.y, b.y) - 60, y1: Math.max(a.y, b.y) + 30 };
+export function roadSpan(route: readonly Point[]): { y0: number; y1: number } {
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const p of route) {
+    y0 = Math.min(y0, p.y);
+    y1 = Math.max(y1, p.y);
+  }
+  return { y0: y0 - 60, y1: y1 + 30 };
+}
+
+/** Where a fraction of the way along a polyline lands, and the direction there. */
+function alongRoute(
+  route: readonly Point[],
+  lengths: readonly number[],
+  fraction: number,
+): { x: number; y: number; angle: number } {
+  const total = lengths.reduce((sum, l) => sum + l, 0);
+  let left = Math.max(0, Math.min(total, fraction * total));
+  for (let i = 0; i < lengths.length; i++) {
+    const a = route[i];
+    const b = route[i + 1];
+    if (left <= lengths[i] || i === lengths.length - 1) {
+      const u = lengths[i] === 0 ? 0 : left / lengths[i];
+      return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, angle: Math.atan2(b.y - a.y, b.x - a.x) };
+    }
+    left -= lengths[i];
+  }
+  const last = route[route.length - 1];
+  return { x: last.x, y: last.y, angle: 0 };
+}
+
+/** Halfway along a road by distance, where its note hangs. */
+export function routeMidpoint(route: readonly Point[]): Point {
+  const lengths: number[] = [];
+  for (let i = 1; i < route.length; i++)
+    lengths.push(Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y));
+  const at = alongRoute(route, lengths, 0.5);
+  return { x: at.x, y: at.y };
 }
 
 /**
- * A one-way road from one city's edge to another's, with cars driving the
- * way the arrows point. `seed` staggers the cars between roads.
+ * A one-way road along the lattice from one city's edge to another's, with
+ * cars driving the way the arrows point and a bridge over every cell of
+ * water it crosses. `seed` staggers the cars between roads.
  *
  * Cities are painted back to front, and a road lies on the ground between
  * them: drawn all at once it would sit under every city's ground slab or over
@@ -1055,8 +1046,7 @@ export function roadSpan(from: Point, to: Point): { y0: number; y1: number } {
 export function drawRoad(
   ctx: Ctx,
   t: MapTokens,
-  from: Point,
-  to: Point,
+  route: readonly Point[],
   time: number,
   animate: boolean,
   seed: number,
@@ -1064,13 +1054,12 @@ export function drawRoad(
   destination: string,
   band?: { y0: number; y1: number },
 ): void {
-  const a = cityEdgePoint(from, to);
-  const b = cityEdgePoint(to, from);
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy);
+  if (route.length < 2) return;
+  const lengths: number[] = [];
+  for (let i = 1; i < route.length; i++)
+    lengths.push(Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y));
+  const len = lengths.reduce((sum, l) => sum + l, 0);
   if (len < 20) return;
-  const angle = Math.atan2(dy, dx);
 
   ctx.save();
   if (band) {
@@ -1082,26 +1071,34 @@ export function drawRoad(
     ctx.clip();
   }
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const trace = () => {
+    ctx.beginPath();
+    ctx.moveTo(route[0].x, route[0].y);
+    for (let i = 1; i < route.length; i++) ctx.lineTo(route[i].x, route[i].y);
+  };
   ctx.strokeStyle = highlighted ? t.accent : t.night ? '#4b5450' : '#8d938c';
   ctx.lineWidth = 12;
-  ctx.beginPath();
-  ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x, b.y);
+  trace();
   ctx.stroke();
   ctx.strokeStyle = t.night ? '#2f3633' : '#6f756f';
   ctx.lineWidth = 9;
+  trace();
   ctx.stroke();
   ctx.strokeStyle = 'rgba(255,255,255,0.55)';
   ctx.lineWidth = 1;
   ctx.setLineDash([8, 8]);
+  trace();
   ctx.stroke();
   ctx.setLineDash([]);
 
+  drawBridges(ctx, t, route);
+
   // Direction arrows painted on the asphalt, and a large one where the road arrives.
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  const end = alongRoute(route, lengths, 1);
   ctx.save();
-  ctx.translate(b.x - (dx / len) * 12, b.y - (dy / len) * 12);
-  ctx.rotate(angle);
+  ctx.translate(end.x - Math.cos(end.angle) * 12, end.y - Math.sin(end.angle) * 12);
+  ctx.rotate(end.angle);
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.beginPath();
   ctx.moveTo(9, 0);
@@ -1112,12 +1109,12 @@ export function drawRoad(
   ctx.fill();
   ctx.restore();
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  for (const f of [0.3, 0.7]) {
-    const px = a.x + dx * f;
-    const py = a.y + dy * f;
+  const arrows = Math.max(2, Math.min(6, Math.floor(len / 120)));
+  for (let k = 0; k < arrows; k++) {
+    const at = alongRoute(route, lengths, (k + 0.5) / arrows);
     ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(angle);
+    ctx.translate(at.x, at.y);
+    ctx.rotate(at.angle);
     ctx.beginPath();
     ctx.moveTo(5, 0);
     ctx.lineTo(-3, -3.2);
@@ -1127,22 +1124,23 @@ export function drawRoad(
     ctx.restore();
   }
 
+  const start = alongRoute(route, lengths, 0);
+  const startDir = alongRoute(route, lengths, Math.min(1, 26 / len));
   drawSignpost(
     ctx,
-    a.x + (dx / len) * 26 - (dy / len) * 16,
-    a.y + (dy / len) * 26 + (dx / len) * 16,
-    angle,
+    start.x + Math.cos(start.angle) * 26 - Math.sin(start.angle) * 16,
+    start.y + Math.sin(start.angle) * 26 + Math.cos(start.angle) * 16,
+    startDir.angle,
     destination,
   );
 
   const cars = Math.max(1, Math.min(4, Math.floor(len / 200)));
   for (let k = 0; k < cars; k++) {
     const phase = animate ? (time / (len * 14) + k / cars + seed * 0.37) % 1 : (k + 0.5) / cars;
-    const px = a.x + dx * phase;
-    const py = a.y + dy * phase;
+    const at = alongRoute(route, lengths, phase);
     ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(angle);
+    ctx.translate(at.x, at.y);
+    ctx.rotate(at.angle);
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath();
     ctx.roundRect(-6, -2.5, 12, 6, 2);
@@ -1161,6 +1159,59 @@ export function drawRoad(
     ctx.restore();
   }
   ctx.restore();
+}
+
+/** Planks and railings over every cell of water on the route, each cell's stretch a little long so runs join. */
+function drawBridges(ctx: Ctx, t: MapTokens, route: readonly Point[]): void {
+  const cells = routeCells(route);
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    if (!isWater(c.s, c.t)) continue;
+    const next = cells[i + 1] ?? cells[i - 1];
+    const dir = next ? { s: Math.sign(next.s - c.s), t: Math.sign(next.t - c.t) } : { s: 1, t: 0 };
+    if (!cells[i + 1] && cells[i - 1]) {
+      dir.s = -dir.s;
+      dir.t = -dir.t;
+    }
+    // A step along the s axis is (TW, TH) in the world; along t it is (−TW, TH).
+    const dx = (dir.s - dir.t) * TW;
+    const dy = (dir.s + dir.t) * TH;
+    const step = Math.hypot(dx, dy);
+    const ux = dx / step;
+    const uy = dy / step;
+    const cx = (c.s - c.t) * TW;
+    const cy = (c.s + c.t) * TH;
+    const half = step / 2 + 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.atan2(uy, ux));
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(-half, -5, half * 2, 14);
+    ctx.fillStyle = t.night ? '#6b5a44' : '#c4ad86';
+    ctx.fillRect(-half, -6, half * 2, 12);
+    ctx.strokeStyle = t.night ? '#3d3227' : '#7a6650';
+    ctx.lineWidth = 1;
+    for (let x = -half + 3; x < half; x += 5) {
+      ctx.beginPath();
+      ctx.moveTo(x, -6);
+      ctx.lineTo(x, 6);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1.6;
+    for (const side of [-8, 8]) {
+      ctx.beginPath();
+      ctx.moveTo(-half, side);
+      ctx.lineTo(half, side);
+      ctx.stroke();
+      for (let x = -half + 4; x < half; x += 10) {
+        ctx.beginPath();
+        ctx.moveTo(x, side);
+        ctx.lineTo(x, side - 4);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 }
 
 /** A one-way sign beside the road's start: a white arrow the way traffic goes, the destination below. */

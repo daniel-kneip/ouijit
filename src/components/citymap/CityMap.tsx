@@ -73,7 +73,6 @@ import {
   WEATHER_LABEL,
 } from './cityGeometry';
 import {
-  cityEdgePoint,
   districtColor,
   drawCity,
   drawDistrict,
@@ -81,12 +80,14 @@ import {
   drawPath,
   drawRoad,
   roadSpan,
+  routeMidpoint,
   drawSelectionRing,
-  drawTerrain,
   withAlpha,
   type DrawCity,
   type MapTokens,
 } from './drawCity';
+import { TerrainLayer, drawTerrainDetails } from './drawTerrain';
+import { cellKey, cellOf, daylightTint, roadRoute, routeCells, windowsLit, type Climate } from './terrain';
 
 const EMPTY_IDS: string[] = [];
 const EMPTY_ROADS: Road[] = [];
@@ -119,7 +120,7 @@ interface CityModel {
   hidden: boolean;
 }
 
-const TOKEN_SOURCES: Record<Exclude<keyof MapTokens, 'night'>, string> = {
+const TOKEN_SOURCES: Record<Exclude<keyof MapTokens, 'night' | 'lit'>, string> = {
   ground: 'color-mix(in srgb, var(--color-background) 84%, var(--color-success))',
   groundLine: 'color-mix(in srgb, var(--color-ink) 7%, transparent)',
   water: 'color-mix(in srgb, var(--color-background) 55%, var(--color-accent))',
@@ -148,12 +149,13 @@ function resolveTokens(probe: HTMLElement): MapTokens {
   };
   const tokens = {} as MapTokens;
   for (const [key, css] of Object.entries(TOKEN_SOURCES)) {
-    tokens[key as Exclude<keyof MapTokens, 'night'>] = read(css);
+    tokens[key as Exclude<keyof MapTokens, 'night' | 'lit'>] = read(css);
   }
   const bg = read('var(--color-background)')
     .match(/\d+(\.\d+)?/g)
     ?.map(Number) ?? [255, 255, 255];
   tokens.night = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) / 255 < 0.5;
+  tokens.lit = tokens.night;
   return tokens;
 }
 
@@ -609,6 +611,7 @@ function useMapSurface(input: MapSurfaceInput) {
   const camera = useRef<CityMapViewport>({ x: 0, y: 0, zoom: 0.9 });
   const size = useRef({ w: 0, h: 0, dpr: 1 });
   const tokens = useRef<MapTokens | null>(null);
+  const terrain = useRef(new TerrainLayer());
   const dirty = useRef(true);
   const tween = useRef<{ from: CityMapViewport; to: CityMapViewport; t0: number } | null>(null);
   const model = useRef({ cities, roads, districts, selection });
@@ -824,37 +827,48 @@ function useMapSurface(input: MapSurfaceInput) {
         dpr * (w / 2 - cam.x * cam.zoom),
         dpr * (h / 2 - cam.y * cam.zoom),
       );
-      drawGrid(ctx, t, visible, cam.zoom);
       const { cities: current, roads: currentRoads, districts: currentDistricts, selection: sel } = model.current;
+      const now = new Date();
+      t.lit = windowsLit(now, t.night);
+      const climates: Climate[] = current.map((c) => ({ ...cellOf(c.plot.pos), biome: c.style.biome }));
+      terrain.current.draw(ctx, t, visible, cam.zoom, climates);
+      drawGrid(ctx, t, visible, cam.zoom);
       for (const d of currentDistricts) {
         drawDistrict(ctx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
       }
-      drawTerrain(
-        ctx,
-        t,
-        visible,
-        current.map((c) => c.plot.pos),
-      );
       const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
-      for (const city of current) {
-        const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
-        if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
-      }
       const selectedTask = selectedTaskNumber(sel);
-      const roadDraws = currentRoads.flatMap((road, index) => {
+      const routes = currentRoads.flatMap((road, index) => {
         const from = byNumber.get(road.from);
         const to = byNumber.get(road.to);
         if (!from || !to) return [];
         const touches =
           (sel?.type === 'road' && sel.id === road.id) ||
           (selectedTask != null && (road.from === selectedTask || road.to === selectedTask));
-        const span = roadSpan(from.plot.pos, to.plot.pos);
-        return [
-          (band: { y0: number; y1: number }) => {
-            if (span.y1 < band.y0 || span.y0 >= band.y1) return;
-            drawRoad(ctx, t, from.plot.pos, to.plot.pos, time, animate, index, touches, `#${road.to}`, band);
-          },
-        ];
+        return [{ road, index, touches, route: roadRoute(from.plot.pos, to.plot.pos) }];
+      });
+      const roadCells = new Set(routes.flatMap((r) => routeCells(r.route).map(cellKey)));
+      drawTerrainDetails(
+        ctx,
+        t,
+        visible,
+        cam.zoom,
+        climates,
+        current.map((c) => c.plot.pos),
+        roadCells,
+        time,
+        animate,
+      );
+      for (const city of current) {
+        const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
+        if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
+      }
+      const roadDraws = routes.map(({ road, index, touches, route }) => {
+        const span = roadSpan(route);
+        return (band: { y0: number; y1: number }) => {
+          if (span.y1 < band.y0 || span.y0 >= band.y1) return;
+          drawRoad(ctx, t, route, time, animate, index, touches, `#${road.to}`, band);
+        };
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
       let painted = -Infinity;
@@ -893,6 +907,14 @@ function useMapSurface(input: MapSurfaceInput) {
         ctx.globalAlpha = 1;
       }
       roadsUpTo(Infinity);
+      const tint = daylightTint(now, t.night);
+      if (tint) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.globalCompositeOperation = tint.op;
+        ctx.fillStyle = tint.colour;
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalCompositeOperation = 'source-over';
+      }
       drawMinimap();
     };
 
@@ -988,9 +1010,10 @@ function useMapSurface(input: MapSurfaceInput) {
         const from = byNumber.get(road.from);
         const to = byNumber.get(road.to);
         if (!from || !to) continue;
-        const a = cityEdgePoint(from.plot.pos, to.plot.pos);
-        const b = cityEdgePoint(to.plot.pos, from.plot.pos);
-        if (distanceToSegment(w, a, b) < grab) return { type: 'road', road };
+        const route = roadRoute(from.plot.pos, to.plot.pos);
+        for (let i = 1; i < route.length; i++) {
+          if (distanceToSegment(w, route[i - 1], route[i]) < grab) return { type: 'road', road };
+        }
       }
       for (const district of [...currentDistricts].reverse()) {
         const selected = sel?.type === 'district' && sel.id === district.id;
@@ -1371,9 +1394,9 @@ function useMapSurface(input: MapSurfaceInput) {
       const from = byNumber.get(road.from);
       const to = byNumber.get(road.to);
       if (!from || !to || from.hidden || to.hidden) continue;
-      const a = cityEdgePoint(from.plot.pos, to.plot.pos);
-      const b = cityEdgePoint(to.plot.pos, from.plot.pos);
-      const p = toScreen({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const route = roadRoute(from.plot.pos, to.plot.pos);
+      if (route.length < 2) continue;
+      const p = toScreen(routeMidpoint(route));
       const selected = selection?.type === 'road' && selection.id === road.id;
       nodes.push(
         <button
