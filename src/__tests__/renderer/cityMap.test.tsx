@@ -106,6 +106,16 @@ describe('the city map', () => {
     expect(screen.getByTestId('city-alert-waiting').textContent).toBe('1');
     expect(screen.queryByTestId('city-alert-error')).toBeNull();
 
+    // The list counts a city's terminals; picking the city unfolds them, and one of them opens its terminal.
+    expect(screen.getByTestId('city-count-7').textContent).toContain('2');
+    expect(screen.queryByTestId('city-count-9')).toBeNull();
+    expect(screen.queryByTestId('sidebar-site-alpha-7b')).toBeNull();
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    expect(screen.getByTestId('sidebar-site-alpha-7b').textContent).toContain('Fix hook tests');
+    fireEvent.click(screen.getByTestId('sidebar-site-alpha-7b'));
+    expect((await screen.findByTestId('terminal-drawer')).textContent).toContain('alpha-7b');
+    fireEvent.click(screen.getByLabelText('Hide terminal'));
+
     // The city's inspector shows the ticket, its comments and its sites; the newest comment sits on the label.
     fireEvent.click(screen.getByTestId('city-row-7'));
     const inspector = await screen.findByTestId('city-inspector');

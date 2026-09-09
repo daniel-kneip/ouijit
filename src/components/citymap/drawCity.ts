@@ -494,6 +494,136 @@ function flag(ctx: Ctx, t: MapTokens, cx: number, cy: number, height: number, co
   ctx.fill();
 }
 
+/** A tower crane: mast, jib at `angle`, a load on the hook. */
+function crane(
+  ctx: Ctx,
+  t: MapTokens,
+  mastX: number,
+  mastBase: number,
+  mastH: number,
+  angle: number,
+  hookLen: number,
+  colour: string,
+  load: string,
+): void {
+  isoBox(ctx, t, mastX, mastBase, 2.6, 1.3, mastH, colour);
+  const topY = mastBase - mastH;
+  const jib = 34;
+  const jx = mastX + Math.cos(angle) * jib;
+  const jy = topY + Math.sin(angle) * jib * 0.5;
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(mastX - Math.cos(angle) * 10, topY - Math.sin(angle) * 5);
+  ctx.lineTo(jx, jy);
+  ctx.stroke();
+  ctx.strokeStyle = t.ink2;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(jx, jy);
+  ctx.lineTo(jx, jy + hookLen);
+  ctx.stroke();
+  ctx.fillStyle = load;
+  ctx.fillRect(jx - 3, jy + hookLen, 6, 4);
+}
+
+/** A building still going up: a bare shell to part of its height, scaffolding on both faces, planks on top. */
+function shell(ctx: Ctx, t: MapTokens, x: number, y: number, storeys: number, wall: string, seed: number): void {
+  const w = TW * 0.72;
+  const h = TH * 0.72;
+  const up = Math.max(1, Math.round(storeys * (0.35 + seed * 0.4)));
+  const height = STOREY * up;
+  isoBox(ctx, t, x, y, w, h, height, '#cfc8bb', { l: t.night ? -14 : 0 });
+  ctx.strokeStyle = t.night ? '#9a6a34' : '#d98c3a';
+  ctx.lineWidth = 1;
+  const top = height + 5;
+  for (const face of [-1, 1]) {
+    for (const u of [0.05, 0.5, 0.95]) {
+      const px = x + face * (w - w * u);
+      const py = y + h * u;
+      ctx.beginPath();
+      ctx.moveTo(px, py + 1);
+      ctx.lineTo(px, py - top);
+      ctx.stroke();
+    }
+    for (let level = 1; level <= up; level++) {
+      const ly = STOREY * level - 2;
+      ctx.beginPath();
+      ctx.moveTo(x + face * w, y - ly);
+      ctx.lineTo(x, y + h - ly);
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = t.night ? '#7d6a4c' : '#b8955f';
+  ctx.beginPath();
+  ctx.moveTo(x - w, y - top);
+  ctx.lineTo(x, y - h - top);
+  ctx.lineTo(x + w, y - top);
+  ctx.lineTo(x, y + h - top);
+  ctx.closePath();
+  ctx.fill();
+  if (seed > 0.7) isoBox(ctx, t, x + w * 0.8, y + h * 0.6, 5, 2.5, 4, wall);
+}
+
+/** Cleared ground with what a yard holds: a pile of sand, a stack of pallets, or a portacabin. */
+function yard(ctx: Ctx, t: MapTokens, x: number, y: number, seed: number): void {
+  ctx.fillStyle = tone('#c4b08c', 1, t.night ? -26 : 0);
+  diamond(ctx, x, y, TW * 0.85, TH * 0.85);
+  ctx.fill();
+  if (seed < 0.3) {
+    ctx.fillStyle = tone('#d9c48e', 1, t.night ? -20 : 0);
+    ctx.beginPath();
+    ctx.ellipse(x, y - 2, 9, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = tone('#e8d5a2', 1, t.night ? -20 : 0);
+    ctx.beginPath();
+    ctx.ellipse(x - 2, y - 4, 5, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (seed < 0.6) {
+    isoBox(ctx, t, x - 4, y, 7, 3.5, 3, '#c9b48a');
+    isoBox(ctx, t, x + 6, y + 2, 5, 2.5, 5, '#8fa6b5');
+  } else if (seed < 0.75) {
+    isoBox(ctx, t, x, y, 9, 4.5, 8, '#e9e4d8', { windows: false });
+    ctx.fillStyle = '#5b7f9e';
+    ctx.fillRect(x - 6, y - 5, 3, 2.5);
+    ctx.fillRect(x + 3, y - 5, 3, 2.5);
+  }
+}
+
+/** The fence round a city under works: striped posts along its edges and a tape between them. */
+function hoarding(ctx: Ctx, t: MapTokens): void {
+  const corners = [
+    [0, -CITY_HALF_H],
+    [CITY_HALF_W, 0],
+    [0, CITY_HALF_H],
+    [-CITY_HALF_W, 0],
+  ];
+  ctx.strokeStyle = t.night ? 'rgba(255,190,120,0.55)' : 'rgba(224,122,47,0.75)';
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  for (let k = 0; k < 4; k++) {
+    const [ax, ay] = corners[k];
+    const [bx, by] = corners[(k + 1) % 4];
+    ctx.moveTo(ax * 1.02, ay * 1.02 - 6);
+    ctx.lineTo(bx * 1.02, by * 1.02 - 6);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (let k = 0; k < 4; k++) {
+    const [ax, ay] = corners[k];
+    const [bx, by] = corners[(k + 1) % 4];
+    for (let u = 0; u < 1; u += 1 / 6) {
+      const px = (ax + (bx - ax) * u) * 1.02;
+      const py = (ay + (by - ay) * u) * 1.02;
+      ctx.fillStyle = '#e07a2f';
+      ctx.fillRect(px - 1, py - 8, 2, 8);
+      ctx.fillStyle = '#fff5e6';
+      ctx.fillRect(px - 1, py - 5, 2, 2);
+    }
+  }
+}
+
 function stateColor(t: MapTokens, s: SiteState): string {
   return { working: t.working, waiting: t.waiting, error: t.error, done: t.done, exited: t.exited }[s];
 }
@@ -558,28 +688,11 @@ function drawSite(
   const mastBase = cy - 3;
   const mastH = 48;
   const craneCol = exited ? t.exited : '#f2c14e';
-  isoBox(ctx, t, mastX, mastBase, 2.6, 1.3, mastH, craneCol);
   const topY = mastBase - mastH;
   const baseAngle = -0.55;
   const angle = site.state === 'working' && animate ? baseAngle + Math.sin(time / 2600) * 0.55 : baseAngle;
-  const jib = 34;
-  const jx = mastX + Math.cos(angle) * jib;
-  const jy = topY + Math.sin(angle) * jib * 0.5;
-  ctx.strokeStyle = craneCol;
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  ctx.moveTo(mastX - Math.cos(angle) * 10, topY - Math.sin(angle) * 5);
-  ctx.lineTo(jx, jy);
-  ctx.stroke();
   const hookLen = site.state === 'working' && animate ? 14 + Math.sin(time / 1900) * 8 : 16;
-  ctx.strokeStyle = t.ink2;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(jx, jy);
-  ctx.lineTo(jx, jy + hookLen);
-  ctx.stroke();
-  ctx.fillStyle = slot.wall;
-  ctx.fillRect(jx - 3, jy + hookLen, 6, 4);
+  crane(ctx, t, mastX, mastBase, mastH, angle, hookLen, craneCol, slot.wall);
 
   if (site.state === 'working') {
     const puffs = animate ? 3 : 1;
@@ -675,6 +788,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
   const { cells, slots } = cityLayout(city.taskNumber);
   const faded = city.presence === 'settled';
   const blueprint = city.presence === 'blueprint';
+  const works = city.presence === 'building';
   const opts: BoxOptions = faded ? { s: 0.22, l: t.night ? -6 : 10 } : { l: t.night ? -12 : 0 };
   const { biome, culture } = city.style;
   const ground = groundFor(biome, city.season);
@@ -695,7 +809,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
     ctx.stroke();
     ctx.setLineDash([]);
   } else {
-    ctx.fillStyle = shade(ground.base, -32, 8);
+    ctx.fillStyle = works ? tone('#cdb995', 1, t.night ? -28 : 0) : shade(ground.base, -32, 8);
     diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
     ctx.fill();
     ctx.strokeStyle = city.color;
@@ -756,6 +870,11 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
       continue;
     }
     const seed = hash2(city.taskNumber * 31 + cell.i, cell.j);
+    if (works && !built) {
+      if (cell.type === 'building') shell(ctx, t, x, y, cell.storeys, cell.wall, seed);
+      else yard(ctx, t, x, y, seed);
+      continue;
+    }
     if (built && here) {
       drawBuilding(ctx, t, x, y, TW * 0.7, TH * 0.7, STOREY * here.slot.storeys, here.slot.wall, {
         ...opts,
@@ -786,6 +905,21 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
       ctx.fillStyle = shade(ground.lot, -28, 8);
       diamond(ctx, x, y, TW * 0.8, TH * 0.8);
       ctx.fill();
+    }
+  }
+
+  if (works) {
+    hoarding(ctx, t);
+    // Two tower cranes on building cells no terminal holds, still: the moving ones are the sites.
+    const perches = order.filter(
+      (c): c is Extract<typeof c, { type: 'building' }> =>
+        c.type === 'building' && !siteBySlot.has(slotByCell.get(`${c.i},${c.j}`)?.idx ?? -1),
+    );
+    for (const k of [0, Math.floor(perches.length / 2)]) {
+      const perch = perches[k];
+      if (!perch) continue;
+      const { x, y } = cellCenter(perch.i, perch.j);
+      crane(ctx, t, x, y - 3, 40, -0.55 + (k === 0 ? 0 : 2.4), 14, '#f2c14e', perch.wall);
     }
   }
 

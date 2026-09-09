@@ -367,6 +367,10 @@ Hunks no group claims are still shown, in a trailing group — a lens can reorde
 and split a diff but never hides part of it, so covering everything is not
 required.
 
+## This Terminal
+Name your terminal as soon as you know what you are doing in it, in a few words drawn from the task ("Auth middleware", "Flaky login test"): the terminal header, the task's card and the map show that name, and it is how the user tells your session from the others on the same task. Rename it when the work changes.
+ouijit terminal name "<name>"                 # name this terminal (OUIJIT_PTY_ID); --pty <id> for another
+
 ## Markdown Panel Commands (open .md files as tabs in this terminal)
 ouijit markdown add <path.md>                 # open a markdown file panel on this terminal
 ouijit markdown list                          # → {ptyId, kind, panels: [{label, path, active}, ...]}

@@ -1775,33 +1775,58 @@ function CitySidebar({
           {section.cities.map((city) => {
             const status = city.task.status;
             const selected = selectedTask === city.task.taskNumber;
+            const openPty = selection?.type === 'site' && selected ? selection.ptyId : null;
             return (
-              <button
-                key={city.task.taskNumber}
-                type="button"
-                data-testid={`city-row-${city.task.taskNumber}`}
-                className={`w-full text-left grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-2.5 px-2 py-1.5 rounded-lg border text-xs hover:bg-ink/[0.04] ${selected ? 'border-border bg-ink/[0.04]' : 'border-transparent'}`}
-                onClick={() => onPick(city)}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]"
-                  style={{
-                    background: status === 'todo' ? 'transparent' : city.color,
-                    border: `1.5px ${status === 'todo' ? 'dashed' : 'solid'} ${city.color}`,
-                  }}
-                />
-                <span
-                  className={`truncate font-medium ${status === 'done' ? 'text-text-secondary' : 'text-text-primary'}`}
+              <div key={city.task.taskNumber}>
+                <button
+                  type="button"
+                  data-testid={`city-row-${city.task.taskNumber}`}
+                  className={`w-full text-left grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-2.5 px-2 py-1.5 rounded-lg border text-xs hover:bg-ink/[0.04] ${selected ? 'border-border bg-ink/[0.04]' : 'border-transparent'}`}
+                  onClick={() => onPick(city)}
                 >
-                  {city.task.name}
-                  <span className="ml-1.5 font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
-                </span>
-                <span className="flex gap-0.5">
-                  {city.sites.map((s) => (
-                    <SiteDot key={s.ptyId} state={s.state} className="!w-1.5 !h-1.5" />
-                  ))}
-                </span>
-              </button>
+                  <span
+                    className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]"
+                    style={{
+                      background: status === 'todo' ? 'transparent' : city.color,
+                      border: `1.5px ${status === 'todo' ? 'dashed' : 'solid'} ${city.color}`,
+                    }}
+                  />
+                  <span
+                    className={`truncate font-medium ${status === 'done' ? 'text-text-secondary' : 'text-text-primary'}`}
+                  >
+                    {city.task.name}
+                    <span className="ml-1.5 font-mono text-[10px] text-text-tertiary">#{city.task.taskNumber}</span>
+                  </span>
+                  {city.sites.length > 0 && (
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 h-[18px] rounded-full font-mono text-[10px] text-text-secondary"
+                      style={{ background: 'color-mix(in srgb, var(--color-ink) 8%, transparent)' }}
+                      data-testid={`city-count-${city.task.taskNumber}`}
+                      title={`${city.sites.length} terminal${city.sites.length === 1 ? '' : 's'}`}
+                    >
+                      <Icon name="terminal" className="w-2.5 h-2.5" />
+                      {city.sites.length}
+                    </span>
+                  )}
+                </button>
+                {selected && city.sites.length > 0 && (
+                  <div className="ml-4 mb-1 border-l border-border pl-1.5 flex flex-col">
+                    {city.sites.map((site) => (
+                      <button
+                        key={site.ptyId}
+                        type="button"
+                        data-testid={`sidebar-site-${site.ptyId}`}
+                        className={`w-full text-left grid grid-cols-[10px_minmax(0,1fr)] items-center gap-2 px-2 py-1 rounded-md text-[11px] hover:bg-ink/[0.04] ${openPty === site.ptyId ? 'bg-ink/[0.06] text-text-primary' : 'text-text-secondary'}`}
+                        title={SITE_STATE_LABEL[site.state]}
+                        onClick={() => onPickSite(city, site)}
+                      >
+                        <SiteDot state={site.state} className="!w-2 !h-2" />
+                        <span className="truncate">{site.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

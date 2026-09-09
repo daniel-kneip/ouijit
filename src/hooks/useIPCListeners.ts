@@ -157,6 +157,12 @@ export function useIPCListeners() {
       }),
     );
 
+    cleanups.push(
+      window.api.onPtyLabelChanged(({ ptyId, label }) => {
+        useTerminalStore.getState().updateDisplay(ptyId, { label });
+      }),
+    );
+
     // CLI changes — re-fetch whatever the mutated route touched. Scripts and
     // hooks are the project's run commands: the store loads them once on
     // project switch, so without this a `ouijit script set` / `hook set` never

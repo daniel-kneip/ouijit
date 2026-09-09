@@ -591,6 +591,8 @@ export interface ElectronAPI {
   ): () => void;
   /** Listen for a CLI theme mutation — re-read and re-apply theme settings */
   onCliThemeChanged(callback: () => void): () => void;
+  /** A terminal renamed through the API; the header shows the new name. */
+  onPtyLabelChanged(callback: (payload: { ptyId: string; label: string }) => void): () => void;
   /** Listen for a CLI-initiated task start that requires spawning a terminal */
   onCliTaskStarted(
     callback: (payload: {

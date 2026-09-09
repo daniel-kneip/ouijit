@@ -459,6 +459,8 @@ export interface IpcPushContract {
   };
   /** A CLI theme mutation wrote global settings — re-read and re-apply. */
   'cli:theme-changed': { args: [] };
+  /** A terminal was renamed from outside the renderer (the CLI, an agent). */
+  'pty:label-changed': { args: [payload: { ptyId: string; label: string }] };
   'cli:task-started': {
     args: [
       payload: {

@@ -67,7 +67,8 @@ import {
 } from '../github/service';
 import { getProjectList } from '../projectList';
 import { cliPanelRequest } from '../cliPanels';
-import { isPtyActive, getPtyTaskContext } from '../ptyManager';
+import { isPtyActive, getPtyTaskContext, setPtyLabel } from '../ptyManager';
+import { findSessionOwner } from '../sandbox/registry';
 import { typedPush } from '../ipc/helpers';
 import { getLogger } from '../logger';
 import { authenticateRequest, type AuthContext, type ApiScope } from '../apiAuth';
@@ -345,6 +346,26 @@ async function runPanelOp(
 }
 
 const routes: Route[] = [
+  // ── Sessions ─────────────────────────────────────────────────────
+  // A terminal's name, as its header and the map's site show it. An agent
+  // names its own session from what it is working on.
+  route(
+    'PATCH',
+    'sessions/:ptyId/label',
+    (r) => {
+      const ptyId = r.segments[1];
+      if (!ptyId || !isPtyActive(ptyId)) throw new HttpError(404, `PTY ${ptyId} not found or inactive`);
+      const label = typeof r.body.label === 'string' ? r.body.label.trim() : '';
+      if (!label) throw new HttpError(400, 'Missing label in body');
+      if (label.length > 80) throw new HttpError(400, 'Label must be 80 characters or fewer');
+      const owner = findSessionOwner(ptyId);
+      if (owner) owner.setPtyLabel(ptyId, label);
+      else setPtyLabel(ptyId, label);
+      return { ptyId, label };
+    },
+    true,
+  ),
+
   // ── Tasks ────────────────────────────────────────────────────────
   route('GET', 'tasks', (r) => {
     return getTasksWithWorkspaces(requireProject(r.query));
@@ -1001,6 +1022,12 @@ async function handleAsync(req: IncomingMessage, res: ServerResponse, window: Br
       // tell it to re-read global settings and re-apply.
       if (segments[0] === 'themes') {
         typedPush(window, 'cli:theme-changed');
+      }
+
+      // The label lives in the renderer's store; the main process only kept
+      // its copy for reconnects.
+      if (segments[0] === 'sessions' && segments[2] === 'label') {
+        typedPush(window, 'pty:label-changed', result as { ptyId: string; label: string });
       }
 
       // A draft written here belongs to a pull request the renderer may have

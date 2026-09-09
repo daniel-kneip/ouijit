@@ -13,6 +13,7 @@ import type { BrowserWindow } from 'electron';
 import { startHookServer, stopHookServer, getApiPort } from '../hookServer';
 import { issueToken, revokeAllTokens } from '../apiAuth';
 import { getTaskWithWorkspace } from '../taskLifecycle';
+import { setPtyLabel } from '../ptyManager';
 import { typedPush } from '../ipc/helpers';
 
 const { getPtyTaskContextMock } = vi.hoisted(() => ({
@@ -20,8 +21,9 @@ const { getPtyTaskContextMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('../ptyManager', () => ({
-  isPtyActive: () => true,
+  isPtyActive: (ptyId: string) => ptyId !== 'pty-gone',
   getPtyTaskContext: () => getPtyTaskContextMock(),
+  setPtyLabel: vi.fn(),
 }));
 
 // Prevent real IPC broadcasts; we're driving HTTP directly.
@@ -275,6 +277,22 @@ describe('sandbox read-only, own-task scope', () => {
     );
     expect((await request('DELETE', `/api/tasks/7/notes/n1?project=${PROJECT}`, sandbox)).status).toBe(403);
     vi.mocked(getTaskWithWorkspace).mockReset();
+  });
+
+  test('a terminal is named through the api, and the renderer is told; a sandbox may not', async () => {
+    const host = issueToken('pty-host', 'host');
+    const res = await request('PATCH', '/api/sessions/pty-host/label', host, { label: '  Auth middleware ' });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ ptyId: 'pty-host', label: 'Auth middleware' });
+    expect(vi.mocked(setPtyLabel)).toHaveBeenCalledWith('pty-host', 'Auth middleware');
+    expect(vi.mocked(typedPush)).toHaveBeenCalledWith(expect.anything(), 'pty:label-changed', {
+      ptyId: 'pty-host',
+      label: 'Auth middleware',
+    });
+    expect((await request('PATCH', '/api/sessions/pty-host/label', host, { label: '   ' })).status).toBe(400);
+    expect((await request('PATCH', '/api/sessions/pty-gone/label', host, { label: 'x' })).status).toBe(404);
+    const sandbox = issueToken('pty-sbx', 'sandbox');
+    expect((await request('PATCH', '/api/sessions/pty-sbx/label', sandbox, { label: 'x' })).status).toBe(403);
   });
 
   test('host token still reads any task by number', async () => {
