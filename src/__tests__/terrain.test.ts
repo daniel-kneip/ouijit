@@ -13,6 +13,7 @@ import {
   windowsLit,
 } from '../components/citymap/terrain';
 import { N } from '../components/citymap/cityGeometry';
+import type { District } from '../stores/cityMapStore';
 
 describe('the land under the cities', () => {
   test('cells sit on the lattice, the river runs where its centre line says, and lakes lie off it', () => {
@@ -46,6 +47,44 @@ describe('the land under the cities', () => {
     const night = groundColour(terrainCell(5, 5), true);
     expect(day).toMatch(/^hsl\(/);
     expect(Number(/(\d+)%\)$/.exec(night)![1])).toBeLessThan(Number(/(\d+)%\)$/.exec(day)![1]));
+    expect(groundColour(terrainCell(10, Math.round(riverCentre(10))), false)).toBe('');
+  });
+
+  test('a district lays its own landscape over the land, water included', () => {
+    const at = latticePoint(200, 200);
+    const zone = (terrain: District['terrain']): District => ({
+      id: terrain,
+      name: terrain,
+      x: at.x,
+      y: at.y - 200,
+      w: 400,
+      h: 400,
+      hue: 0,
+      terrain,
+    });
+    const grounds = new Set<string>();
+    for (let s = 195; s <= 210; s++) {
+      for (let t = 195; t <= 210; t++) {
+        const cell = terrainCell(s, t, [], [zone('volcanic')]);
+        if (cell.zone) grounds.add(cell.ground);
+      }
+    }
+    expect([...grounds].every((g) => g === 'rock' || g === 'lava' || g === 'water')).toBe(true);
+    expect(grounds.has('lava')).toBe(true);
+    expect(terrainCell(200, 200, [], [zone('glacier')]).ground).toBe('ice');
+    expect(terrainCell(200, 200, [], [zone('salt')]).zone).toBe('salt');
+    expect(terrainCell(300, 300, [], [zone('salt')]).zone).toBeUndefined();
+    // A river cell in a salt district is brine, and it has a colour of its own rather than the theme's water.
+    const river = Math.round(riverCentre(10));
+    const salty = zone('salt');
+    const onRiver = terrainCell(
+      10,
+      river,
+      [],
+      [{ ...salty, ...latticePoint(10, river), y: latticePoint(10, river).y - 100 }],
+    );
+    expect(onRiver.ground).toBe('brine');
+    expect(groundColour(onRiver, false)).toMatch(/^hsl\(/);
   });
 
   test('a road leaves one city along the lattice, bends once, arrives at the other, and bridges the river', () => {

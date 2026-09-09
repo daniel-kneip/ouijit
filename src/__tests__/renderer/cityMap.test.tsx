@@ -258,7 +258,7 @@ describe('the city map', () => {
         9: { pos: { x: 600, y: 300 }, lots: {}, built: [] },
       },
       roads: [{ id: 'r1', from: 7, to: 9 }],
-      districts: [{ id: 'd1', name: 'Payments', x: -400, y: -300, w: 800, h: 600, hue: 28 }],
+      districts: [{ id: 'd1', name: 'Payments', x: -400, y: -300, w: 800, h: 600, hue: 28, terrain: 'marsh' }],
     };
     vi.mocked(window.api.globalSettings.get).mockImplementation(async (key: string) =>
       key === 'citymap:/work/alpha' ? JSON.stringify(saved) : undefined,

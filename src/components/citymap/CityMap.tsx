@@ -14,6 +14,8 @@ import {
 import { ResizeHandle } from '../common/ResizeHandle';
 import type { TerminalDisplayState } from '../../stores/terminalDisplay';
 import {
+  DISTRICT_TERRAINS,
+  DISTRICT_TERRAIN_HUE,
   districtCorners,
   isoDelta,
   loadPersistedCityMap,
@@ -25,6 +27,7 @@ import {
   type CityMapViewport,
   type CityPlot,
   type District,
+  type DistrictTerrain,
   type Road,
 } from '../../stores/cityMapStore';
 import type { SandboxProviderId, TaskStatus, TaskWithWorkspace } from '../../types';
@@ -95,7 +98,14 @@ const EMPTY_DISTRICTS: District[] = [];
 const STATUS_ORDER: TaskStatus[] = ['in_progress', 'in_review', 'todo', 'done'];
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2.6;
-const DISTRICT_HUES = [210, 28, 150, 330, 90, 260, 45, 190];
+const DISTRICT_TERRAIN_LABEL: Record<DistrictTerrain, string> = {
+  blossom: 'Cherry grove',
+  volcanic: 'Volcanic',
+  marsh: 'Marsh',
+  glacier: 'Glacier',
+  mushroom: 'Mushroom wood',
+  salt: 'Salt flats',
+};
 const FLASH_MS = 2500;
 const MINIMAP_W = 180;
 const MINIMAP_H = 110;
@@ -831,7 +841,7 @@ function useMapSurface(input: MapSurfaceInput) {
       const now = new Date();
       t.lit = windowsLit(now, t.night);
       const climates: Climate[] = current.map((c) => ({ ...cellOf(c.plot.pos), biome: c.style.biome }));
-      terrain.current.draw(ctx, t, visible, cam.zoom, climates);
+      terrain.current.draw(ctx, t, visible, cam.zoom, climates, currentDistricts);
       drawGrid(ctx, t, visible, cam.zoom);
       for (const d of currentDistricts) {
         drawDistrict(ctx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
@@ -854,6 +864,7 @@ function useMapSurface(input: MapSurfaceInput) {
         visible,
         cam.zoom,
         climates,
+        currentDistricts,
         current.map((c) => c.plot.pos),
         roadCells,
         time,
@@ -2292,18 +2303,27 @@ function DistrictInspector({
             if (e.key === 'Escape') setName(district.name);
           }}
         />
-        <div className="flex gap-1.5" role="radiogroup" aria-label="District colour">
-          {DISTRICT_HUES.map((hue) => (
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="District landscape">
+          {DISTRICT_TERRAINS.map((terrain) => (
             <button
-              key={hue}
+              key={terrain}
               type="button"
               role="radio"
-              aria-checked={district.hue === hue}
-              aria-label={`Hue ${hue}`}
-              className={`w-5 h-5 rounded-full border-2 ${district.hue === hue ? 'border-ink' : 'border-transparent'}`}
-              style={{ background: districtColor(hue, 0.85, false) }}
-              onClick={() => update({ hue })}
-            />
+              aria-checked={district.terrain === terrain}
+              data-testid={`district-terrain-${terrain}`}
+              className={`flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full border text-[11px] ${
+                district.terrain === terrain
+                  ? 'border-ink text-text-primary'
+                  : 'border-border text-text-secondary hover:text-text-primary'
+              }`}
+              onClick={() => update({ terrain, hue: DISTRICT_TERRAIN_HUE[terrain] })}
+            >
+              <span
+                className="w-3 h-3 rounded-full"
+                style={{ background: districtColor(DISTRICT_TERRAIN_HUE[terrain], 0.85, false) }}
+              />
+              {DISTRICT_TERRAIN_LABEL[terrain]}
+            </button>
           ))}
         </div>
         <p className="text-[11px] text-text-tertiary leading-snug">

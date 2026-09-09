@@ -1,4 +1,5 @@
 import { CITY_HALF_H, CITY_HALF_W, N, TH, TW, hash2, type Biome, type Point } from './cityGeometry';
+import { pointInDistrict, type District, type DistrictTerrain } from '../../stores/cityMapStore';
 
 /**
  * The land under the cities, cell by cell on the same lattice the cities snap
@@ -7,7 +8,20 @@ import { CITY_HALF_H, CITY_HALF_W, N, TH, TW, hash2, type Biome, type Point } fr
  * stored map. Cell (s, t) is at world ((s − t)·TW, (s + t)·TH).
  */
 
-export type Ground = 'water' | 'meadow' | 'dry' | 'forest' | 'heath' | 'rock' | 'sand';
+export type Ground =
+  | 'water'
+  | 'meadow'
+  | 'dry'
+  | 'forest'
+  | 'heath'
+  | 'rock'
+  | 'sand'
+  | 'lava'
+  | 'ice'
+  | 'marsh'
+  | 'moss'
+  | 'salt'
+  | 'brine';
 
 export interface Cell {
   s: number;
@@ -18,10 +32,10 @@ export interface TerrainCell {
   ground: Ground;
   /** 0 to 1, low ground first. */
   elevation: number;
-  /** −1 to 1: the slope faces the light (positive) or away from it. */
-  slope: number;
   /** The nearest city's climate, if one is close; the land takes its colours. */
   biome: Biome;
+  /** The district the cell lies in, whose landscape replaces the land's own. */
+  zone?: DistrictTerrain;
 }
 
 /** A city's climate as it reaches the land around it. */
@@ -93,11 +107,37 @@ function climateAt(s: number, t: number, climates: readonly Climate[]): Biome {
   return bestDistance <= reach ? best.biome : 'meadow';
 }
 
-export function terrainCell(s: number, t: number, climates: readonly Climate[] = []): TerrainCell {
+/** What a district's landscape makes of a cell, water or land. */
+function zoneGround(zone: DistrictTerrain, s: number, t: number, water: boolean): Ground {
+  const n = noise(s / 3, t / 3, 8);
+  switch (zone) {
+    case 'blossom':
+      return water ? 'water' : 'meadow';
+    case 'volcanic':
+      return water ? 'water' : n > 0.72 ? 'lava' : 'rock';
+    case 'marsh':
+      return water || n > 0.6 ? 'water' : 'marsh';
+    case 'glacier':
+      return 'ice';
+    case 'mushroom':
+      return water ? 'water' : 'moss';
+    case 'salt':
+      return water ? 'brine' : 'salt';
+  }
+}
+
+export function terrainCell(
+  s: number,
+  t: number,
+  climates: readonly Climate[] = [],
+  zones: readonly District[] = [],
+): TerrainCell {
   const e = elevation(s, t);
   const biome = climateAt(s, t, climates);
-  const slope = Math.max(-1, Math.min(1, (elevation(s - 1, t - 1) - elevation(s + 1, t + 1)) * 6));
-  if (isWater(s, t)) return { ground: 'water', elevation: e, slope, biome };
+  const water = isWater(s, t);
+  const zone = zones.find((d) => pointInDistrict(d, latticePoint(s, t)))?.terrain;
+  if (zone) return { ground: zoneGround(zone, s, t, water), elevation: e, biome, zone };
+  if (water) return { ground: 'water', elevation: e, biome };
   const m = moisture(s, t);
   let ground: Ground;
   if (e > 0.84) ground = 'rock';
@@ -106,7 +146,7 @@ export function terrainCell(s: number, t: number, climates: readonly Climate[] =
   else if (m < 0.35) ground = 'dry';
   else ground = 'meadow';
   if (biome === 'desert' && ground !== 'rock') ground = ground === 'forest' ? 'dry' : 'sand';
-  return { ground, elevation: e, slope, biome };
+  return { ground, elevation: e, biome };
 }
 
 /** The lattice cells a city's ground covers: N×N around its centre cell. */
@@ -178,7 +218,9 @@ export function cellKey(c: Cell): string {
   return `${c.s},${c.t}`;
 }
 
-const PALETTE: Record<Biome, Record<Exclude<Ground, 'water'>, string>> = {
+type LandGround = 'meadow' | 'dry' | 'forest' | 'heath' | 'rock' | 'sand';
+
+const PALETTE: Record<Biome, Record<LandGround, string>> = {
   meadow: { meadow: '#b8cf9c', dry: '#c9c58a', forest: '#8fb37e', heath: '#a9b08a', rock: '#b3b6a6', sand: '#d9cfa0' },
   forest: { meadow: '#9fbf86', dry: '#b3b57a', forest: '#7aa46b', heath: '#95a37c', rock: '#aeb0a5', sand: '#cbc498' },
   desert: { meadow: '#d8cc96', dry: '#e5d3a1', forest: '#c4b97c', heath: '#d2bd86', rock: '#c9b593', sand: '#ecdcaa' },
@@ -211,14 +253,39 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
   return { h, s, l };
 }
 
-/** The ground's colour, shifted by lightness points and, at night, darkened. */
-export function groundColour(cell: TerrainCell, night: boolean): string {
-  if (cell.ground === 'water') return '';
-  const { h, s, l } = hexToHsl(PALETTE[cell.biome][cell.ground]);
-  const relief = (cell.elevation - 0.5) * 12 + cell.slope * 5;
-  const lightness = Math.max(0, Math.min(100, l * 100 + relief - (night ? 22 : 0)));
+/** Two tones per district ground, picked cell by cell, and the district's own water. */
+const ZONE_PALETTE: Record<DistrictTerrain, { ground: [string, string]; water: string }> = {
+  blossom: { ground: ['#d3e2b3', '#dce8bf'], water: '#9cc6de' },
+  volcanic: { ground: ['#5b5653', '#666059'], water: '#3d4a55' },
+  marsh: { ground: ['#7c9468', '#88a074'], water: '#6f8f89' },
+  glacier: { ground: ['#dbe9f0', '#cfe2ec'], water: '#cfe2ec' },
+  mushroom: { ground: ['#6f8a6a', '#7b9473'], water: '#5f8a86' },
+  salt: { ground: ['#f1eee4', '#e8e4d8'], water: '#e3c6cf' },
+};
+
+const LAVA = ['#ff7f2f', '#ffa042'];
+
+function shade(hex: string, night: boolean): string {
+  const { h, s, l } = hexToHsl(hex);
+  const lightness = Math.max(0, Math.min(100, l * 100 - (night ? 22 : 0)));
   const saturation = Math.max(0, s * 100 - (night ? 12 : 0));
   return `hsl(${Math.round(h * 360)},${saturation.toFixed(0)}%,${lightness.toFixed(0)}%)`;
+}
+
+/**
+ * The ground's colour, darkened at night. Empty for open water, which takes
+ * the theme's colour; a district's water is the district's own.
+ */
+export function groundColour(cell: TerrainCell, night: boolean, s = 0, t = 0): string {
+  if (cell.zone) {
+    const zone = ZONE_PALETTE[cell.zone];
+    if (cell.ground === 'water' || cell.ground === 'brine') return shade(zone.water, night);
+    const tone = noise(s / 2.5, t / 2.5, 9) > 0.5 ? 1 : 0;
+    if (cell.ground === 'lava') return LAVA[tone];
+    return shade(zone.ground[tone], night);
+  }
+  if (cell.ground === 'water') return '';
+  return shade(PALETTE[cell.biome][cell.ground as LandGround], night);
 }
 
 /**

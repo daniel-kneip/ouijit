@@ -459,7 +459,7 @@ function palm(ctx: Ctx, cx: number, cy: number, scale: number, faded: boolean): 
   ctx.lineCap = 'butt';
 }
 
-function tree(ctx: Ctx, t: MapTokens, cx: number, cy: number, scale = 1, faded = false, canopy?: string): void {
+export function tree(ctx: Ctx, t: MapTokens, cx: number, cy: number, scale = 1, faded = false, canopy?: string): void {
   const g = faded ? tone(canopy ?? '#5f9a4c', 0.25, 12) : tone(canopy ?? '#5f9a4c', 1, t.night ? -10 : 0);
   const g2 = faded ? tone(canopy ?? '#4a7f3a', 0.25, 12) : tone(canopy ?? '#4a7f3a', 1, t.night ? -18 : -8);
   ctx.fillStyle = 'rgba(31,42,34,0.18)';
@@ -968,16 +968,27 @@ function districtPath(ctx: Ctx, d: DrawDistrict): void {
   ctx.closePath();
 }
 
+/** The district's landscape is the ground itself; this is its edge: a wide band in its hue with a pale seam inside. */
 export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: boolean, zoom: number): void {
   districtPath(ctx, d);
-  ctx.fillStyle = districtColor(d.hue, t.night ? 0.16 : 0.13, t.night);
-  ctx.fill();
   ctx.lineJoin = 'round';
-  ctx.lineWidth = (selected ? 2.5 : 1.5) / zoom;
-  ctx.strokeStyle = selected ? t.accent : districtColor(d.hue, 0.7, t.night);
-  ctx.setLineDash(selected ? [] : [10, 8]);
+  ctx.lineWidth = (selected ? 7 : 5) / zoom;
+  ctx.strokeStyle = selected ? t.accent : districtColor(d.hue, 0.85, t.night);
   ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.strokeStyle = t.night ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.75)';
+  ctx.stroke();
+  ctx.fillStyle = selected ? t.accent : districtColor(d.hue, 1, t.night);
+  for (const [x, y] of [
+    [d.x, d.y],
+    [d.x + d.w, d.y + d.w / 2],
+    [d.x + d.w - d.h, d.y + (d.w + d.h) / 2],
+    [d.x - d.h, d.y + d.h / 2],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 5 / zoom, 0, Math.PI * 2);
+    ctx.fill();
+  }
   if (selected) {
     const size = 12 / zoom;
     const bx = d.x + d.w - d.h;

@@ -29,6 +29,21 @@ export interface Road {
  * cities' own axes: `x`,`y` is the top corner, `w` runs down-right along
  * (1, ½) and `h` down-left along (−1, ½), so its edges follow the ground grid.
  */
+/** The landscape a district lays over the ground: one no plain land has, so its edge reads. */
+export type DistrictTerrain = 'blossom' | 'volcanic' | 'marsh' | 'glacier' | 'mushroom' | 'salt';
+
+export const DISTRICT_TERRAINS: DistrictTerrain[] = ['blossom', 'volcanic', 'marsh', 'glacier', 'mushroom', 'salt'];
+
+/** The hue a district's label, outline and swatch take, matched to its landscape. */
+export const DISTRICT_TERRAIN_HUE: Record<DistrictTerrain, number> = {
+  blossom: 335,
+  volcanic: 18,
+  marsh: 150,
+  glacier: 200,
+  mushroom: 268,
+  salt: 40,
+};
+
 export interface District {
   id: string;
   name: string;
@@ -37,6 +52,7 @@ export interface District {
   w: number;
   h: number;
   hue: number;
+  terrain: DistrictTerrain;
 }
 
 export interface CityMapProjectState {
@@ -56,7 +72,6 @@ export const DISTRICT_MIN_W = 200;
 export const DISTRICT_MIN_H = 160;
 export const DISTRICT_DEFAULT_W = 600;
 export const DISTRICT_DEFAULT_H = 480;
-const DISTRICT_HUES = [210, 28, 150, 330, 90, 260, 45, 190];
 
 function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -122,7 +137,12 @@ export function normalizeProjectState(parsed: Partial<CityMapProjectState>): Cit
     cities: parsed.cities,
     viewport: parsed.viewport,
     roads: Array.isArray(parsed.roads) ? parsed.roads : [],
-    districts: Array.isArray(parsed.districts) ? parsed.districts : [],
+    districts: Array.isArray(parsed.districts)
+      ? parsed.districts.map((d, i) => ({
+          ...d,
+          terrain: DISTRICT_TERRAINS.includes(d.terrain) ? d.terrain : DISTRICT_TERRAINS[i % DISTRICT_TERRAINS.length],
+        }))
+      : [],
   };
 }
 
@@ -212,6 +232,7 @@ export const useCityMapStore = create<CityMapStore>()((set, get) => {
 
     addDistrict: (projectPath, center) => {
       const count = get().byProject[projectPath]?.districts.length ?? 0;
+      const terrain = DISTRICT_TERRAINS[count % DISTRICT_TERRAINS.length];
       const district: District = {
         id: newId(),
         name: `District ${count + 1}`,
@@ -219,7 +240,8 @@ export const useCityMapStore = create<CityMapStore>()((set, get) => {
         y: Math.round(center.y - (DISTRICT_DEFAULT_W + DISTRICT_DEFAULT_H) / 4),
         w: DISTRICT_DEFAULT_W,
         h: DISTRICT_DEFAULT_H,
-        hue: DISTRICT_HUES[count % DISTRICT_HUES.length],
+        hue: DISTRICT_TERRAIN_HUE[terrain],
+        terrain,
       };
       update(projectPath, (s) => ({ ...s, districts: [...s.districts, district] }));
       return district;

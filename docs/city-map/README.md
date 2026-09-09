@@ -33,8 +33,8 @@ puts that context first:
 - **Task chains are paths.** A child task's city is linked to its parent's by
   a dirt path, the same relation the canvas draws as chain edges.
 - **The land is on the grid too.** Every cell of ground is a pure function of
-  its lattice position: rolling relief from layered noise, meadow, dry grass,
-  forest, heath and rock by height and moisture, lakes where it is low and
+  its lattice position: meadow, dry grass, forest, heath and rock by height
+  and moisture from layered noise, lakes where it is low and
   wet, and one river winding across the map with sandy shores. A city's
   climate reaches a few cells into the land around it, so a desert ticket
   stands in sand. Close up, forest cells grow trees, rock cells stones,
@@ -49,10 +49,14 @@ puts that context first:
   other's, and it crosses every cell of water on a plank bridge. A
   dependency you want to see, not one the data knows. Remove it from either
   end's context menu.
-- **Districts group cities.** "New district here" on empty ground makes a
-  named, coloured area laid on the cities' own axes, so it sits on the
-  ground grid; drag it and the cities inside come along, drag its bottom
-  corner to resize. The city inspector says which district a city stands in.
+- **Districts are landscapes.** "New district here" on empty ground makes a
+  named area laid on the cities' own axes, so it sits on the ground grid,
+  with a landscape of its own that no plain land has: cherry grove,
+  volcanic, marsh, glacier, mushroom wood or salt flats, picked in its
+  inspector. The ground inside is that landscape, water included, and a
+  wide edge in the landscape's hue marks it. Drag it and the cities inside
+  come along, drag its bottom corner to resize. The city inspector says
+  which district a city stands in.
 - **Roads carry meaning.** A road's inspector takes a note, shown on the road
   itself; while the city a road leads from is not done, the destination's
   label says what it waits for. The project's tag filter applies to the map:
@@ -106,7 +110,7 @@ interface CityMapState {
   >;
   roads: { id: string; from: number; to: number; note?: string }[];
   // x,y is the top corner; w runs down-right along (1, ½), h down-left along (−1, ½)
-  districts: { id: string; name: string; x: number; y: number; w: number; h: number; hue: number }[];
+  districts: { id: string; name: string; x: number; y: number; w: number; h: number; hue: number; terrain: string }[];
 }
 ```
 
