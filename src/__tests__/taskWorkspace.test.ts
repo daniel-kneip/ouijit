@@ -28,8 +28,8 @@ describe('task workspace file', () => {
   });
 
   test('the hex colour is the same hue and lightness the app shows', () => {
-    expect(getChainColor(0, 0)).toBe('hsl(0, 55%, 72%)');
-    expect(getChainHex(0, 0)).toBe('#df9090');
+    expect(getChainColor(0, 0)).toBe('hsl(0, 78%, 54%)');
+    expect(getChainHex(0, 0)).toBe('#e52e2e');
     expect(getChainHex(7, 3)).toMatch(/^#[0-9a-f]{6}$/);
   });
 });

@@ -72,24 +72,27 @@ export function getChainHue(rootTaskNumber: number): number {
   return (rootTaskNumber * 137.508) % 360;
 }
 
+const CHAIN_SATURATION = 78;
+
+/** A root is a full mid-tone; each level down the chain is a darker shade of it. */
 function getChainHsl(rootTaskNumber: number, depth: number): [number, number] {
-  return [getChainHue(rootTaskNumber), Math.max(72 - depth * 14, 30)];
+  return [getChainHue(rootTaskNumber), Math.max(54 - depth * 10, 28)];
 }
 
 export function getChainColor(rootTaskNumber: number, depth: number): string {
   const [hue, lightness] = getChainHsl(rootTaskNumber, depth);
-  return `hsl(${hue}, 55%, ${lightness}%)`;
+  return `hsl(${hue}, ${CHAIN_SATURATION}%, ${lightness}%)`;
 }
 
 export function getChainBgColor(rootTaskNumber: number, depth: number): string {
   const [hue, lightness] = getChainHsl(rootTaskNumber, depth);
-  return `hsla(${hue}, 55%, ${lightness}%, 0.15)`;
+  return `hsla(${hue}, ${CHAIN_SATURATION}%, ${lightness}%, 0.15)`;
 }
 
 /** The same colour as `getChainColor`, for consumers that cannot take `hsl()` (VS Code's colour settings). */
 export function getChainHex(rootTaskNumber: number, depth: number): string {
   const [hue, lightness] = getChainHsl(rootTaskNumber, depth);
-  return hslToHex(hue, 55, lightness);
+  return hslToHex(hue, CHAIN_SATURATION, lightness);
 }
 
 function hslToHex(h: number, s: number, l: number): string {
