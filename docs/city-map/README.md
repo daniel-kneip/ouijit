@@ -34,11 +34,10 @@ puts that context first:
   a dirt path, the same relation the canvas draws as chain edges.
 - **The land is on the grid too.** Every cell of ground is a pure function of
   its lattice position: meadow, dry grass, forest, heath and rock by height
-  and moisture from layered noise, lakes where it is low and
-  wet, and one river winding across the map with sandy shores. A city's
-  climate reaches a few cells into the land around it, so a desert ticket
-  stands in sand. Close up, forest cells grow trees, rock cells stones,
-  meadows the odd flower; further out the colours stand for them. The light
+  and moisture from layered noise, in close shades of one green, lakes
+  where it is low and wet, and one river winding across the map with sandy
+  shores. Close up, forest cells grow trees, rock cells stones, meadows the
+  odd flower; further out each becomes a dot baked into the ground. The light
   follows the clock: cool early, warm from five, blue at night, with the
   windows lit from dusk.
 - **Roads are yours to draw.** "Road from here…" on a city, then a click on

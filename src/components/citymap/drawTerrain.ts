@@ -1,7 +1,7 @@
 import type { District } from '../../stores/cityMapStore';
 import { TH, TW, hash2, type Point } from './cityGeometry';
-import { plant, tree, type MapTokens } from './drawCity';
-import { cellOf, groundColour, isWater, terrainCell, underCity, type Climate, type TerrainCell } from './terrain';
+import { tree, type MapTokens } from './drawCity';
+import { cellOf, groundColour, isWater, terrainCell, underCity, type TerrainCell } from './terrain';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -57,8 +57,8 @@ function paintChunk(
   cs: number,
   ct: number,
   scale: number,
-  climates: readonly Climate[],
   zones: readonly District[],
+  dots: boolean,
   t: MapTokens,
 ): void {
   const box = chunkBox(cs, ct);
@@ -73,7 +73,7 @@ function paintChunk(
   // One cell of overlap: a diamond's corners reach into the neighbouring chunk's box.
   for (let s = s0 - 1; s <= s0 + CHUNK; s++) {
     for (let u = t0 - 1; u <= t0 + CHUNK; u++) {
-      const cell = terrainCell(s, u, climates, zones);
+      const cell = terrainCell(s, u, zones);
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       const colour = groundColour(cell, t.night, s, u);
@@ -86,13 +86,14 @@ function paintChunk(
         ctx.fill();
       }
       if (cell.zone) zoneMarks(ctx, cell, x, y, s, u);
+      if (dots) groundDots(ctx, t, cell, x, y, s, u);
     }
   }
   // Shores after the ground, so the sand lies over both sides of the edge; a district's water has its own banks.
   ctx.fillStyle = t.night ? 'rgba(200,190,150,0.28)' : 'rgba(255,243,205,0.7)';
   for (let s = s0 - 1; s <= s0 + CHUNK; s++) {
     for (let u = t0 - 1; u <= t0 + CHUNK; u++) {
-      if (!isWater(s, u) || terrainCell(s, u, climates, zones).zone) continue;
+      if (!isWater(s, u) || terrainCell(s, u, zones).zone) continue;
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       for (const e of EDGES) {
@@ -108,6 +109,49 @@ function paintChunk(
         ctx.fill();
       }
     }
+  }
+}
+
+/**
+ * From afar a tree is a dot, a mushroom a red one, a vent a dark speck: enough
+ * for a forest or a district to keep its texture, cheap enough to bake into
+ * the chunk. Cities and roads are painted over them.
+ */
+function groundDots(ctx: Ctx, t: MapTokens, cell: TerrainCell, x: number, y: number, s: number, u: number): void {
+  const h = hash2(s, u);
+  const dx = (hash2(s + 3, u) - 0.5) * TW * 0.9;
+  const dy = (hash2(s, u + 3) - 0.5) * TH * 0.9;
+  const dot = (colour: string, r: number, ox = dx, oy = dy) => {
+    ctx.fillStyle = colour;
+    ctx.beginPath();
+    ctx.arc(x + ox, y + oy - r * 0.6, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  switch (cell.zone) {
+    case undefined:
+      if (cell.ground === 'forest' && h < 0.85) dot(t.night ? '#3b5a3c' : '#5f9a4c', 4.5 + h * 2);
+      else if (cell.ground === 'rock' && h < 0.22) dot(t.night ? '#6c7270' : '#a7a9a1', 3);
+      return;
+    case 'blossom':
+      if (h < 0.55) dot(h < 0.2 ? '#f7c3d8' : '#f3a9c9', 4.5 + h * 2);
+      return;
+    case 'volcanic':
+      if (cell.ground === 'rock' && h < 0.1) dot('#3a3634', 4);
+      return;
+    case 'marsh':
+      if (h < 0.5) dot('#5f7a4a', 2.5);
+      return;
+    case 'glacier':
+      if (h < 0.12) dot('#e6f2f8', 3.5);
+      return;
+    case 'mushroom':
+      if (h < 0.4) {
+        dot(h < 0.15 ? '#6ea8d9' : '#d9534f', 3.5);
+        dot('rgba(255,255,255,0.8)', 1.2, dx - 1, dy - 3);
+      }
+      return;
+    case 'salt':
+      return;
   }
 }
 
@@ -148,18 +192,10 @@ export class TerrainLayer {
   private cache = new Map<string, HTMLCanvasElement>();
   private fingerprint = '';
 
-  draw(
-    ctx: Ctx,
-    t: MapTokens,
-    visible: Visible,
-    zoom: number,
-    climates: readonly Climate[],
-    zones: readonly District[],
-  ): void {
+  draw(ctx: Ctx, t: MapTokens, visible: Visible, zoom: number, zones: readonly District[]): void {
     const fingerprint = [
       t.night ? 'n' : 'd',
       t.water,
-      climates.map((c) => `${c.s},${c.t},${c.biome}`).join(';'),
       zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
     ].join('|');
     if (fingerprint !== this.fingerprint) {
@@ -167,6 +203,8 @@ export class TerrainLayer {
       this.fingerprint = fingerprint;
     }
     const scale = ZOOM_BUCKETS.find((b) => b >= zoom) ?? ZOOM_BUCKETS[ZOOM_BUCKETS.length - 1];
+    // Below the detail zoom the chunk carries the vegetation as dots; above it, the live pass draws it.
+    const dots = zoom < DETAIL_ZOOM;
     const a = cellOf({ x: visible.x0, y: visible.y0 });
     const b = cellOf({ x: visible.x1, y: visible.y0 });
     const c = cellOf({ x: visible.x0, y: visible.y1 });
@@ -181,11 +219,11 @@ export class TerrainLayer {
       for (let ct = ct0; ct <= ct1; ct++) {
         const box = chunkBox(cs, ct);
         if (box.x1 < visible.x0 || box.x0 > visible.x1 || box.y1 < visible.y0 || box.y0 > visible.y1) continue;
-        const key = `${scale}:${cs}:${ct}`;
+        const key = `${scale}:${dots ? 'dots' : 'bare'}:${cs}:${ct}`;
         let canvas = this.cache.get(key);
         if (!canvas) {
           canvas = document.createElement('canvas');
-          paintChunk(canvas, cs, ct, scale, climates, zones, t);
+          paintChunk(canvas, cs, ct, scale, zones, dots, t);
           if (this.cache.size >= CACHE_CAP) this.cache.delete(this.cache.keys().next().value!);
           this.cache.set(key, canvas);
         } else {
@@ -214,7 +252,6 @@ export function drawTerrainDetails(
   t: MapTokens,
   visible: Visible,
   zoom: number,
-  climates: readonly Climate[],
   zones: readonly District[],
   cities: readonly Point[],
   roadCells: ReadonlySet<string>,
@@ -239,7 +276,7 @@ export function drawTerrainDetails(
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       if (x < visible.x0 - 40 || x > visible.x1 + 40 || y < visible.y0 - 40 || y > visible.y1 + 20) continue;
-      const cell = terrainCell(s, u, climates, zones);
+      const cell = terrainCell(s, u, zones);
       const h = hash2(s, u);
       if (cell.zone) {
         if (cell.ground !== 'water' && !roadCells.has(`${s},${u}`) && !underCity({ x, y }, cities)) {
@@ -261,12 +298,12 @@ export function drawTerrainDetails(
       const jitterX = (hash2(s + 3, u) - 0.5) * TW * 0.9;
       const jitterY = (hash2(s, u + 3) - 0.5) * TH * 0.9;
       if (cell.ground === 'forest') {
-        if (h < 0.85) plant(ctx, t, cell.biome, 'summer', x + jitterX, y + jitterY, 0.75 + h * 0.35, false);
-        if (h < 0.3) plant(ctx, t, cell.biome, 'summer', x - jitterX * 0.6, y + 3 - jitterY, 0.65, false);
+        if (h < 0.85) tree(ctx, t, x + jitterX, y + jitterY, 0.75 + h * 0.35);
+        if (h < 0.3) tree(ctx, t, x - jitterX * 0.6, y + 3 - jitterY, 0.65);
       } else if (cell.ground === 'rock') {
         if (h < 0.22) stone(ctx, t, x + jitterX, y + jitterY, 0.7 + h * 2);
       } else if (fine && (cell.ground === 'meadow' || cell.ground === 'dry' || cell.ground === 'heath')) {
-        if (h < 0.08) flowers(ctx, x + jitterX, y + jitterY, cell.biome === 'tundra' ? '#e7e2f4' : '#f2d36b');
+        if (h < 0.08) flowers(ctx, x + jitterX, y + jitterY, '#f2d36b');
         else if (h > 0.9) tuft(ctx, t, x + jitterX, y + jitterY, cell.ground === 'dry' ? '#a89f5e' : '#7ea86a');
       }
     }

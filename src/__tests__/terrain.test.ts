@@ -32,22 +32,15 @@ describe('the land under the cities', () => {
       }
     }
     expect(lakes).toBeGreaterThan(20);
-    expect(terrainCell(3, 3)).toEqual(terrainCell(3, 3));
   });
 
-  test('the ground takes the nearest city’s climate nearby and its own colours elsewhere', () => {
-    const desert = [{ s: 100, t: 100, biome: 'desert' as const }];
-    const near = terrainCell(101, 100, desert);
-    expect(near.biome).toBe('desert');
-    if (near.ground !== 'water') expect(['sand', 'dry', 'rock']).toContain(near.ground);
-    expect(terrainCell(140, 140, desert).biome).toBe('meadow');
-    expect(terrainCell(101, 100, [])).not.toEqual(near);
-
+  test('the land is one green in close shades, darker at night, with open water left to the theme', () => {
     const day = groundColour(terrainCell(5, 5), false);
     const night = groundColour(terrainCell(5, 5), true);
     expect(day).toMatch(/^hsl\(/);
     expect(Number(/(\d+)%\)$/.exec(night)![1])).toBeLessThan(Number(/(\d+)%\)$/.exec(day)![1]));
     expect(groundColour(terrainCell(10, Math.round(riverCentre(10))), false)).toBe('');
+    expect(terrainCell(3, 3)).toEqual(terrainCell(3, 3));
   });
 
   test('a district lays its own landscape over the land, water included', () => {
@@ -65,24 +58,21 @@ describe('the land under the cities', () => {
     const grounds = new Set<string>();
     for (let s = 195; s <= 210; s++) {
       for (let t = 195; t <= 210; t++) {
-        const cell = terrainCell(s, t, [], [zone('volcanic')]);
+        const cell = terrainCell(s, t, [zone('volcanic')]);
         if (cell.zone) grounds.add(cell.ground);
       }
     }
     expect([...grounds].every((g) => g === 'rock' || g === 'lava' || g === 'water')).toBe(true);
     expect(grounds.has('lava')).toBe(true);
-    expect(terrainCell(200, 200, [], [zone('glacier')]).ground).toBe('ice');
-    expect(terrainCell(200, 200, [], [zone('salt')]).zone).toBe('salt');
-    expect(terrainCell(300, 300, [], [zone('salt')]).zone).toBeUndefined();
+    expect(terrainCell(200, 200, [zone('glacier')]).ground).toBe('ice');
+    expect(terrainCell(200, 200, [zone('salt')]).zone).toBe('salt');
+    expect(terrainCell(300, 300, [zone('salt')]).zone).toBeUndefined();
     // A river cell in a salt district is brine, and it has a colour of its own rather than the theme's water.
     const river = Math.round(riverCentre(10));
     const salty = zone('salt');
-    const onRiver = terrainCell(
-      10,
-      river,
-      [],
-      [{ ...salty, ...latticePoint(10, river), y: latticePoint(10, river).y - 100 }],
-    );
+    const onRiver = terrainCell(10, river, [
+      { ...salty, ...latticePoint(10, river), y: latticePoint(10, river).y - 100 },
+    ]);
     expect(onRiver.ground).toBe('brine');
     expect(groundColour(onRiver, false)).toMatch(/^hsl\(/);
   });

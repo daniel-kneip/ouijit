@@ -90,7 +90,7 @@ import {
   type MapTokens,
 } from './drawCity';
 import { TerrainLayer, drawTerrainDetails } from './drawTerrain';
-import { cellKey, cellOf, daylightTint, roadRoute, routeCells, windowsLit, type Climate } from './terrain';
+import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
 
 const EMPTY_IDS: string[] = [];
 const EMPTY_ROADS: Road[] = [];
@@ -840,8 +840,7 @@ function useMapSurface(input: MapSurfaceInput) {
       const { cities: current, roads: currentRoads, districts: currentDistricts, selection: sel } = model.current;
       const now = new Date();
       t.lit = windowsLit(now, t.night);
-      const climates: Climate[] = current.map((c) => ({ ...cellOf(c.plot.pos), biome: c.style.biome }));
-      terrain.current.draw(ctx, t, visible, cam.zoom, climates, currentDistricts);
+      terrain.current.draw(ctx, t, visible, cam.zoom, currentDistricts);
       drawGrid(ctx, t, visible, cam.zoom);
       for (const d of currentDistricts) {
         drawDistrict(ctx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
@@ -863,7 +862,6 @@ function useMapSurface(input: MapSurfaceInput) {
         t,
         visible,
         cam.zoom,
-        climates,
         currentDistricts,
         current.map((c) => c.plot.pos),
         roadCells,

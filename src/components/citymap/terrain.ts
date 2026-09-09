@@ -1,4 +1,4 @@
-import { CITY_HALF_H, CITY_HALF_W, N, TH, TW, hash2, type Biome, type Point } from './cityGeometry';
+import { CITY_HALF_H, CITY_HALF_W, N, TH, TW, hash2, type Point } from './cityGeometry';
 import { pointInDistrict, type District, type DistrictTerrain } from '../../stores/cityMapStore';
 
 /**
@@ -15,7 +15,6 @@ export type Ground =
   | 'forest'
   | 'heath'
   | 'rock'
-  | 'sand'
   | 'lava'
   | 'ice'
   | 'marsh'
@@ -32,15 +31,8 @@ export interface TerrainCell {
   ground: Ground;
   /** 0 to 1, low ground first. */
   elevation: number;
-  /** The nearest city's climate, if one is close; the land takes its colours. */
-  biome: Biome;
   /** The district the cell lies in, whose landscape replaces the land's own. */
   zone?: DistrictTerrain;
-}
-
-/** A city's climate as it reaches the land around it. */
-export interface Climate extends Cell {
-  biome: Biome;
 }
 
 export function cellOf(p: Point): Cell {
@@ -89,24 +81,6 @@ export function isWater(s: number, t: number): boolean {
   return elevation(s, t) < 0.34 && moisture(s, t) > 0.58;
 }
 
-const CLIMATE_REACH = 9;
-
-/** A city's climate reaches a few cells out, with an edge that wanders rather than a ruled one. */
-function climateAt(s: number, t: number, climates: readonly Climate[]): Biome {
-  let best: Climate | undefined;
-  let bestDistance = Infinity;
-  for (const c of climates) {
-    const d = Math.max(Math.abs(c.s - s), Math.abs(c.t - t)) + Math.min(Math.abs(c.s - s), Math.abs(c.t - t)) * 0.5;
-    if (d < bestDistance) {
-      bestDistance = d;
-      best = c;
-    }
-  }
-  if (!best) return 'meadow';
-  const reach = CLIMATE_REACH * (0.7 + 0.7 * noise(s / 4, t / 4, 7));
-  return bestDistance <= reach ? best.biome : 'meadow';
-}
-
 /** What a district's landscape makes of a cell, water or land. */
 function zoneGround(zone: DistrictTerrain, s: number, t: number, water: boolean): Ground {
   const n = noise(s / 3, t / 3, 8);
@@ -126,18 +100,12 @@ function zoneGround(zone: DistrictTerrain, s: number, t: number, water: boolean)
   }
 }
 
-export function terrainCell(
-  s: number,
-  t: number,
-  climates: readonly Climate[] = [],
-  zones: readonly District[] = [],
-): TerrainCell {
+export function terrainCell(s: number, t: number, zones: readonly District[] = []): TerrainCell {
   const e = elevation(s, t);
-  const biome = climateAt(s, t, climates);
   const water = isWater(s, t);
   const zone = zones.find((d) => pointInDistrict(d, latticePoint(s, t)))?.terrain;
-  if (zone) return { ground: zoneGround(zone, s, t, water), elevation: e, biome, zone };
-  if (water) return { ground: 'water', elevation: e, biome };
+  if (zone) return { ground: zoneGround(zone, s, t, water), elevation: e, zone };
+  if (water) return { ground: 'water', elevation: e };
   const m = moisture(s, t);
   let ground: Ground;
   if (e > 0.84) ground = 'rock';
@@ -145,8 +113,7 @@ export function terrainCell(
   else if (m > 0.62) ground = 'forest';
   else if (m < 0.35) ground = 'dry';
   else ground = 'meadow';
-  if (biome === 'desert' && ground !== 'rock') ground = ground === 'forest' ? 'dry' : 'sand';
-  return { ground, elevation: e, biome };
+  return { ground, elevation: e };
 }
 
 /** The lattice cells a city's ground covers: N×N around its centre cell. */
@@ -218,21 +185,15 @@ export function cellKey(c: Cell): string {
   return `${c.s},${c.t}`;
 }
 
-type LandGround = 'meadow' | 'dry' | 'forest' | 'heath' | 'rock' | 'sand';
+type LandGround = 'meadow' | 'dry' | 'forest' | 'heath' | 'rock';
 
-const PALETTE: Record<Biome, Record<LandGround, string>> = {
-  meadow: { meadow: '#b8cf9c', dry: '#c9c58a', forest: '#8fb37e', heath: '#a9b08a', rock: '#b3b6a6', sand: '#d9cfa0' },
-  forest: { meadow: '#9fbf86', dry: '#b3b57a', forest: '#7aa46b', heath: '#95a37c', rock: '#aeb0a5', sand: '#cbc498' },
-  desert: { meadow: '#d8cc96', dry: '#e5d3a1', forest: '#c4b97c', heath: '#d2bd86', rock: '#c9b593', sand: '#ecdcaa' },
-  tundra: { meadow: '#c6d3c4', dry: '#cfd3c2', forest: '#b3c7ad', heath: '#c9cfc8', rock: '#d6dadb', sand: '#dcdcd2' },
-  tropical: {
-    meadow: '#c4d996',
-    dry: '#d3d39a',
-    forest: '#9ecb74',
-    heath: '#b7c98a',
-    rock: '#b9b9a4',
-    sand: '#e6dcae',
-  },
+/** Close shades of one green: the land is a background, and reads as one piece from afar. */
+const PALETTE: Record<LandGround, string> = {
+  meadow: '#b8cf9c',
+  dry: '#c2cd97',
+  forest: '#a6c48f',
+  heath: '#b3c297',
+  rock: '#b8bfa8',
 };
 
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
@@ -285,7 +246,7 @@ export function groundColour(cell: TerrainCell, night: boolean, s = 0, t = 0): s
     return shade(zone.ground[tone], night);
   }
   if (cell.ground === 'water') return '';
-  return shade(PALETTE[cell.biome][cell.ground as LandGround], night);
+  return shade(PALETTE[cell.ground as LandGround], night);
 }
 
 /**
