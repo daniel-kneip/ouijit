@@ -135,7 +135,18 @@ first, so the same task always lays out the same way.
   and lots and syncs them with the terminal store.
 - A site opens its terminal in a drawer over the map, with the same header the
   stack and canvas use, so diff, panels, hooks and the context menu are all
-  there. `focusTerminal` lands in the drawer when the map is the layout.
+  there. `focusTerminal` lands in the drawer when the map is the layout. The
+  drawer docks to the right edge or floats as a window in the middle, and in
+  either mode its bottom edge can be dragged up to leave the map free below,
+  so the prompt line sits where the eye rests; both are remembered
+  (`ui:city-map-drawer-mode`, `ui:city-map-drawer-gap-*`). Going to a city,
+  by double-click, sidebar or inspector, closes the drawer: the city is what
+  is in focus then.
+- Each harness can carry a usage command (Settings → Harnesses → Usage) that
+  prints used and available tokens, as JSON or plain text. The map asks every
+  such command on open and every five minutes and shows the answers as pills
+  at the top centre; a click asks again. `harnessUsage.ts` runs the commands
+  in the main process and reads their output.
 - The city's context menu is the kanban card's: Open in, Move to, Trash, plus
   "Show on board". "New ticket" opens the task composer; "New terminal" on a
   city goes through `openTaskShell`, so the site appears through the normal

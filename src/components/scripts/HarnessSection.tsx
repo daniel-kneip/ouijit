@@ -100,6 +100,7 @@ export function HarnessSection() {
                   onAction={() => setEditing({ harness, hookType: type, existing: harness.hooks[type] })}
                 />
               ))}
+              <UsageCommandRow harness={harness} onSaved={reload} />
             </div>
           );
         })}
@@ -135,5 +136,38 @@ export function HarnessSection() {
         />
       )}
     </section>
+  );
+}
+
+const USAGE_HELP =
+  'Print JSON such as {"used": 12000, "limit": 200000}, {"used": 12000, "remaining": 188000} or {"percent": 38}, optionally with a "label"; or plain text whose first two numbers are used and available (k and M suffixes count). Runs in your shell from your home directory.';
+
+function UsageCommandRow({ harness, onSaved }: { harness: Harness; onSaved: () => void }) {
+  const save = async (value: string) => {
+    const command = value.trim();
+    if (command === (harness.usageCommand ?? '')) return;
+    await window.api.harness.setUsageCommand(harness.id, command || null);
+    onSaved();
+  };
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <div className="shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-text-primary">Usage</span>
+          <span className="text-[11px] text-text-tertiary">Prints used and available tokens; the map shows them</span>
+        </div>
+      </div>
+      <input
+        className="flex-1 min-w-0 px-2 py-1 font-mono text-[11px] text-text-primary bg-background border border-border rounded-md outline-none focus:border-accent placeholder:text-text-tertiary"
+        defaultValue={harness.usageCommand ?? ''}
+        placeholder="e.g. my-usage --json"
+        aria-label={`Usage command for ${harness.name}`}
+        title={USAGE_HELP}
+        onBlur={(e) => void save(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+      />
+    </div>
   );
 }

@@ -205,6 +205,8 @@ contextBridge.exposeInMainWorld('api', {
     deleteHook: (id: string, hookType: HookType) => typedInvoke('harness:delete-hook', id, hookType),
     setForProject: (projectPath: string, harnessId: string | null) =>
       typedInvoke('harness:set-for-project', projectPath, harnessId),
+    setUsageCommand: (id: string, command: string | null) => typedInvoke('harness:set-usage-command', id, command),
+    usage: () => typedInvoke('harness:usage'),
   },
 
   scripts: {

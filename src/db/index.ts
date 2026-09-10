@@ -642,11 +642,11 @@ export async function getProjectSettings(projectPath: string): Promise<ProjectSe
 
 // ── Harnesses ────────────────────────────────────────────────────────
 
-function harnessWithHooks(row: { id: string; name: string }): Harness {
+function harnessWithHooks(row: { id: string; name: string; usage_command: string | null }): Harness {
   const { harnessRepo: har } = repos();
   const hooks: Harness['hooks'] = {};
   for (const hook of har.getHooks(row.id)) hooks[hook.type] = rowToHook(hook, 'harness');
-  return { id: row.id, name: row.name, hooks };
+  return { id: row.id, name: row.name, hooks, usageCommand: row.usage_command ?? undefined };
 }
 
 export async function getHarnesses(): Promise<Harness[]> {
@@ -662,6 +662,14 @@ export async function createHarness(name: string): Promise<Harness> {
 export async function renameHarness(id: string, name: string): Promise<{ success: boolean }> {
   const { harnessRepo: har } = repos();
   har.rename(id, name);
+  return { success: true };
+}
+
+export async function setHarnessUsageCommand(id: string, command: string | null): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  if (!har.get(id)) return { success: false };
+  const trimmed = command?.trim();
+  har.setUsageCommand(id, trimmed ? trimmed : null);
   return { success: true };
 }
 

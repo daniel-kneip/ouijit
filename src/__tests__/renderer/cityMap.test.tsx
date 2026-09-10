@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useTerminalStore, DEFAULT_DISPLAY_STATE, type TerminalDisplayState } from '../../stores/terminalStore';
 import { useCityMapStore } from '../../stores/cityMapStore';
+import { useUIStore } from '../../stores/uiStore';
 import { snapToCells } from '../../components/citymap/cityGeometry';
 import type { Project, TaskWithWorkspace } from '../../types';
 
@@ -84,7 +85,20 @@ beforeEach(() => {
 
 describe('the city map', () => {
   test('founds a city per task, a site per task terminal, and opens the terminal behind a site', async () => {
+    vi.mocked(window.api.harness.usage).mockResolvedValue([
+      {
+        harnessId: 'h1',
+        name: 'Claude',
+        reading: { used: 12_000, limit: 200_000, unit: 'tokens' },
+        at: new Date().toISOString(),
+      },
+      { harnessId: 'h2', name: 'Kiro', error: 'Exited with 1', at: new Date().toISOString() },
+    ]);
     render(<CityMap projectPath={project.path} />);
+
+    // Every harness with a usage command reports at the top of the map.
+    expect((await screen.findByTestId('harness-usage-h1')).textContent).toBe('Claude12k / 200k');
+    expect(screen.getByTestId('harness-usage-h2').textContent).toBe('Kirounavailable');
 
     // Every task gets a city, listed under its status; the loose shell is counted, not placed.
     await screen.findByTestId('city-row-7');
@@ -117,7 +131,22 @@ describe('the city map', () => {
     expect(screen.getByTestId('sidebar-site-alpha-7b').textContent).toContain('Fix hook tests');
     fireEvent.click(screen.getByTestId('sidebar-site-alpha-7b'));
     expect((await screen.findByTestId('terminal-drawer')).textContent).toContain('alpha-7b');
-    fireEvent.click(screen.getByLabelText('Hide terminal'));
+
+    // The drawer docks to the side or floats as a window, either leaving room under it, and remembers both.
+    expect(screen.getByTestId('terminal-drawer').dataset.mode).toBe('side');
+    fireEvent.click(screen.getByLabelText('Show terminal as a window'));
+    expect(screen.getByTestId('terminal-drawer').dataset.mode).toBe('window');
+    expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-drawer-mode', 'window');
+    fireEvent.keyDown(screen.getByLabelText('Space under the terminal'), { key: 'ArrowUp' });
+    expect(useUIStore.getState().cityMapDrawerGap.window).toBe(336);
+    expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-drawer-gap-window', '336');
+    expect(useUIStore.getState().cityMapDrawerGap.side).toBe(0);
+    fireEvent.click(screen.getByLabelText('Dock terminal to the side'));
+    expect(screen.getByTestId('terminal-drawer').dataset.mode).toBe('side');
+
+    // Going to a city puts the city in focus: the drawer closes instead of staying on the last terminal.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    expect(screen.queryByTestId('terminal-drawer')).toBeNull();
 
     // The city's inspector shows the ticket, its comments and its sites; the newest comment sits on the label.
     fireEvent.click(screen.getByTestId('city-row-7'));

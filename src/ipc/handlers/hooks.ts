@@ -10,8 +10,10 @@ import {
   saveHarnessHook,
   deleteHarnessHook,
   setProjectHarness,
+  setHarnessUsageCommand,
 } from '../../db';
 import { getHookStatus } from '../../hookServer';
+import { readHarnessUsage } from '../../harnessUsage';
 
 export function registerHookHandlers(): void {
   typedHandle('hooks:get', (projectPath) => getHooks(projectPath));
@@ -26,4 +28,6 @@ export function registerHookHandlers(): void {
   typedHandle('harness:save-hook', (id, hook) => saveHarnessHook(id, hook));
   typedHandle('harness:delete-hook', (id, hookType) => deleteHarnessHook(id, hookType));
   typedHandle('harness:set-for-project', (projectPath, harnessId) => setProjectHarness(projectPath, harnessId));
+  typedHandle('harness:set-usage-command', (id, command) => setHarnessUsageCommand(id, command));
+  typedHandle('harness:usage', () => readHarnessUsage());
 }

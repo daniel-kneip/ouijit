@@ -6,9 +6,12 @@ import {
   CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
   CITY_MAP_SIDEBAR_MAX_WIDTH,
   CITY_MAP_SIDEBAR_MIN_WIDTH,
+  CITY_MAP_DRAWER_DEFAULT_GAP,
   CITY_MAP_DRAWER_DEFAULT_WIDTH,
+  CITY_MAP_DRAWER_MAX_GAP,
   CITY_MAP_DRAWER_MAX_WIDTH,
   CITY_MAP_DRAWER_MIN_WIDTH,
+  type CityMapDrawerMode,
   type CityMapSidebarGroup,
 } from '../../stores/uiStore';
 import { ResizeHandle } from '../common/ResizeHandle';
@@ -94,6 +97,7 @@ import {
 } from './drawCity';
 import { DetailLayer, TerrainLayer } from './drawTerrain';
 import { CITY_BITMAP_ZOOM, CityBitmaps } from './cityLod';
+import { HarnessUsageBar } from './HarnessUsageBar';
 import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
 
 const EMPTY_IDS: string[] = [];
@@ -335,7 +339,11 @@ export function CityMap({ projectPath }: CityMapProps) {
   );
 
   const select = useCallback(
-    (next: CityMapSelection | null) => useCityMapStore.getState().setSelection(projectPath, next),
+    (next: CityMapSelection | null) => {
+      const store = useCityMapStore.getState();
+      store.setSelection(projectPath, next);
+      if (next?.type === 'city') store.setOpenPty(projectPath, null);
+    },
     [projectPath],
   );
   const openTerminal = useCallback(
@@ -381,9 +389,11 @@ export function CityMap({ projectPath }: CityMapProps) {
 
   const sidebarWidth = useUIStore((s) => s.cityMapSidebarWidth);
   const drawerWidth = useUIStore((s) => s.cityMapDrawerWidth);
+  const drawerMode = useUIStore((s) => s.cityMapDrawerMode);
+  const drawerGap = useUIStore((s) => s.cityMapDrawerGap[s.cityMapDrawerMode]);
   const drawerOpen = !!openPtyId && !!displayStates[openPtyId];
   // The drawer sits over the inspector, so whichever is open is what covers the map.
-  const coverRight = drawerOpen ? drawerWidth + 12 : selection ? INSPECTOR_COVER : 0;
+  const coverRight = drawerOpen && drawerMode === 'side' ? drawerWidth + 12 : selection ? INSPECTOR_COVER : 0;
   const surface = useMapSurface({
     projectPath,
     ready,
@@ -491,6 +501,7 @@ export function CityMap({ projectPath }: CityMapProps) {
           />
         )}
         <div className="absolute inset-0 pointer-events-none">{labels}</div>
+        {!linkingCity && <HarnessUsageBar />}
         {linkingCity && (
           <div
             className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded-full border border-accent text-xs"
@@ -592,6 +603,8 @@ export function CityMap({ projectPath }: CityMapProps) {
             ptyId={openPtyId}
             projectPath={projectPath}
             width={drawerWidth}
+            mode={drawerMode}
+            gap={drawerGap}
             onHide={() => openTerminal(null)}
           />
         )}
@@ -1355,7 +1368,9 @@ function useMapSurface(input: MapSurfaceInput) {
     };
     const dbl = (e: MouseEvent) => {
       const h = hit(e.offsetX, e.offsetY);
-      if (h?.type === 'city' || h?.type === 'site') flyTo(h.city.plot.pos, 1.7);
+      if (h?.type !== 'city' && h?.type !== 'site') return;
+      select({ type: 'city', taskNumber: h.city.task.taskNumber });
+      flyTo(h.city.plot.pos, 1.7);
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -2550,33 +2565,66 @@ function DistrictInspector({
   );
 }
 
+const DRAWER_MIN_HEIGHT = 240;
+
 function TerminalDrawer({
   ptyId,
   projectPath,
   width,
+  mode,
+  gap,
   onHide,
 }: {
   ptyId: string;
   projectPath: string;
   width: number;
+  mode: CityMapDrawerMode;
+  gap: number;
   onHide: () => void;
 }) {
+  const ui = useUIStore.getState;
+  const other: CityMapDrawerMode = mode === 'side' ? 'window' : 'side';
   // The glass bevel forces its direct children into normal flow, so the
-  // handle hangs off a plain wrapper and the bevelled box sits beside it.
+  // handles hang off a plain wrapper and the bevelled box sits inside it.
   return (
     <div
-      className="absolute top-3 right-3 bottom-3 max-w-[calc(100%-24px)] z-30"
-      style={{ width }}
+      className={`absolute top-3 max-w-[calc(100%-24px)] z-30 ${mode === 'side' ? 'right-3' : 'left-1/2 -translate-x-1/2'}`}
+      style={{ width, bottom: `max(12px, min(${gap + 12}px, 100% - ${DRAWER_MIN_HEIGHT + 12}px))` }}
       data-testid="terminal-drawer"
+      data-mode={mode}
     >
       <div className="absolute inset-y-0 -left-px z-10 flex">
         <ResizeHandle
           width={width}
-          onWidth={(next) => useUIStore.getState().setCityMapDrawerWidth(next)}
+          onWidth={(next) => ui().setCityMapDrawerWidth(next)}
           min={CITY_MAP_DRAWER_MIN_WIDTH}
           max={CITY_MAP_DRAWER_MAX_WIDTH}
           defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
           label="Resize the terminal"
+          edge="start"
+        />
+      </div>
+      {mode === 'window' && (
+        <div className="absolute inset-y-0 -right-px z-10 flex">
+          <ResizeHandle
+            width={width}
+            onWidth={(next) => ui().setCityMapDrawerWidth(next)}
+            min={CITY_MAP_DRAWER_MIN_WIDTH}
+            max={CITY_MAP_DRAWER_MAX_WIDTH}
+            defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
+            label="Resize the terminal"
+          />
+        </div>
+      )}
+      <div className="absolute inset-x-0 -bottom-px z-10 flex">
+        <ResizeHandle
+          axis="y"
+          width={gap}
+          onWidth={(next) => ui().setCityMapDrawerGap(mode, next)}
+          min={0}
+          max={CITY_MAP_DRAWER_MAX_GAP}
+          defaultWidth={CITY_MAP_DRAWER_DEFAULT_GAP[mode]}
+          label="Space under the terminal"
           edge="start"
         />
       </div>
@@ -2593,6 +2641,15 @@ function TerminalDrawer({
             title="Back to the map"
           >
             <Icon name="caret-right" className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
+            onClick={() => ui().setCityMapDrawerMode(other)}
+            aria-label={other === 'window' ? 'Show terminal as a window' : 'Dock terminal to the side'}
+            title={other === 'window' ? 'Float in the middle of the map' : 'Dock to the right edge'}
+          >
+            <Icon name={other === 'window' ? 'app-window' : 'sidebar-simple'} className="w-3.5 h-3.5" />
           </button>
           <div className="flex-1 min-w-0">
             <TerminalHeader ptyId={ptyId} isActive onClose={() => closeProjectTerminal(ptyId)} />

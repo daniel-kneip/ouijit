@@ -49,6 +49,9 @@ interface UIStoreState {
   diffFileListWidth: number;
   cityMapSidebarWidth: number;
   cityMapDrawerWidth: number;
+  cityMapDrawerMode: CityMapDrawerMode;
+  /** Space left free under the terminal drawer, per mode, so its prompt line sits where the eye rests. */
+  cityMapDrawerGap: Record<CityMapDrawerMode, number>;
   cityMapSidebarGroup: CityMapSidebarGroup;
 }
 
@@ -72,6 +75,8 @@ interface UIStoreActions {
   setDiffFileListWidth: (width: number) => void;
   setCityMapSidebarWidth: (width: number) => void;
   setCityMapDrawerWidth: (width: number) => void;
+  setCityMapDrawerMode: (mode: CityMapDrawerMode) => void;
+  setCityMapDrawerGap: (mode: CityMapDrawerMode, gap: number) => void;
   setCityMapSidebarGroup: (group: CityMapSidebarGroup) => void;
 }
 
@@ -93,6 +98,15 @@ export const CITY_MAP_DRAWER_MAX_WIDTH = 1600;
 
 function clampCityMapDrawerWidth(width: number): number {
   return Math.max(CITY_MAP_DRAWER_MIN_WIDTH, Math.min(CITY_MAP_DRAWER_MAX_WIDTH, Math.round(width)));
+}
+
+export type CityMapDrawerMode = 'side' | 'window';
+
+export const CITY_MAP_DRAWER_MAX_GAP = 4000;
+export const CITY_MAP_DRAWER_DEFAULT_GAP: Record<CityMapDrawerMode, number> = { side: 0, window: 320 };
+
+function clampCityMapDrawerGap(gap: number): number {
+  return Math.max(0, Math.min(CITY_MAP_DRAWER_MAX_GAP, Math.round(gap)));
 }
 
 function clampCityMapSidebarWidth(width: number): number {
@@ -117,6 +131,8 @@ export const useUIStore = create<UIStore>()((set, get) => ({
   diffFileListWidth: DIFF_FILE_LIST_DEFAULT_WIDTH,
   cityMapSidebarWidth: CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
   cityMapDrawerWidth: CITY_MAP_DRAWER_DEFAULT_WIDTH,
+  cityMapDrawerMode: 'side',
+  cityMapDrawerGap: { ...CITY_MAP_DRAWER_DEFAULT_GAP },
   cityMapSidebarGroup: 'status',
 
   setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
@@ -191,6 +207,17 @@ export const useUIStore = create<UIStore>()((set, get) => ({
     void window.api.globalSettings.set('ui:city-map-drawer-width', String(clamped));
   },
 
+  setCityMapDrawerMode: (mode) => {
+    set({ cityMapDrawerMode: mode });
+    void window.api.globalSettings.set('ui:city-map-drawer-mode', mode);
+  },
+
+  setCityMapDrawerGap: (mode, gap) => {
+    const clamped = clampCityMapDrawerGap(gap);
+    set((s) => ({ cityMapDrawerGap: { ...s.cityMapDrawerGap, [mode]: clamped } }));
+    void window.api.globalSettings.set(`ui:city-map-drawer-gap-${mode}`, String(clamped));
+  },
+
   setCityMapSidebarGroup: (group) => {
     set({ cityMapSidebarGroup: group });
     void window.api.globalSettings.set('ui:city-map-sidebar-group', group);
@@ -198,14 +225,19 @@ export const useUIStore = create<UIStore>()((set, get) => ({
 }));
 
 export async function hydrateUIPreferences(): Promise<void> {
-  const [pinned, collapsed, width, mapWidth, drawerWidth, mapGroup] = await Promise.all([
-    window.api.globalSettings.get('ui:sidebar-pinned'),
-    window.api.globalSettings.get('ui:diff-file-list-collapsed'),
-    window.api.globalSettings.get('ui:diff-file-list-width'),
-    window.api.globalSettings.get('ui:city-map-sidebar-width'),
-    window.api.globalSettings.get('ui:city-map-drawer-width'),
-    window.api.globalSettings.get('ui:city-map-sidebar-group'),
-  ]);
+  const [pinned, collapsed, width, mapWidth, drawerWidth, drawerMode, sideGap, windowGap, mapGroup] = await Promise.all(
+    [
+      window.api.globalSettings.get('ui:sidebar-pinned'),
+      window.api.globalSettings.get('ui:diff-file-list-collapsed'),
+      window.api.globalSettings.get('ui:diff-file-list-width'),
+      window.api.globalSettings.get('ui:city-map-sidebar-width'),
+      window.api.globalSettings.get('ui:city-map-drawer-width'),
+      window.api.globalSettings.get('ui:city-map-drawer-mode'),
+      window.api.globalSettings.get('ui:city-map-drawer-gap-side'),
+      window.api.globalSettings.get('ui:city-map-drawer-gap-window'),
+      window.api.globalSettings.get('ui:city-map-sidebar-group'),
+    ],
+  );
 
   const next: Partial<UIStoreState> = {};
   if (pinned === '0' || pinned === '1') next.sidebarPinned = pinned === '1';
@@ -218,6 +250,16 @@ export async function hydrateUIPreferences(): Promise<void> {
   if (drawerWidth && Number.isFinite(parsedDrawerWidth)) {
     next.cityMapDrawerWidth = clampCityMapDrawerWidth(parsedDrawerWidth);
   }
+  if (drawerMode === 'side' || drawerMode === 'window') next.cityMapDrawerMode = drawerMode;
+  const gaps = { ...CITY_MAP_DRAWER_DEFAULT_GAP };
+  for (const [mode, raw] of [
+    ['side', sideGap],
+    ['window', windowGap],
+  ] as const) {
+    const parsed = Number(raw);
+    if (raw && Number.isFinite(parsed)) gaps[mode] = clampCityMapDrawerGap(parsed);
+  }
+  next.cityMapDrawerGap = gaps;
   if (mapGroup === 'status' || mapGroup === 'district') next.cityMapSidebarGroup = mapGroup;
 
   useUIStore.setState(next);

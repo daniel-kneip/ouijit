@@ -142,6 +142,8 @@ const mockApi = {
     saveHook: vi.fn().mockResolvedValue({ success: true }),
     deleteHook: vi.fn().mockResolvedValue({ success: true }),
     setForProject: vi.fn().mockResolvedValue({ success: true }),
+    setUsageCommand: vi.fn().mockResolvedValue({ success: true }),
+    usage: vi.fn().mockResolvedValue([]),
   },
   scripts: {
     getAll: vi.fn().mockResolvedValue([]),

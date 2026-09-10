@@ -1,7 +1,7 @@
 import { useCallback, type KeyboardEvent, type MouseEvent } from 'react';
 
 interface ResizeHandleProps {
-  /** Current width of the pane to the left of this handle. */
+  /** Current size of the pane this handle bounds: its width on the x axis, its height on the y axis. */
   width: number;
   onWidth: (width: number) => void;
   min?: number;
@@ -11,6 +11,8 @@ interface ResizeHandleProps {
   label?: string;
   /** Which edge of the sized pane the handle sits on; a pane to the right of its handle grows leftwards. */
   edge?: 'end' | 'start';
+  /** A y-axis handle is a horizontal seam dragged up and down. */
+  axis?: 'x' | 'y';
 }
 
 const STEP = 16;
@@ -39,22 +41,24 @@ export function ResizeHandle({
   defaultWidth,
   label = 'Resize',
   edge = 'end',
+  axis = 'x',
 }: ResizeHandleProps) {
   const sign = edge === 'end' ? 1 : -1;
+  const cursor = axis === 'x' ? 'col-resize' : 'row-resize';
   const onMouseDown = useCallback(
     (event: MouseEvent) => {
       event.preventDefault();
-      const startX = event.clientX;
+      const start = axis === 'x' ? event.clientX : event.clientY;
       const startWidth = width;
 
       const body = document.body;
       const previousCursor = body.style.cursor;
       const previousSelect = body.style.userSelect;
-      body.style.cursor = 'col-resize';
+      body.style.cursor = cursor;
       body.style.userSelect = 'none';
 
       const onMove = (move: globalThis.MouseEvent) =>
-        onWidth(clamp(startWidth + sign * (move.clientX - startX), min, max));
+        onWidth(clamp(startWidth + sign * ((axis === 'x' ? move.clientX : move.clientY) - start), min, max));
       const onUp = () => {
         body.style.cursor = previousCursor;
         body.style.userSelect = previousSelect;
@@ -65,34 +69,35 @@ export function ResizeHandle({
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     },
-    [width, onWidth, min, max, sign],
+    [width, onWidth, min, max, sign, axis, cursor],
   );
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') onWidth(clamp(width - sign * STEP, min, max));
-      else if (event.key === 'ArrowRight') onWidth(clamp(width + sign * STEP, min, max));
+      const [back, forward] = axis === 'x' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+      if (event.key === back) onWidth(clamp(width - sign * STEP, min, max));
+      else if (event.key === forward) onWidth(clamp(width + sign * STEP, min, max));
       else if (event.key === 'Home') onWidth(min);
       else if (event.key === 'End') onWidth(max);
       else return;
       event.preventDefault();
     },
-    [width, onWidth, min, max, sign],
+    [width, onWidth, min, max, sign, axis],
   );
 
   return (
-    <div className="pane-seam relative w-px shrink-0">
+    <div className={`pane-seam relative shrink-0 ${axis === 'x' ? 'w-px' : 'h-px w-full'}`}>
       <div
         role="separator"
-        aria-orientation="vertical"
+        aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
         aria-label={label}
         aria-valuenow={Math.round(width)}
         aria-valuemin={min}
         aria-valuemax={max}
         tabIndex={0}
         title={defaultWidth != null ? `${label} — double-click to reset` : label}
-        className="absolute inset-y-0 -left-1 -right-1 z-[1] focus:outline-none"
-        style={{ cursor: 'col-resize' }}
+        className={`absolute z-[1] focus:outline-none ${axis === 'x' ? 'inset-y-0 -left-1 -right-1' : 'inset-x-0 -top-1 -bottom-1'}`}
+        style={{ cursor }}
         onMouseDown={onMouseDown}
         onKeyDown={onKeyDown}
         onDoubleClick={defaultWidth != null ? () => onWidth(defaultWidth) : undefined}

@@ -7,6 +7,7 @@ export interface HarnessRow {
   name: string;
   sort_order: number;
   created_at: string;
+  usage_command: string | null;
 }
 
 export interface HarnessHookRow {
@@ -43,6 +44,10 @@ export class HarnessRepo {
 
   rename(id: string, name: string): void {
     this.db.prepare('UPDATE harnesses SET name = ? WHERE id = ?').run(name, id);
+  }
+
+  setUsageCommand(id: string, command: string | null): void {
+    this.db.prepare('UPDATE harnesses SET usage_command = ? WHERE id = ?').run(command, id);
   }
 
   /** Projects assigned to the harness fall back to their own hooks. */

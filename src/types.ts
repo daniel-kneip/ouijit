@@ -238,6 +238,8 @@ export interface ScriptHook {
 export interface Harness {
   id: string;
   name: string;
+  /** A shell command printing the harness's token usage; the city map shows what it reports. */
+  usageCommand?: string;
   hooks: {
     start?: ScriptHook;
     continue?: ScriptHook;
@@ -256,6 +258,28 @@ export interface HarnessAPI {
   saveHook(id: string, hook: ScriptHook): Promise<{ success: boolean }>;
   deleteHook(id: string, hookType: HookType): Promise<{ success: boolean }>;
   setForProject(projectPath: string, harnessId: string | null): Promise<{ success: boolean }>;
+  setUsageCommand(id: string, command: string | null): Promise<{ success: boolean }>;
+  usage(): Promise<HarnessUsage[]>;
+}
+
+/** What one harness's usage command reported, or why it could not. */
+export interface HarnessUsage {
+  harnessId: string;
+  name: string;
+  reading?: UsageReading;
+  error?: string;
+  /** When the command ran, ISO. */
+  at: string;
+}
+
+export interface UsageReading {
+  /** Tokens used, or the share used when the unit is percent. */
+  used: number;
+  /** Tokens available in total; absent when the command reports only what was used or a share. */
+  limit?: number;
+  unit: 'tokens' | 'percent';
+  /** Free text the command adds, such as when the window resets. */
+  label?: string;
 }
 
 export interface Script {

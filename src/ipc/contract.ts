@@ -8,6 +8,7 @@
 import type {
   Project,
   Harness,
+  HarnessUsage,
   EditorOpenResult,
   PtySpawnOptions,
   PtySpawnResult,
@@ -246,6 +247,8 @@ export interface IpcInvokeContract {
   'harness:save-hook': { args: [id: string, hook: ScriptHook]; return: { success: boolean } };
   'harness:delete-hook': { args: [id: string, hookType: HookType]; return: { success: boolean } };
   'harness:set-for-project': { args: [projectPath: string, harnessId: string | null]; return: { success: boolean } };
+  'harness:set-usage-command': { args: [id: string, command: string | null]; return: { success: boolean } };
+  'harness:usage': { args: []; return: HarnessUsage[] };
 
   // ── Plan ─────────────────────────────────────────────────────────────
   'plan:read': { args: [planPath: string]; return: string | null };
