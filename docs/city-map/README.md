@@ -139,9 +139,12 @@ first, so the same task always lays out the same way.
   drawer docks to the right edge or floats as a window in the middle, and in
   either mode its bottom edge can be dragged up to leave the map free below,
   so the prompt line sits where the eye rests; both are remembered
-  (`ui:city-map-drawer-mode`, `ui:city-map-drawer-gap-*`). Going to a city,
-  by double-click, sidebar or inspector, closes the drawer: the city is what
-  is in focus then.
+  (`ui:city-map-drawer-mode`, `ui:city-map-drawer-gap-*`). The details of a
+  city, site, road or district take the same panel with the same width, mode
+  and gap, so a comment thread has room; the terminal sits over them while it
+  is open. The details fold away to a tab at the top right
+  (`ui:city-map-inspector-collapsed`). Going to a city, by double-click,
+  sidebar or inspector, closes the drawer: the city is what is in focus then.
 - Each harness can carry a usage command (Settings → Harnesses → Usage) that
   prints used and available tokens, as JSON or plain text. The map asks every
   such command on open and every five minutes and shows the answers as pills

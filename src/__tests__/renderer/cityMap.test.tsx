@@ -79,6 +79,7 @@ beforeEach(() => {
     },
     activeIndices: { [project.path]: 0 },
   });
+  useUIStore.setState({ cityMapInspectorCollapsed: false });
   vi.mocked(window.api.globalSettings.get).mockResolvedValue(undefined as never);
   vi.mocked(window.api.globalSettings.set).mockClear();
 });
@@ -357,15 +358,24 @@ describe('the city map', () => {
       // With a 0×0 canvas, a label's left is (world x − camera x) · zoom: zero when centred on the canvas.
       const left = () => parseFloat(screen.getByTestId('city-label-7').style.left);
 
-      // Picking the city opens the inspector (332px over the right edge), so the city moves half that left.
+      // Picking the city opens the details in the panel (680px plus its margin over the right edge), so the city moves half that left.
       fireEvent.click(screen.getByTestId('city-row-7'));
-      await waitFor(() => expect(left()).toBeCloseTo(-166, 0));
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
 
-      // The drawer (680px) covers more; hiding it again gives the width back.
+      // Folding the details away gives the width back; the tab brings them back.
+      fireEvent.click(screen.getByLabelText('Hide details'));
+      expect(screen.queryByTestId('city-inspector')).toBeNull();
+      expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-inspector-collapsed', '1');
+      await waitFor(() => expect(left()).toBeCloseTo(0, 0));
+      fireEvent.click(screen.getByTestId('show-inspector'));
+      expect(screen.getByTestId('city-inspector')).toBeTruthy();
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
+
+      // The terminal takes the same panel; hiding it leaves the details in it.
       act(() => useCityMapStore.getState().setOpenPty(project.path, 'alpha-7'));
       await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
       act(() => useCityMapStore.getState().setOpenPty(project.path, null));
-      await waitFor(() => expect(left()).toBeCloseTo(-166, 0));
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
 
       // Nothing over the map: the city is in the middle of the canvas.
       act(() => useCityMapStore.getState().setSelection(project.path, null));

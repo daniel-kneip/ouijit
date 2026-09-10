@@ -391,9 +391,11 @@ export function CityMap({ projectPath }: CityMapProps) {
   const drawerWidth = useUIStore((s) => s.cityMapDrawerWidth);
   const drawerMode = useUIStore((s) => s.cityMapDrawerMode);
   const drawerGap = useUIStore((s) => s.cityMapDrawerGap[s.cityMapDrawerMode]);
+  const inspectorCollapsed = useUIStore((s) => s.cityMapInspectorCollapsed);
   const drawerOpen = !!openPtyId && !!displayStates[openPtyId];
-  // The drawer sits over the inspector, so whichever is open is what covers the map.
-  const coverRight = drawerOpen && drawerMode === 'side' ? drawerWidth + 12 : selection ? INSPECTOR_COVER : 0;
+  // The terminal and the details share one panel, so either covers the same strip of map.
+  const panelOpen = drawerOpen || (!!selection && !inspectorCollapsed);
+  const coverRight = panelOpen && drawerMode === 'side' ? drawerWidth + 12 : 0;
   const surface = useMapSurface({
     projectPath,
     ready,
@@ -552,51 +554,76 @@ export function CityMap({ projectPath }: CityMapProps) {
           aria-label="Overview of the map"
           data-testid="minimap"
         />
-        {selectedCity && (
-          <CityInspector
-            projectPath={projectPath}
-            city={selectedCity}
-            site={selectedSite}
-            district={districts.find((d) => pointInDistrict(d, selectedCity.plot.pos))}
-            waitingOn={openSources(selectedCity, roads, byNumber)}
-            onClose={() => select(null)}
-            onSelectSite={(site) => {
-              select({ type: 'site', taskNumber: selectedCity.task.taskNumber, ptyId: site.ptyId });
-              openTerminal(site.ptyId);
-            }}
-            onBackToCity={() => select({ type: 'city', taskNumber: selectedCity.task.taskNumber })}
-            onOpenTerminal={openTerminal}
-            onPickCity={(city) => {
-              select({ type: 'city', taskNumber: city.task.taskNumber });
-              flyTo(city.plot.pos, 0);
-            }}
-            onContextMenu={onContextMenu}
-          />
+        {selection && !drawerOpen && inspectorCollapsed && (
+          <button
+            type="button"
+            className="absolute top-3 right-3 z-20 flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-full border border-border text-[11px] text-text-secondary hover:text-text-primary"
+            style={{ background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' }}
+            onClick={() => useUIStore.getState().setCityMapInspectorCollapsed(false)}
+            aria-label="Show details"
+            data-testid="show-inspector"
+          >
+            <Icon name="caret-left" className="w-3 h-3" />
+            Details
+          </button>
         )}
-        {selectedDistrict && (
-          <DistrictInspector
-            projectPath={projectPath}
-            district={selectedDistrict}
-            cities={citiesInside(selectedDistrict, cities)}
-            onClose={() => select(null)}
-            onPickCity={(city) => {
-              select({ type: 'city', taskNumber: city.task.taskNumber });
-              flyTo(city.plot.pos, 1.1);
-            }}
-          />
-        )}
-        {selectedRoad && (
-          <RoadInspector
-            projectPath={projectPath}
-            road={selectedRoad}
-            from={byNumber.get(selectedRoad.from)}
-            to={byNumber.get(selectedRoad.to)}
-            onClose={() => select(null)}
-            onPickCity={(city) => {
-              select({ type: 'city', taskNumber: city.task.taskNumber });
-              flyTo(city.plot.pos, 0);
-            }}
-          />
+        {selection && !inspectorCollapsed && (
+          <PanelFrame
+            width={drawerWidth}
+            mode={drawerMode}
+            gap={drawerGap}
+            testId="inspector-panel"
+            background="var(--color-surface-raised)"
+            label="details"
+            z="z-20"
+          >
+            {selectedCity && (
+              <CityInspector
+                projectPath={projectPath}
+                city={selectedCity}
+                site={selectedSite}
+                district={districts.find((d) => pointInDistrict(d, selectedCity.plot.pos))}
+                waitingOn={openSources(selectedCity, roads, byNumber)}
+                onClose={() => select(null)}
+                onSelectSite={(site) => {
+                  select({ type: 'site', taskNumber: selectedCity.task.taskNumber, ptyId: site.ptyId });
+                  openTerminal(site.ptyId);
+                }}
+                onBackToCity={() => select({ type: 'city', taskNumber: selectedCity.task.taskNumber })}
+                onOpenTerminal={openTerminal}
+                onPickCity={(city) => {
+                  select({ type: 'city', taskNumber: city.task.taskNumber });
+                  flyTo(city.plot.pos, 0);
+                }}
+                onContextMenu={onContextMenu}
+              />
+            )}
+            {selectedDistrict && (
+              <DistrictInspector
+                projectPath={projectPath}
+                district={selectedDistrict}
+                cities={citiesInside(selectedDistrict, cities)}
+                onClose={() => select(null)}
+                onPickCity={(city) => {
+                  select({ type: 'city', taskNumber: city.task.taskNumber });
+                  flyTo(city.plot.pos, 1.1);
+                }}
+              />
+            )}
+            {selectedRoad && (
+              <RoadInspector
+                projectPath={projectPath}
+                road={selectedRoad}
+                from={byNumber.get(selectedRoad.from)}
+                to={byNumber.get(selectedRoad.to)}
+                onClose={() => select(null)}
+                onPickCity={(city) => {
+                  select({ type: 'city', taskNumber: city.task.taskNumber });
+                  flyTo(city.plot.pos, 0);
+                }}
+              />
+            )}
+          </PanelFrame>
         )}
         {drawerOpen && (
           <TerminalDrawer
@@ -2102,26 +2129,35 @@ function AttentionRow({
   );
 }
 
-const PANEL_STYLE: CSSProperties = { background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' };
-const PANEL_CLASS =
-  'absolute top-3 right-3 w-80 rounded-[14px] border border-bezel-panel glass-bevel flex flex-col z-20';
-/** `w-80` plus `right-3`: how much of the map an open inspector hides. */
-const INSPECTOR_COVER = 320 + 12;
+const INSPECTOR_CLASS = 'flex flex-col h-full min-h-0';
 const NAME_INPUT_CLASS =
   'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-md px-1.5 -mx-1.5 py-0.5 text-base font-semibold text-text-primary outline-none';
 const EYEBROW_CLASS =
   'flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary';
 
-function CloseButton({ onClick }: { onClick: () => void }) {
+/** The buttons every details panel carries: fold it away, float or dock it, close it. */
+function PanelButtons({ onClose }: { onClose: () => void }) {
   return (
-    <button
-      type="button"
-      className="text-text-tertiary hover:text-text-primary"
-      onClick={onClick}
-      aria-label="Close inspector"
-    >
-      <Icon name="x" className="w-3.5 h-3.5" />
-    </button>
+    <>
+      <button
+        type="button"
+        className="text-text-tertiary hover:text-text-primary"
+        onClick={() => useUIStore.getState().setCityMapInspectorCollapsed(true)}
+        aria-label="Hide details"
+        title="Fold the details away"
+      >
+        <Icon name="caret-right" className="w-3.5 h-3.5" />
+      </button>
+      <PanelModeButton label="details" />
+      <button
+        type="button"
+        className="text-text-tertiary hover:text-text-primary"
+        onClick={onClose}
+        aria-label="Close inspector"
+      >
+        <Icon name="x" className="w-3.5 h-3.5" />
+      </button>
+    </>
   );
 }
 
@@ -2194,7 +2230,7 @@ function CityInspector({
   }
 
   return (
-    <div className={`${PANEL_CLASS} bottom-3 overflow-y-auto`} style={PANEL_STYLE} data-testid="city-inspector">
+    <div className={`${INSPECTOR_CLASS} overflow-y-auto`} data-testid="city-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
         <div className={EYEBROW_CLASS}>
           <span className="w-2.5 h-2.5 rounded-[3px] rotate-45 scale-[0.85]" style={{ background: city.color }} />
@@ -2217,7 +2253,7 @@ function CityInspector({
           >
             <Icon name="dots-six-vertical" className="w-3.5 h-3.5" />
           </button>
-          <CloseButton onClick={onClose} />
+          <PanelButtons onClose={onClose} />
         </div>
         <input
           className={NAME_INPUT_CLASS}
@@ -2360,7 +2396,7 @@ function SiteInspector({
     if (trimmed !== site.display.label) renameTerminal(site.ptyId, trimmed);
   };
   return (
-    <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="site-inspector">
+    <div className={`${INSPECTOR_CLASS} overflow-hidden`} data-testid="site-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
         <div className={EYEBROW_CLASS}>
           <span>Site</span>
@@ -2372,7 +2408,7 @@ function SiteInspector({
             in #{city.task.taskNumber} {city.task.name}
           </button>
           <span className="flex-1" />
-          <CloseButton onClick={onClose} />
+          <PanelButtons onClose={onClose} />
         </div>
         <input
           className={NAME_INPUT_CLASS}
@@ -2429,13 +2465,13 @@ function RoadInspector({
   };
   const open = from && from.task.status !== 'done';
   return (
-    <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="road-inspector">
+    <div className={`${INSPECTOR_CLASS} overflow-hidden`} data-testid="road-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
         <div className={EYEBROW_CLASS}>
           <Icon name="arrow-right" className="w-3 h-3" />
           <span>Road</span>
           <span className="flex-1" />
-          <CloseButton onClick={onClose} />
+          <PanelButtons onClose={onClose} />
         </div>
         <div className="flex flex-col gap-0.5 -mx-2">
           {from && <CityLink city={from} onPick={onPickCity} />}
@@ -2506,13 +2542,13 @@ function DistrictInspector({
     if (trimmed !== district.name) update({ name: trimmed });
   };
   return (
-    <div className={`${PANEL_CLASS} overflow-hidden`} style={PANEL_STYLE} data-testid="district-inspector">
+    <div className={`${INSPECTOR_CLASS} overflow-hidden`} data-testid="district-inspector">
       <div className="p-4 pb-3 border-b border-border flex flex-col gap-2">
         <div className={EYEBROW_CLASS}>
           <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: districtColor(district.hue, 1, false) }} />
           <span>District</span>
           <span className="flex-1" />
-          <CloseButton onClick={onClose} />
+          <PanelButtons onClose={onClose} />
         </div>
         <input
           className={NAME_INPUT_CLASS}
@@ -2580,6 +2616,102 @@ function DistrictInspector({
 
 const DRAWER_MIN_HEIGHT = 240;
 
+/** Floats or docks the panel; the choice is shared by the terminal and the details. */
+function PanelModeButton({ label }: { label: string }) {
+  const mode = useUIStore((s) => s.cityMapDrawerMode);
+  const other: CityMapDrawerMode = mode === 'side' ? 'window' : 'side';
+  return (
+    <button
+      type="button"
+      className="text-text-tertiary hover:text-text-primary"
+      onClick={() => useUIStore.getState().setCityMapDrawerMode(other)}
+      aria-label={other === 'window' ? `Show ${label} as a window` : `Dock ${label} to the side`}
+      title={other === 'window' ? 'Float in the middle of the map' : 'Dock to the right edge'}
+    >
+      <Icon name={other === 'window' ? 'app-window' : 'sidebar-simple'} className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
+/**
+ * The one panel over the map that the terminal and the details take turns in:
+ * docked to the right edge or floating in the middle, its width and the room
+ * left under it dragged on its edges.
+ */
+function PanelFrame({
+  width,
+  mode,
+  gap,
+  testId,
+  background,
+  label,
+  z,
+  children,
+}: {
+  width: number;
+  mode: CityMapDrawerMode;
+  gap: number;
+  testId: string;
+  background: string;
+  label: string;
+  z: string;
+  children: React.ReactNode;
+}) {
+  const ui = useUIStore.getState;
+  // The glass bevel forces its direct children into normal flow, so the
+  // handles hang off a plain wrapper and the bevelled box sits inside it.
+  return (
+    <div
+      className={`absolute top-3 max-w-[calc(100%-24px)] ${z} ${mode === 'side' ? 'right-3' : 'left-1/2 -translate-x-1/2'}`}
+      style={{ width, bottom: `max(12px, min(${gap + 12}px, 100% - ${DRAWER_MIN_HEIGHT + 12}px))` }}
+      data-testid={testId}
+      data-mode={mode}
+    >
+      <div className="absolute inset-y-0 -left-px z-10 flex">
+        <ResizeHandle
+          width={width}
+          onWidth={(next) => ui().setCityMapDrawerWidth(next)}
+          min={CITY_MAP_DRAWER_MIN_WIDTH}
+          max={CITY_MAP_DRAWER_MAX_WIDTH}
+          defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
+          label={`Resize the ${label}`}
+          edge="start"
+        />
+      </div>
+      {mode === 'window' && (
+        <div className="absolute inset-y-0 -right-px z-10 flex">
+          <ResizeHandle
+            width={width}
+            onWidth={(next) => ui().setCityMapDrawerWidth(next)}
+            min={CITY_MAP_DRAWER_MIN_WIDTH}
+            max={CITY_MAP_DRAWER_MAX_WIDTH}
+            defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
+            label={`Resize the ${label}`}
+          />
+        </div>
+      )}
+      <div className="absolute inset-x-0 -bottom-px z-10 flex">
+        <ResizeHandle
+          axis="y"
+          width={gap}
+          onWidth={(next) => ui().setCityMapDrawerGap(mode, next)}
+          min={0}
+          max={CITY_MAP_DRAWER_MAX_GAP}
+          defaultWidth={CITY_MAP_DRAWER_DEFAULT_GAP[mode]}
+          label={`Space under the ${label}`}
+          edge="start"
+        />
+      </div>
+      <div
+        className="h-full rounded-[14px] border border-bezel-panel glass-bevel overflow-hidden flex flex-col"
+        style={{ background, boxShadow: 'var(--shadow-panel)' }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function TerminalDrawer({
   ptyId,
   projectPath,
@@ -2595,83 +2727,36 @@ function TerminalDrawer({
   gap: number;
   onHide: () => void;
 }) {
-  const ui = useUIStore.getState;
-  const other: CityMapDrawerMode = mode === 'side' ? 'window' : 'side';
-  // The glass bevel forces its direct children into normal flow, so the
-  // handles hang off a plain wrapper and the bevelled box sits inside it.
   return (
-    <div
-      className={`absolute top-3 max-w-[calc(100%-24px)] z-30 ${mode === 'side' ? 'right-3' : 'left-1/2 -translate-x-1/2'}`}
-      style={{ width, bottom: `max(12px, min(${gap + 12}px, 100% - ${DRAWER_MIN_HEIGHT + 12}px))` }}
-      data-testid="terminal-drawer"
-      data-mode={mode}
+    <PanelFrame
+      width={width}
+      mode={mode}
+      gap={gap}
+      testId="terminal-drawer"
+      background="var(--color-terminal-bg)"
+      label="terminal"
+      z="z-30"
     >
-      <div className="absolute inset-y-0 -left-px z-10 flex">
-        <ResizeHandle
-          width={width}
-          onWidth={(next) => ui().setCityMapDrawerWidth(next)}
-          min={CITY_MAP_DRAWER_MIN_WIDTH}
-          max={CITY_MAP_DRAWER_MAX_WIDTH}
-          defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
-          label="Resize the terminal"
-          edge="start"
-        />
-      </div>
-      {mode === 'window' && (
-        <div className="absolute inset-y-0 -right-px z-10 flex">
-          <ResizeHandle
-            width={width}
-            onWidth={(next) => ui().setCityMapDrawerWidth(next)}
-            min={CITY_MAP_DRAWER_MIN_WIDTH}
-            max={CITY_MAP_DRAWER_MAX_WIDTH}
-            defaultWidth={CITY_MAP_DRAWER_DEFAULT_WIDTH}
-            label="Resize the terminal"
-          />
+      <div className="flex items-stretch shrink-0">
+        <button
+          type="button"
+          className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
+          onClick={onHide}
+          aria-label="Hide terminal"
+          title="Back to the map"
+        >
+          <Icon name="caret-right" className="w-3.5 h-3.5" />
+        </button>
+        <div className="px-2 border-r border-border flex items-center">
+          <PanelModeButton label="terminal" />
         </div>
-      )}
-      <div className="absolute inset-x-0 -bottom-px z-10 flex">
-        <ResizeHandle
-          axis="y"
-          width={gap}
-          onWidth={(next) => ui().setCityMapDrawerGap(mode, next)}
-          min={0}
-          max={CITY_MAP_DRAWER_MAX_GAP}
-          defaultWidth={CITY_MAP_DRAWER_DEFAULT_GAP[mode]}
-          label="Space under the terminal"
-          edge="start"
-        />
-      </div>
-      <div
-        className="h-full rounded-[14px] border border-bezel-panel glass-bevel overflow-hidden flex flex-col"
-        style={{ background: 'var(--color-terminal-bg)', boxShadow: 'var(--shadow-panel)' }}
-      >
-        <div className="flex items-stretch shrink-0">
-          <button
-            type="button"
-            className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
-            onClick={onHide}
-            aria-label="Hide terminal"
-            title="Back to the map"
-          >
-            <Icon name="caret-right" className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            className="px-2 border-r border-border text-text-tertiary hover:text-text-primary"
-            onClick={() => ui().setCityMapDrawerMode(other)}
-            aria-label={other === 'window' ? 'Show terminal as a window' : 'Dock terminal to the side'}
-            title={other === 'window' ? 'Float in the middle of the map' : 'Dock to the right edge'}
-          >
-            <Icon name={other === 'window' ? 'app-window' : 'sidebar-simple'} className="w-3.5 h-3.5" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <TerminalHeader ptyId={ptyId} isActive onClose={() => closeProjectTerminal(ptyId)} />
-          </div>
-        </div>
-        <div className="flex flex-col flex-1 min-h-0">
-          <TerminalBody ptyId={ptyId} projectPath={projectPath} />
+        <div className="flex-1 min-w-0">
+          <TerminalHeader ptyId={ptyId} isActive onClose={() => closeProjectTerminal(ptyId)} />
         </div>
       </div>
-    </div>
+      <div className="flex flex-col flex-1 min-h-0">
+        <TerminalBody ptyId={ptyId} projectPath={projectPath} />
+      </div>
+    </PanelFrame>
   );
 }
