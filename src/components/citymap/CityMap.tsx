@@ -86,12 +86,13 @@ import {
   routeMidpoint,
   carsFor,
   CAR_COLOURS,
+  CRANE,
   drawSelectionRing,
   withAlpha,
   type DrawCity,
   type MapTokens,
 } from './drawCity';
-import { DetailLayer, TerrainLayer, drawWaterGlints } from './drawTerrain';
+import { DetailLayer, TerrainLayer } from './drawTerrain';
 import { CITY_BITMAP_ZOOM, CityBitmaps } from './cityLod';
 import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
 
@@ -110,8 +111,6 @@ const DISTRICT_TERRAIN_LABEL: Record<DistrictTerrain, string> = {
   salt: 'Salt flats',
 };
 const FLASH_MS = 2500;
-/** How often the canvas redraws for its own animation when nothing else has changed. */
-const ANIMATION_TICK_MS = 1000;
 const MINIMAP_W = 180;
 const MINIMAP_H = 110;
 
@@ -776,7 +775,6 @@ function useMapSurface(input: MapSurfaceInput) {
     const container = containerRef.current;
     if (!canvas || !container) return;
     const ctx = canvas.getContext('2d');
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
     const resize = () => {
       const r = container.getBoundingClientRect();
@@ -855,12 +853,10 @@ function useMapSurface(input: MapSurfaceInput) {
     };
 
     let frame = 0;
-    let lastDrawn = 0;
-    const draw = (time: number) => {
+    const draw = () => {
       const t = tokens.current;
       const { w, h, dpr } = size.current;
       const cam = camera.current;
-      const animate = !reduced.matches;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const tl = toWorld(0, 0);
@@ -928,7 +924,6 @@ function useMapSurface(input: MapSurfaceInput) {
           roadCells,
         );
       }
-      if (animate) drawWaterGlints(ctx, visible, cam.zoom, currentDistricts, time);
       for (const city of current) {
         const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
         if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
@@ -974,24 +969,11 @@ function useMapSurface(input: MapSurfaceInput) {
           weather: city.weather,
         };
         if (cam.zoom < CITY_BITMAP_ZOOM) bitmaps.current.draw(ctx, t, drawable, cam.zoom);
-        else drawCity(ctx, t, drawable, time, animate && !city.hidden);
+        else drawCity(ctx, t, drawable);
         ctx.globalAlpha = 1;
       }
       roadsUpTo(Infinity);
       drawMinimap();
-    };
-
-    const animated = () => {
-      if (tween.current) return true;
-      if (reduced.matches) return false;
-      const { cities: current } = model.current;
-      if (linkingRef.current != null) return true;
-      return current.some(
-        (c) =>
-          !c.hidden &&
-          (c.task.status === 'in_review' ||
-            (c.task.status !== 'done' && c.sites.some((s) => s.state !== 'done' && s.state !== 'exited'))),
-      );
     };
 
     const loop = (now: number) => {
@@ -1013,12 +995,10 @@ function useMapSurface(input: MapSurfaceInput) {
         }
       }
       if (!ctx || !tokens.current) return;
-      // What the canvas animates is ambient: cranes, dust, rain. It ticks once a
-      // second; the cars and the attention pulses are CSS and run on their own.
-      const idle = !dirty.current && now - lastDrawn < ANIMATION_TICK_MS;
-      if (!idle && (dirty.current || animated())) {
-        draw(now);
-        lastDrawn = now;
+      // Nothing on the canvas moves by itself: everything animated is CSS in
+      // the layer above. A frame is drawn when something changed or the camera flies.
+      if (dirty.current) {
+        draw();
         dirty.current = false;
       }
     };
@@ -1460,13 +1440,92 @@ function useMapSurface(input: MapSurfaceInput) {
         );
       }
     });
+    // Everything that moves on a city is CSS too: the swinging jib and dust of a
+    // working site, the halo and smoke of one that needs the user, the weather.
+    const fx: React.ReactNode[] = [];
+    const near = zoom >= CITY_BITMAP_ZOOM;
+    for (const city of cities) {
+      if (city.hidden || city.task.status === 'done' || city.task.status === 'todo') continue;
+      const { slots } = cityLayout(city.task.taskNumber);
+      const base = city.plot.pos;
+      for (const site of city.sites) {
+        const slot = slots[site.slot];
+        if (!slot) continue;
+        const c = cellCenter(slot.i, slot.j);
+        const x = base.x + c.x;
+        const y = base.y + c.y;
+        if (site.state === 'working') {
+          const top = y - CRANE.mastLift - CRANE.mastHeight;
+          fx.push(
+            <div
+              key={`crane-${site.ptyId}`}
+              className="city-fx city-crane-arm"
+              data-testid={`city-fx-crane-${site.ptyId}`}
+              style={{ left: x, top }}
+            >
+              <span className="city-crane-jib" />
+              <span className="city-crane-hook">
+                <span className="city-crane-line" />
+                <span className="city-crane-load" style={{ background: slot.wall }} />
+              </span>
+            </div>,
+          );
+          if (near) fx.push(<Puffs key={`dust-${site.ptyId}`} x={x - 8} y={y - 2} kind="dust" />);
+        } else if (site.state === 'waiting' || site.state === 'error') {
+          fx.push(
+            <span
+              key={`halo-${site.ptyId}`}
+              className="city-fx city-halo"
+              data-testid={`city-fx-halo-${site.ptyId}`}
+              style={{ left: x, top: y, background: SITE_COLOR[site.state] }}
+            />,
+          );
+          if (site.state === 'error' && near)
+            fx.push(<Puffs key={`smoke-${site.ptyId}`} x={x - 6} y={y - 4} kind="smoke" />);
+        }
+      }
+      if (city.weather !== 'clear') {
+        const rain = city.weather === 'rain';
+        const top = base.y - CITY_HALF_H - 62;
+        fx.push(
+          <span
+            key={`cloud-${city.task.taskNumber}`}
+            className={`city-fx city-cloud ${rain ? 'city-cloud-rain' : ''}`}
+            data-testid={`city-fx-${city.weather}-${city.task.taskNumber}`}
+            style={{ left: base.x, top, animationDelay: `${-(city.task.taskNumber * 3700) % 33000}ms` }}
+          >
+            {rain && near && <span className="city-rain" />}
+            {rain && (
+              <span
+                className="city-lightning"
+                style={{ animationDelay: `${-(city.task.taskNumber * 700) % 4200}ms` }}
+              />
+            )}
+          </span>,
+        );
+        if (!rain) {
+          fx.push(
+            <span
+              key={`cloud2-${city.task.taskNumber}`}
+              className="city-fx city-cloud city-cloud-small"
+              style={{
+                left: base.x - 90,
+                top: top + 4,
+                animationDelay: `${-(city.task.taskNumber * 3700 + 9000) % 33000}ms`,
+              }}
+            />,
+          );
+        }
+      }
+    }
     nodes.push(
       <div
-        key="cars"
+        key="world"
         className="absolute left-0 top-0"
         style={{ transform: `translate(${origin.x}px, ${origin.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
       >
         {cars}
+        {fx}
       </div>,
     );
     for (const district of districts) {
@@ -1701,6 +1760,21 @@ function SiteDot({ state, className = '' }: { state: SiteState; className?: stri
       className={`inline-block w-2 h-2 rounded-full shrink-0 ${className}`}
       style={{ background: SITE_COLOR[state] }}
     />
+  );
+}
+
+/** Three puffs rising and thinning in turn: dust off a site at work, smoke off one with a problem. */
+function Puffs({ x, y, kind }: { x: number; y: number; kind: 'dust' | 'smoke' }) {
+  return (
+    <span className="city-fx" style={{ left: x, top: y }} data-testid={`city-fx-${kind}`}>
+      {[0, 1, 2].map((k) => (
+        <span
+          key={k}
+          className={`city-puff city-puff-${kind}`}
+          style={{ left: k * 5, animationDelay: `${-k * 500}ms` }}
+        />
+      ))}
+    </span>
   );
 }
 

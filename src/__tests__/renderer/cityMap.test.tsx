@@ -102,8 +102,11 @@ describe('the city map', () => {
     const positions = Object.values(cities).map((c) => `${c.pos.x},${c.pos.y}`);
     expect(new Set(positions).size).toBe(4);
 
-    // A site that needs the user is called out on the city's label.
+    // A site that needs the user is called out on the city's label, with a halo on the map; a working one swings a crane.
     expect(screen.getByTestId('city-alert-waiting').textContent).toBe('1');
+    expect(screen.getByTestId('city-fx-halo-alpha-7')).toBeTruthy();
+    expect(screen.getByTestId('city-fx-crane-alpha-7b')).toBeTruthy();
+    expect(screen.getByTestId('city-fx-clouds-7')).toBeTruthy();
     expect(screen.queryByTestId('city-alert-error')).toBeNull();
 
     // The list counts a city's terminals; picking the city unfolds them, and one of them opens its terminal.

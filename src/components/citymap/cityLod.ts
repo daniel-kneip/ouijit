@@ -43,7 +43,7 @@ export class CityBitmaps {
       const bctx = canvas.getContext('2d');
       if (!bctx) return;
       bctx.setTransform(scale, 0, 0, scale, (CITY_HALF_W + BESIDE) * scale, (CITY_HALF_H + ABOVE) * scale);
-      drawCity(bctx, t, { ...city, pos: { x: 0, y: 0 } }, 0, false);
+      drawCity(bctx, t, { ...city, pos: { x: 0, y: 0 } });
       entry = { key, canvas };
       this.cache.set(city.taskNumber, entry);
     }

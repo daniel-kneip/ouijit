@@ -418,33 +418,6 @@ export class DetailLayer {
   }
 }
 
-/** A glint on the water now and then, the one thing on the ground that moves; close up only. */
-export function drawWaterGlints(
-  ctx: Ctx,
-  visible: Visible,
-  zoom: number,
-  zones: readonly District[],
-  time: number,
-): void {
-  if (zoom < FINE_ZOOM) return;
-  const a = cellOf({ x: visible.x0, y: visible.y0 });
-  const b = cellOf({ x: visible.x1, y: visible.y0 });
-  const c = cellOf({ x: visible.x0, y: visible.y1 });
-  const d = cellOf({ x: visible.x1, y: visible.y1 });
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  for (let s = Math.min(a.s, b.s, c.s, d.s); s <= Math.max(a.s, b.s, c.s, d.s); s++) {
-    for (let u = Math.min(a.t, b.t, c.t, d.t); u <= Math.max(a.t, b.t, c.t, d.t); u++) {
-      const h = hash2(s, u);
-      if (h <= 0.6 || Math.sin(time / 900 + h * 40) <= 0.94) continue;
-      if (terrainCell(s, u, zones).ground !== 'water') continue;
-      const x = (s - u) * TW;
-      const y = (s + u) * TH;
-      if (x < visible.x0 || x > visible.x1 || y < visible.y0 || y > visible.y1) continue;
-      ctx.fillRect(x + (h - 0.5) * 20, y + (hash2(u, s) - 0.5) * 8, 2, 1.2);
-    }
-  }
-}
-
 /** What stands in a district: blossom trees, vents, reeds, shards, mushrooms. */
 function zoneDetail(
   ctx: Ctx,

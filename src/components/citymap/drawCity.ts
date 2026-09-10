@@ -628,13 +628,14 @@ function stateColor(t: MapTokens, s: SiteState): string {
   return { working: t.working, waiting: t.waiting, error: t.error, done: t.done, exited: t.exited }[s];
 }
 
+/** The crane on a site: where its mast stands and how the jib swings. The swing itself is CSS. */
+export const CRANE = { mastLift: 3, mastHeight: 48, jib: 34, tail: 10, baseAngle: -0.55, swing: 0.55, hook: 16 };
+
 function drawSite(
   ctx: Ctx,
   t: MapTokens,
   site: DrawSite,
   slot: { i: number; j: number; wall: string; storeys: number },
-  time: number,
-  animate: boolean,
   faded: boolean,
 ): void {
   const { x: cx, y: cy } = cellCenter(slot.i, slot.j);
@@ -646,19 +647,6 @@ function drawSite(
   }
   const exited = site.state === 'exited';
   const needsYou = site.state === 'waiting' || site.state === 'error';
-  if (needsYou) {
-    const pulse = animate ? 0.5 + 0.5 * Math.sin(time / 420) : 0.7;
-    ctx.fillStyle = col;
-    ctx.globalAlpha = 0.18 + 0.14 * pulse;
-    diamond(ctx, cx, cy, TW * 1.9, TH * 1.9);
-    ctx.fill();
-    ctx.globalAlpha = 0.55 + 0.35 * pulse;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 2;
-    diamond(ctx, cx, cy, TW * 1.45, TH * 1.45);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
   ctx.fillStyle = tone('#e3d3a3', exited ? 0.2 : 1, t.night ? -18 : 0);
   diamond(ctx, cx, cy, TW * 0.92, TH * 0.92);
   ctx.fill();
@@ -685,52 +673,25 @@ function drawSite(
   isoBox(ctx, t, cx - 6, cy + 1, TW * 0.3, TH * 0.3, 3, slot.wall, { s: exited ? 0.2 : 1 });
 
   const mastX = cx;
-  const mastBase = cy - 3;
-  const mastH = 48;
+  const mastBase = cy - CRANE.mastLift;
   const craneCol = exited ? t.exited : '#f2c14e';
-  const topY = mastBase - mastH;
-  const baseAngle = -0.55;
-  const angle = site.state === 'working' && animate ? baseAngle + Math.sin(time / 2600) * 0.55 : baseAngle;
-  const hookLen = site.state === 'working' && animate ? 14 + Math.sin(time / 1900) * 8 : 16;
-  crane(ctx, t, mastX, mastBase, mastH, angle, hookLen, craneCol, slot.wall);
+  const topY = mastBase - CRANE.mastHeight;
+  // A working site's jib swings, which is CSS over the mast; the others stand still and are painted whole.
+  if (site.state === 'working') isoBox(ctx, t, mastX, mastBase, 2.6, 1.3, CRANE.mastHeight, craneCol);
+  else crane(ctx, t, mastX, mastBase, CRANE.mastHeight, CRANE.baseAngle, CRANE.hook, craneCol, slot.wall);
 
-  if (site.state === 'working') {
-    const puffs = animate ? 3 : 1;
-    for (let k = 0; k < puffs; k++) {
-      const ph = animate ? (time / 1500 + k / 3) % 1 : 0.4;
-      ctx.fillStyle = `rgba(200,180,140,${(1 - ph) * 0.45})`;
-      ctx.beginPath();
-      ctx.arc(cx - 8 + k * 5, cy - 2 - ph * 18, 3 + ph * 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (site.state === 'waiting') {
-    const blink = animate ? 0.55 + 0.45 * Math.sin(time / 260) : 1;
+  if (site.state === 'waiting') {
     ctx.fillStyle = col;
-    ctx.globalAlpha = 0.18 * blink;
+    ctx.globalAlpha = 0.18;
     ctx.beginPath();
     ctx.arc(mastX, topY - 8, 12, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = blink;
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.arc(mastX, topY - 8, 4.2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
-    const pulse = animate ? (time / 1400) % 1 : 0.4;
-    ctx.strokeStyle = col;
-    ctx.globalAlpha = (1 - pulse) * 0.7;
-    ctx.lineWidth = 1.5;
-    diamond(ctx, cx, cy, TW * (0.9 + pulse * 0.6), TH * (0.9 + pulse * 0.6));
-    ctx.stroke();
-    ctx.globalAlpha = 1;
   } else if (site.state === 'error') {
-    for (let k = 0; k < 3; k++) {
-      const ph = animate ? (time / 1800 + k / 3) % 1 : k / 3;
-      ctx.fillStyle = `rgba(90,40,40,${(1 - ph) * 0.5})`;
-      ctx.beginPath();
-      ctx.arc(cx - 6 + Math.sin(ph * 6) * 3, cy - 4 - ph * 26, 3 + ph * 6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const by = topY - 12 + (animate ? Math.sin(time / 500) * 1.5 : 0);
+    const by = topY - 12;
     ctx.fillStyle = col;
     ctx.beginPath();
     ctx.moveTo(mastX, by - 9);
@@ -743,21 +704,12 @@ function drawSite(
     ctx.fillRect(mastX - 1, by + 2, 2, 2);
   }
 
-  if (needsYou) drawPin(ctx, mastX, topY - 16, col, site.state === 'waiting' ? '!' : '×', time, animate);
+  if (needsYou) drawPin(ctx, mastX, topY - 16, col, site.state === 'waiting' ? '!' : '×');
 }
 
 /** A marker that stands above everything on the lot, so it reads at any zoom the city itself reads at. */
-function drawPin(
-  ctx: Ctx,
-  x: number,
-  baseY: number,
-  color: string,
-  glyph: string,
-  time: number,
-  animate: boolean,
-): void {
-  const bob = animate ? Math.sin(time / 380) * 2 : 0;
-  const top = baseY - 34 + bob;
+function drawPin(ctx: Ctx, x: number, baseY: number, color: string, glyph: string): void {
+  const top = baseY - 34;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -784,7 +736,7 @@ function drawPin(
   ctx.textBaseline = 'alphabetic';
 }
 
-export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, animate: boolean): void {
+export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity): void {
   const { cells, slots } = cityLayout(city.taskNumber);
   const faded = city.presence === 'settled';
   const blueprint = city.presence === 'blueprint';
@@ -866,7 +818,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
       continue;
     }
     if (site && here) {
-      drawSite(ctx, t, site, here.slot, time, animate && !faded, faded);
+      drawSite(ctx, t, site, here.slot, faded);
       continue;
     }
     const seed = hash2(city.taskNumber * 31 + cell.i, cell.j);
@@ -930,7 +882,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
     ctx.fill();
     ctx.globalAlpha = 1;
     flag(ctx, t, 0, 2, 44, t.review);
-    const bob = animate ? Math.sin(time / 700) * 2 : 0;
+    const bob = 0;
     ctx.strokeStyle = t.review;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -954,65 +906,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time: number, a
     ctx.fillRect(-8, -26, 12, 1.5);
     ctx.fillRect(-8, -22, 8, 1.5);
   }
-  if (!blueprint && !faded) drawWeather(ctx, city.weather, city.taskNumber, time, animate);
   ctx.restore();
-}
-
-/** Clouds drift over a city at work; a city with a problem sits under rain. */
-function drawWeather(ctx: Ctx, weather: Weather, seed: number, time: number, animate: boolean): void {
-  if (weather === 'clear') return;
-  const rain = weather === 'rain';
-  const drift = animate ? ((time / 90 + seed * 37) % (CITY_HALF_W * 2 + 120)) - CITY_HALF_W - 60 : -20;
-  const y = -CITY_HALF_H - 62;
-  const clouds = rain
-    ? [{ x: drift, s: 1.15 }]
-    : [
-        { x: drift, s: 1 },
-        { x: drift - 90, s: 0.7 },
-      ];
-  for (const c of clouds) {
-    ctx.fillStyle = rain ? 'rgba(88,96,108,0.92)' : 'rgba(255,255,255,0.85)';
-    for (const [dx, dy, r] of [
-      [0, 0, 11],
-      [-12, 4, 8],
-      [13, 3, 9],
-      [4, -6, 8],
-    ]) {
-      ctx.beginPath();
-      ctx.arc(c.x + dx * c.s, y + dy * c.s, r * c.s, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = rain ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.07)';
-    ctx.beginPath();
-    ctx.ellipse(c.x, -6, 26 * c.s, 13 * c.s, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (!rain) return;
-  const cx = clouds[0].x;
-  ctx.strokeStyle = 'rgba(120,150,200,0.7)';
-  ctx.lineWidth = 1;
-  const fall = animate ? (time / 12) % 14 : 6;
-  for (let k = -2; k <= 2; k++) {
-    const x = cx + k * 8;
-    for (let d = 0; d < 3; d++) {
-      const yy = y + 14 + ((fall + d * 14 + k * 3) % 42);
-      ctx.beginPath();
-      ctx.moveTo(x + 1.5, yy);
-      ctx.lineTo(x, yy + 6);
-      ctx.stroke();
-    }
-  }
-  const flash = animate && (time + seed * 700) % 4200 < 110;
-  if (flash) {
-    ctx.strokeStyle = '#ffe98a';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx + 4, y + 10);
-    ctx.lineTo(cx - 2, y + 26);
-    ctx.lineTo(cx + 3, y + 26);
-    ctx.lineTo(cx - 4, y + 44);
-    ctx.stroke();
-  }
 }
 
 export function drawSelectionRing(ctx: Ctx, t: MapTokens, pos: Point, zoom: number): void {

@@ -251,6 +251,213 @@ textarea,
   }
 }
 
+/* Effects placed in map units inside the scaled layer; each sits at its own left/top. */
+.city-fx {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* The jib of a working crane, swinging about the mast top. The iso view
+   squashes the swing to half height; the hook undoes that to hang straight. */
+.city-crane-arm {
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  animation: city-crane-swing 8.2s ease-in-out infinite alternate;
+}
+.city-crane-jib {
+  position: absolute;
+  left: -10px;
+  top: -1.1px;
+  width: 44px;
+  height: 2.2px;
+  background: #f2c14e;
+  border-radius: 1px;
+}
+.city-crane-hook {
+  position: absolute;
+  left: 34px;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  animation: city-crane-upright 8.2s ease-in-out infinite alternate;
+}
+.city-crane-line {
+  position: absolute;
+  left: -0.5px;
+  top: 0;
+  width: 1px;
+  height: 16px;
+  background: rgba(31, 42, 34, 0.7);
+  transform-origin: 0 0;
+  animation: city-crane-hoist 6s ease-in-out infinite alternate;
+}
+.city-crane-load {
+  position: absolute;
+  left: -3px;
+  top: 16px;
+  width: 6px;
+  height: 4px;
+  animation: city-crane-load 6s ease-in-out infinite alternate;
+}
+@keyframes city-crane-swing {
+  from {
+    transform: scaleY(0.5) rotate(-1.1rad);
+  }
+  to {
+    transform: scaleY(0.5) rotate(0rad);
+  }
+}
+@keyframes city-crane-upright {
+  from {
+    transform: rotate(1.1rad) scaleY(2);
+  }
+  to {
+    transform: rotate(0rad) scaleY(2);
+  }
+}
+@keyframes city-crane-hoist {
+  from {
+    transform: scaleY(0.4);
+  }
+  to {
+    transform: scaleY(1.4);
+  }
+}
+@keyframes city-crane-load {
+  from {
+    transform: translateY(-9.6px);
+  }
+  to {
+    transform: translateY(6.4px);
+  }
+}
+
+/* The halo under a site that needs the user: a diamond breathing out. */
+.city-halo {
+  width: 84px;
+  height: 42px;
+  margin: -21px 0 0 -42px;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  opacity: 0.35;
+  animation: city-halo 1.4s ease-out infinite;
+}
+@keyframes city-halo {
+  from {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  to {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+.city-puff {
+  position: absolute;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  animation: city-puff 1.5s linear infinite;
+}
+.city-puff-dust {
+  background: rgba(200, 180, 140, 0.5);
+}
+.city-puff-smoke {
+  background: rgba(90, 40, 40, 0.5);
+  animation-duration: 1.8s;
+}
+@keyframes city-puff {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-22px) scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* A cloud drifting across the top of a city, and rain falling from a dark one. */
+.city-cloud {
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    -12px 4px 0 -3px rgba(255, 255, 255, 0.85),
+    13px 3px 0 -2px rgba(255, 255, 255, 0.85),
+    4px -6px 0 -3px rgba(255, 255, 255, 0.85);
+  animation: city-cloud-drift 33s linear infinite;
+}
+.city-cloud-small {
+  transform: scale(0.7);
+}
+.city-cloud-rain {
+  background: rgba(88, 96, 108, 0.92);
+  box-shadow:
+    -14px 5px 0 -3px rgba(88, 96, 108, 0.92),
+    15px 3px 0 -2px rgba(88, 96, 108, 0.92),
+    5px -7px 0 -3px rgba(88, 96, 108, 0.92);
+}
+@keyframes city-cloud-drift {
+  from {
+    translate: -214px 0;
+  }
+  to {
+    translate: 214px 0;
+  }
+}
+.city-rain {
+  position: absolute;
+  left: -20px;
+  top: 14px;
+  width: 40px;
+  height: 42px;
+  background: repeating-linear-gradient(
+    166deg,
+    transparent 0 5px,
+    rgba(120, 150, 200, 0.7) 5px 6px,
+    transparent 6px 8px
+  );
+  mask-image: linear-gradient(to bottom, black, transparent);
+  animation: city-rain 0.7s linear infinite;
+}
+@keyframes city-rain {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 14px;
+  }
+}
+.city-lightning {
+  position: absolute;
+  left: -6px;
+  top: 10px;
+  width: 12px;
+  height: 34px;
+  background: #ffe98a;
+  clip-path: polygon(70% 0, 30% 45%, 60% 45%, 20% 100%, 45% 55%, 20% 55%);
+  opacity: 0;
+  animation: city-lightning 4.2s linear infinite;
+}
+@keyframes city-lightning {
+  0%,
+  96%,
+  100% {
+    opacity: 0;
+  }
+  97%,
+  99% {
+    opacity: 1;
+  }
+}
+
 /* A site that needs the user: the count on the city's label breathes. */
 .city-alert {
   animation: city-alert-pulse 1.6s ease-in-out infinite;
@@ -270,7 +477,9 @@ textarea,
 
 @media (prefers-reduced-motion: reduce) {
   .city-car,
-  .city-alert {
+  .city-alert,
+  .city-fx,
+  .city-fx * {
     animation: none;
   }
 }
