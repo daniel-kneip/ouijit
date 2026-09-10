@@ -1015,18 +1015,10 @@ function drawWeather(ctx: Ctx, weather: Weather, seed: number, time: number, ani
   }
 }
 
-export function drawSelectionRing(
-  ctx: Ctx,
-  t: MapTokens,
-  pos: Point,
-  zoom: number,
-  time: number,
-  animate: boolean,
-): void {
+export function drawSelectionRing(ctx: Ctx, t: MapTokens, pos: Point, zoom: number): void {
   ctx.save();
   ctx.translate(pos.x, pos.y);
   ctx.setLineDash([8, 6]);
-  ctx.lineDashOffset = animate ? -(time / 40) % 14 : 0;
   ctx.strokeStyle = t.accent;
   ctx.lineWidth = 2 / zoom;
   diamond(ctx, 0, 0, CITY_HALF_W + 12, CITY_HALF_H + 8);
@@ -1135,7 +1127,19 @@ export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: 
 }
 
 /** Where a straight road leaves a city: on the edge of its ground diamond. */
-const CAR_COLOURS = ['#e0524d', '#3f7fd8', '#f2b134', '#3fa66b', '#f0f0f0', '#7a5cc9'];
+export const CAR_COLOURS = ['#e0524d', '#3f7fd8', '#f2b134', '#3fa66b', '#f0f0f0', '#7a5cc9'];
+
+/** How many cars a road carries and how long one takes to drive it; the same speed on every road. */
+export function carsFor(route: readonly Point[]): { count: number; durationMs: number } {
+  const len = routeLength(route);
+  return { count: Math.max(1, Math.min(4, Math.floor(len / 200))), durationMs: Math.round(len * 14) };
+}
+
+export function routeLength(route: readonly Point[]): number {
+  let total = 0;
+  for (let i = 1; i < route.length; i++) total += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
+  return total;
+}
 
 /** The rows of the map a road touches, signpost included, so a caller can skip the bands it is not in. */
 export function roadSpan(route: readonly Point[]): { y0: number; y1: number } {
@@ -1180,8 +1184,8 @@ export function routeMidpoint(route: readonly Point[]): Point {
 
 /**
  * A one-way road along the lattice from one city's edge to another's, with
- * cars driving the way the arrows point and a bridge over every cell of
- * water it crosses. `seed` staggers the cars between roads.
+ * a bridge over every cell of water it crosses. The cars on it are DOM
+ * elements on a CSS motion path, not painted here.
  *
  * Cities are painted back to front, and a road lies on the ground between
  * them: drawn all at once it would sit under every city's ground slab or over
@@ -1192,9 +1196,6 @@ export function drawRoad(
   ctx: Ctx,
   t: MapTokens,
   route: readonly Point[],
-  time: number,
-  animate: boolean,
-  seed: number,
   highlighted: boolean,
   destination: string,
   band?: { y0: number; y1: number },
@@ -1292,31 +1293,6 @@ export function drawRoad(
     );
   }
 
-  const cars = Math.max(1, Math.min(4, Math.floor(len / 200)));
-  for (let k = 0; k < cars; k++) {
-    const phase = animate ? (time / (len * 14) + k / cars + seed * 0.37) % 1 : (k + 0.5) / cars;
-    const at = alongRoute(route, lengths, phase);
-    if (!inBand(at.y, 10)) continue;
-    ctx.save();
-    ctx.translate(at.x, at.y);
-    ctx.rotate(at.angle);
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.roundRect(-6, -2.5, 12, 6, 2);
-    ctx.fill();
-    ctx.fillStyle = CAR_COLOURS[(seed + k) % CAR_COLOURS.length];
-    ctx.beginPath();
-    ctx.roundRect(-6, -3.5, 12, 6, 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.roundRect(-3, -2.5, 5, 4, 1);
-    ctx.fill();
-    ctx.fillStyle = '#fff6c2';
-    ctx.fillRect(5, -3, 1.5, 2);
-    ctx.fillRect(5, 1, 1.5, 2);
-    ctx.restore();
-  }
   ctx.restore();
 }
 

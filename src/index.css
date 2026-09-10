@@ -226,6 +226,55 @@ textarea,
   }
 }
 
+/* A car on a road: a rounded box that follows the road's path, nose first. */
+.city-car {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 6px;
+  margin: -3px 0 0 -6px;
+  border-radius: 2px;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.2),
+    inset 3px 0 0 rgba(255, 255, 255, 0.35);
+  offset-rotate: auto;
+  animation: city-car linear infinite;
+}
+
+@keyframes city-car {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+/* A site that needs the user: the count on the city's label breathes. */
+.city-alert {
+  animation: city-alert-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes city-alert-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.45);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .city-car,
+  .city-alert {
+    animation: none;
+  }
+}
+
 .city-label-flash {
   animation: city-label-flash 2.4s ease-out 1;
 }

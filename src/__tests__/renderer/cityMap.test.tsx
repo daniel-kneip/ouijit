@@ -288,6 +288,8 @@ describe('the city map', () => {
     expect(screen.queryByTestId('city-blocked-7')).toBeNull();
     useCityMapStore.getState().updateRoad(project.path, 'r1', { note: 'blocked until the PR merges' });
     expect((await screen.findByTestId('road-label-r1')).textContent).toBe('blocked until the PR merges');
+    // The cars are elements on the road's path, not canvas frames.
+    expect(screen.getAllByTestId('city-car-r1').length).toBeGreaterThan(0);
 
     // Grouping by district lists the cities inside it under its name.
     fireEvent.click(screen.getByTestId('sidebar-group-district'));

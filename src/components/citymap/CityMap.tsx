@@ -84,6 +84,8 @@ import {
   drawRoad,
   roadSpan,
   routeMidpoint,
+  carsFor,
+  CAR_COLOURS,
   drawSelectionRing,
   withAlpha,
   type DrawCity,
@@ -108,6 +110,8 @@ const DISTRICT_TERRAIN_LABEL: Record<DistrictTerrain, string> = {
   salt: 'Salt flats',
 };
 const FLASH_MS = 2500;
+/** How often the canvas redraws for its own animation when nothing else has changed. */
+const ANIMATION_TICK_MS = 1000;
 const MINIMAP_W = 180;
 const MINIMAP_H = 110;
 
@@ -876,14 +880,14 @@ function useMapSurface(input: MapSurfaceInput) {
       t.lit = windowsLit(now, t.night);
       const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
       const selectedTask = selectedTaskNumber(sel);
-      const routes = currentRoads.flatMap((road, index) => {
+      const routes = currentRoads.flatMap((road) => {
         const from = byNumber.get(road.from);
         const to = byNumber.get(road.to);
         if (!from || !to) return [];
         const touches =
           (sel?.type === 'road' && sel.id === road.id) ||
           (selectedTask != null && (road.from === selectedTask || road.to === selectedTask));
-        return [{ road, index, touches, route: roadRoute(from.plot.pos, to.plot.pos) }];
+        return [{ road, touches, route: roadRoute(from.plot.pos, to.plot.pos) }];
       });
       const roadCells = new Set(routes.flatMap((r) => routeCells(r.route).map(cellKey)));
       // The ground moves only with the camera and the world; animation frames leave it be.
@@ -929,11 +933,11 @@ function useMapSurface(input: MapSurfaceInput) {
         const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
         if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
       }
-      const roadDraws = routes.map(({ road, index, touches, route }) => {
+      const roadDraws = routes.map(({ road, touches, route }) => {
         const span = roadSpan(route);
         return (band: { y0: number; y1: number }) => {
           if (span.y1 < band.y0 || span.y0 >= band.y1) return;
-          drawRoad(ctx, t, route, time, animate, index, touches, `#${road.to}`, band);
+          drawRoad(ctx, t, route, touches, `#${road.to}`, band);
         };
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
@@ -956,7 +960,7 @@ function useMapSurface(input: MapSurfaceInput) {
           continue;
         if (city.hidden) ctx.globalAlpha = 0.22;
         if (selectedTask === city.task.taskNumber || linkingRef.current === city.task.taskNumber) {
-          drawSelectionRing(ctx, t, p, cam.zoom, time, animate);
+          drawSelectionRing(ctx, t, p, cam.zoom);
         }
         const drawable: DrawCity = {
           taskNumber: city.task.taskNumber,
@@ -980,8 +984,8 @@ function useMapSurface(input: MapSurfaceInput) {
     const animated = () => {
       if (tween.current) return true;
       if (reduced.matches) return false;
-      const { cities: current, roads: currentRoads, selection: sel } = model.current;
-      if (sel || linkingRef.current != null || currentRoads.length > 0) return true;
+      const { cities: current } = model.current;
+      if (linkingRef.current != null) return true;
       return current.some(
         (c) =>
           !c.hidden &&
@@ -1009,8 +1013,9 @@ function useMapSurface(input: MapSurfaceInput) {
         }
       }
       if (!ctx || !tokens.current) return;
-      // Far out, what still moves is a few cars: a redraw every few frames is plenty.
-      const idle = !dirty.current && camera.current.zoom < CITY_BITMAP_ZOOM && now - lastDrawn < 66;
+      // What the canvas animates is ambient: cranes, dust, rain. It ticks once a
+      // second; the cars and the attention pulses are CSS and run on their own.
+      const idle = !dirty.current && now - lastDrawn < ANIMATION_TICK_MS;
       if (!idle && (dirty.current || animated())) {
         draw(now);
         lastDrawn = now;
@@ -1427,6 +1432,43 @@ function useMapSurface(input: MapSurfaceInput) {
     const nodes: React.ReactNode[] = [];
     const selectedTask = selectedTaskNumber(selection);
     const byNumber = new Map(cities.map((c) => [c.task.taskNumber, c]));
+    // Cars drive on a CSS motion path in a layer scaled to the map, so they
+    // move without a frame of JavaScript; the layer follows the camera.
+    const origin = toScreen({ x: 0, y: 0 });
+    const cars: React.ReactNode[] = [];
+    roads.forEach((road, index) => {
+      const from = byNumber.get(road.from);
+      const to = byNumber.get(road.to);
+      if (!from || !to || from.hidden || to.hidden) return;
+      const route = roadRoute(from.plot.pos, to.plot.pos);
+      if (route.length < 2) return;
+      const { count, durationMs } = carsFor(route);
+      const path = route.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+      for (let k = 0; k < count; k++) {
+        cars.push(
+          <span
+            key={`${road.id}-${k}`}
+            className="city-car"
+            data-testid={`city-car-${road.id}`}
+            style={{
+              offsetPath: `path('${path}')`,
+              animationDuration: `${durationMs}ms`,
+              animationDelay: `${-Math.round(durationMs * ((k / count + index * 0.37) % 1))}ms`,
+              background: CAR_COLOURS[(index + k) % CAR_COLOURS.length],
+            }}
+          />,
+        );
+      }
+    });
+    nodes.push(
+      <div
+        key="cars"
+        className="absolute left-0 top-0"
+        style={{ transform: `translate(${origin.x}px, ${origin.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
+      >
+        {cars}
+      </div>,
+    );
     for (const district of districts) {
       const p = toScreen(districtCorners(district)[0]);
       const selected = selection?.type === 'district' && selection.id === district.id;
@@ -1665,7 +1707,7 @@ function SiteDot({ state, className = '' }: { state: SiteState; className?: stri
 function AlertBadge({ count, state }: { count: number; state: 'waiting' | 'error' }) {
   return (
     <span
-      className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full font-mono text-[10px] font-semibold text-white"
+      className="city-alert inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full font-mono text-[10px] font-semibold text-white"
       style={{ background: SITE_COLOR[state] }}
       title={state === 'waiting' ? `${count} waiting for you` : `${count} with a problem`}
       data-testid={`city-alert-${state}`}
