@@ -659,9 +659,22 @@ function useMapSurface(input: MapSurfaceInput) {
   const size = useRef({ w: 0, h: 0, dpr: 1 });
   const tokens = useRef<MapTokens | null>(null);
   const [night, setNight] = useState(false);
-  const terrain = useRef(new TerrainLayer());
-  const details = useRef(new DetailLayer());
-  const bitmaps = useRef(new CityBitmaps());
+  const [layers] = useState(() => ({
+    terrain: new TerrainLayer(),
+    details: new DetailLayer(),
+    bitmaps: new CityBitmaps(),
+  }));
+  const terrain = useRef(layers.terrain);
+  const details = useRef(layers.details);
+  const bitmaps = useRef(layers.bitmaps);
+  useEffect(
+    () => () => {
+      layers.terrain.dispose();
+      layers.details.dispose();
+      layers.bitmaps.dispose();
+    },
+    [layers],
+  );
   const dirty = useRef(true);
   const tween = useRef<{ from: CityMapViewport; to: CityMapViewport; t0: number } | null>(null);
   const model = useRef({ cities, roads, districts, selection });

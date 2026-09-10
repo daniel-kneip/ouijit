@@ -1,9 +1,12 @@
 import { terminalInstances } from '../components/terminal/terminalReact';
+import { canvasCaches } from '../components/citymap/canvasMemory';
 
 export interface RendererMemory {
   jsHeapMb: number | null;
   domNodes: number;
   canvases: { count: number; totalMb: number; largest: string[] };
+  /** Offscreen bitmaps the city map keeps, which no DOM query finds. */
+  mapCaches: { name: string; entries: number; mb: number }[];
   images: number;
   webviews: number;
   terminals: { count: number; attached: number; bufferLines: number };
@@ -37,6 +40,10 @@ export function rendererMemory(): RendererMemory {
       totalMb: Math.round(sized.reduce((sum, c) => sum + c.bytes, 0) / 1024 / 1024),
       largest: sized.slice(0, 5).map((c) => `${c.label} (${Math.round(c.bytes / 1024 / 1024)} MB)`),
     },
+    mapCaches: Array.from(canvasCaches).map((cache) => {
+      const { entries, bytes } = cache.stats();
+      return { name: cache.name, entries, mb: Math.round(bytes / 1024 / 1024) };
+    }),
     images: document.images.length,
     webviews: document.querySelectorAll('webview').length,
     terminals: { count: terminalInstances.size, attached, bufferLines },

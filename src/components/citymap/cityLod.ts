@@ -1,5 +1,6 @@
 import { CITY_HALF_H, CITY_HALF_W } from './cityGeometry';
 import { drawCity, type DrawCity, type MapTokens } from './drawCity';
+import { canvasCaches, releaseCanvas } from './canvasMemory';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -16,7 +17,12 @@ const BELOW = 24;
  * out. A city is redrawn when what it shows changes, which the key spells out.
  */
 export class CityBitmaps {
+  readonly name = 'cities';
   private cache = new Map<number, { key: string; canvas: HTMLCanvasElement }>();
+
+  constructor() {
+    canvasCaches.add(this);
+  }
 
   draw(ctx: Ctx, t: MapTokens, city: DrawCity, zoom: number): void {
     const scale = zoom <= 0.5 ? 0.5 : 1;
@@ -56,7 +62,22 @@ export class CityBitmaps {
     );
   }
 
+  stats(): { entries: number; bytes: number } {
+    let bytes = 0;
+    for (const { canvas } of this.cache.values()) bytes += canvas.width * canvas.height * 4;
+    return { entries: this.cache.size, bytes };
+  }
+
   forget(taskNumber: number): void {
+    const entry = this.cache.get(taskNumber);
+    if (!entry) return;
+    releaseCanvas(entry.canvas);
     this.cache.delete(taskNumber);
+  }
+
+  dispose(): void {
+    for (const { canvas } of this.cache.values()) releaseCanvas(canvas);
+    this.cache.clear();
+    canvasCaches.delete(this);
   }
 }

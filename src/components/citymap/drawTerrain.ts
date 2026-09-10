@@ -1,3 +1,4 @@
+import { canvasCaches, releaseCanvas } from './canvasMemory';
 import type { District } from '../../stores/cityMapStore';
 import { TH, TW, hash2, type Point } from './cityGeometry';
 import { tree, type MapTokens } from './drawCity';
@@ -24,19 +25,38 @@ function chunkCells(scale: number): number {
  * than a count: a 4K window zoomed right out shows a few hundred chunks, and a
  * count cap below that repaints the edge of the view on every frame.
  */
-class ChunkCache {
+export class ChunkCache {
   private entries = new Map<string, HTMLCanvasElement>();
   private bytes = 0;
   private fingerprint = '';
 
-  constructor(private budget: number) {}
+  constructor(
+    readonly name: string,
+    private budget: number,
+  ) {
+    canvasCaches.add(this);
+  }
+
+  stats(): { entries: number; bytes: number } {
+    return { entries: this.entries.size, bytes: this.bytes };
+  }
 
   /** Drops everything when the world it was painted for has changed. */
   reset(fingerprint: string): void {
     if (fingerprint === this.fingerprint) return;
+    this.clear();
+    this.fingerprint = fingerprint;
+  }
+
+  clear(): void {
+    for (const canvas of this.entries.values()) releaseCanvas(canvas);
     this.entries.clear();
     this.bytes = 0;
-    this.fingerprint = fingerprint;
+  }
+
+  dispose(): void {
+    this.clear();
+    canvasCaches.delete(this);
   }
 
   /** A budget below what one view holds would evict and repaint on every frame; it grows to fit, with room to pan. */
@@ -59,6 +79,7 @@ class ChunkCache {
       const dropped = this.entries.get(oldest)!;
       this.bytes -= dropped.width * dropped.height * 4;
       this.entries.delete(oldest);
+      releaseCanvas(dropped);
     }
     this.entries.set(key, canvas);
     this.bytes += size;
@@ -284,7 +305,11 @@ function zoneMarks(ctx: Ctx, cell: TerrainCell, x: number, y: number, s: number,
  * landscape recolours the land under it.
  */
 export class TerrainLayer {
-  private cache = new ChunkCache(96 * 1024 * 1024);
+  private cache = new ChunkCache('terrain', 96 * 1024 * 1024);
+
+  dispose(): void {
+    this.cache.dispose();
+  }
 
   draw(ctx: Ctx, t: MapTokens, visible: Visible, zoom: number, zones: readonly District[]): void {
     this.cache.reset(
@@ -382,7 +407,11 @@ function paintDetails(
  * a city being dragged repaints the chunks around it and nothing else.
  */
 export class DetailLayer {
-  private cache = new ChunkCache(64 * 1024 * 1024);
+  private cache = new ChunkCache('details', 64 * 1024 * 1024);
+
+  dispose(): void {
+    this.cache.dispose();
+  }
 
   draw(
     ctx: Ctx,
