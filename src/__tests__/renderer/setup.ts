@@ -193,6 +193,7 @@ const mockApi = {
     set: vi.fn().mockResolvedValue({ success: true }),
   },
   health: {
+    memory: vi.fn().mockResolvedValue({ processes: [], main: {}, ptys: 0, system: {} }),
     // A machine with every agent on it, so a test that renders the lens
     // settings is not also a test about what is installed.
     check: vi.fn().mockResolvedValue({

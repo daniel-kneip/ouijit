@@ -850,6 +850,7 @@ export interface OnboardingState {
 
 export interface HealthAPI {
   check(): Promise<import('./healthCheck').HealthStatus>;
+  memory(): Promise<import('./memoryReport').MemoryReport>;
   onUpdate(callback: (status: import('./healthCheck').HealthStatus) => void): () => void;
 }
 

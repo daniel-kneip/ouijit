@@ -80,6 +80,7 @@ import type { LensChangedPayload } from '../lens/subjectKeys';
 import type { SandboxProviderStatus, NonoConfig } from '../sandbox/types';
 import type { HookStatusEntry } from '../hookServer';
 import type { HealthStatus } from '../healthCheck';
+import type { MemoryReport } from '../memoryReport';
 import type { CaptureNavigatePayload } from '../capture/types';
 
 export type ProjectHooks = NonNullable<ProjectSettings['hooks']>;
@@ -282,6 +283,7 @@ export interface IpcInvokeContract {
 
   // ── Health ───────────────────────────────────────────────────────────
   'health:check': { args: []; return: HealthStatus };
+  'health:memory': { args: []; return: MemoryReport };
 
   // ── Sandbox (cross-provider) ─────────────────────────────────────────
   'sandbox:status': { args: [projectPath: string]; return: SandboxProviderStatus[] };

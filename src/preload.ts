@@ -261,6 +261,7 @@ contextBridge.exposeInMainWorld('api', {
 
   health: {
     check: () => typedInvoke('health:check'),
+    memory: () => typedInvoke('health:memory'),
     onUpdate: (callback: (status: import('./healthCheck').HealthStatus) => void) => typedListen('health', callback),
   },
 
