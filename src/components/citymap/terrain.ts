@@ -100,7 +100,42 @@ function zoneGround(zone: DistrictTerrain, s: number, t: number, water: boolean)
   }
 }
 
+const cellMemo = new Map<number, TerrainCell>();
+let memoZones = '';
+let keyedZones: readonly District[] | null = null;
+let keyedZonesKey = '';
+const MEMO_CAP = 400_000;
+
+/** The districts' key, rebuilt only when a different array comes in: the store hands out the same one until it changes. */
+function zonesKey(zones: readonly District[]): string {
+  if (zones !== keyedZones) {
+    keyedZones = zones;
+    keyedZonesKey = zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';');
+  }
+  return keyedZonesKey;
+}
+
+/**
+ * A cell costs a dozen noise samples and is asked for by the ground, the
+ * trees, the shores and the bridges alike, so it is worked out once and kept
+ * until the districts change.
+ */
 export function terrainCell(s: number, t: number, zones: readonly District[] = []): TerrainCell {
+  const key = zonesKey(zones);
+  if (key !== memoZones) {
+    cellMemo.clear();
+    memoZones = key;
+  }
+  const id = (s + 50_000) * 100_000 + (t + 50_000);
+  const known = cellMemo.get(id);
+  if (known) return known;
+  const cell = computeCell(s, t, zones);
+  if (cellMemo.size >= MEMO_CAP) cellMemo.clear();
+  cellMemo.set(id, cell);
+  return cell;
+}
+
+function computeCell(s: number, t: number, zones: readonly District[]): TerrainCell {
   const e = elevation(s, t);
   const water = isWater(s, t);
   const zone = zones.find((d) => pointInDistrict(d, latticePoint(s, t)))?.terrain;

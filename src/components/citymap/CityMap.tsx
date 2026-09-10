@@ -89,7 +89,8 @@ import {
   type DrawCity,
   type MapTokens,
 } from './drawCity';
-import { TerrainLayer, drawTerrainDetails } from './drawTerrain';
+import { DetailLayer, TerrainLayer, drawWaterGlints } from './drawTerrain';
+import { CITY_BITMAP_ZOOM, CityBitmaps } from './cityLod';
 import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
 
 const EMPTY_IDS: string[] = [];
@@ -394,8 +395,17 @@ export function CityMap({ projectPath }: CityMapProps) {
     openTerminal,
     availableSandboxProviders,
   });
+  // The light of the day lies over the map as a blended layer: it changes by
+  // the minute, and it is not worth painting into every frame.
+  const [clock, setClock] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const tint = daylightTint(clock, surface.night);
   const {
     canvasRef,
+    groundRef,
     containerRef,
     probeRef,
     minimapRef,
@@ -464,11 +474,19 @@ export function CityMap({ projectPath }: CityMapProps) {
       />
       <div ref={containerRef} className="relative flex-1 min-w-0 overflow-hidden">
         <span ref={probeRef} className="absolute w-0 h-0 pointer-events-none" aria-hidden="true" />
+        <canvas ref={groundRef} className="absolute inset-0 w-full h-full block" aria-hidden="true" />
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full block touch-none"
           aria-label="Map of tasks as cities"
         />
+        {tint && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: tint.colour, mixBlendMode: tint.op as CSSProperties['mixBlendMode'] }}
+            data-testid="daylight-tint"
+          />
+        )}
         <div className="absolute inset-0 pointer-events-none">{labels}</div>
         {linkingCity && (
           <div
@@ -615,13 +633,19 @@ function useMapSurface(input: MapSurfaceInput) {
   const focus = useRef<{ target: Point; zoom: number } | null>(null);
   const commentsByTask = useTaskCommentStore((s) => s.byTask);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const groundRef = useRef<HTMLCanvasElement>(null);
+  /** What the ground canvas was last painted for; the same again means it is left alone. */
+  const groundKey = useRef('');
   const minimapRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
   const camera = useRef<CityMapViewport>({ x: 0, y: 0, zoom: 0.9 });
   const size = useRef({ w: 0, h: 0, dpr: 1 });
   const tokens = useRef<MapTokens | null>(null);
+  const [night, setNight] = useState(false);
   const terrain = useRef(new TerrainLayer());
+  const details = useRef(new DetailLayer());
+  const bitmaps = useRef(new CityBitmaps());
   const dirty = useRef(true);
   const tween = useRef<{ from: CityMapViewport; to: CityMapViewport; t0: number } | null>(null);
   const model = useRef({ cities, roads, districts, selection });
@@ -646,7 +670,10 @@ function useMapSurface(input: MapSurfaceInput) {
   }, [ready, viewport, projectPath]);
 
   useEffect(() => {
-    if (probeRef.current) tokens.current = resolveTokens(probeRef.current);
+    if (probeRef.current) {
+      tokens.current = resolveTokens(probeRef.current);
+      setNight(tokens.current.night);
+    }
     dirty.current = true;
   }, [themeEpoch]);
 
@@ -753,6 +780,12 @@ function useMapSurface(input: MapSurfaceInput) {
       size.current = { w: r.width, h: r.height, dpr };
       canvas.width = Math.round(r.width * dpr);
       canvas.height = Math.round(r.height * dpr);
+      const ground = groundRef.current;
+      if (ground) {
+        ground.width = canvas.width;
+        ground.height = canvas.height;
+      }
+      groundKey.current = '';
       dirty.current = true;
       bump();
     };
@@ -818,33 +851,29 @@ function useMapSurface(input: MapSurfaceInput) {
     };
 
     let frame = 0;
+    let lastDrawn = 0;
     const draw = (time: number) => {
       const t = tokens.current;
       const { w, h, dpr } = size.current;
       const cam = camera.current;
       const animate = !reduced.matches;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = t.ground;
-      ctx.fillRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
       const tl = toWorld(0, 0);
       const br = toWorld(w, h);
       const visible = { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y };
-      ctx.setTransform(
+      const world = [
         dpr * cam.zoom,
         0,
         0,
         dpr * cam.zoom,
         dpr * (w / 2 - cam.x * cam.zoom),
         dpr * (h / 2 - cam.y * cam.zoom),
-      );
+      ] as const;
+      ctx.setTransform(...world);
       const { cities: current, roads: currentRoads, districts: currentDistricts, selection: sel } = model.current;
       const now = new Date();
       t.lit = windowsLit(now, t.night);
-      terrain.current.draw(ctx, t, visible, cam.zoom, currentDistricts);
-      drawGrid(ctx, t, visible, cam.zoom);
-      for (const d of currentDistricts) {
-        drawDistrict(ctx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
-      }
       const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
       const selectedTask = selectedTaskNumber(sel);
       const routes = currentRoads.flatMap((road, index) => {
@@ -857,17 +886,45 @@ function useMapSurface(input: MapSurfaceInput) {
         return [{ road, index, touches, route: roadRoute(from.plot.pos, to.plot.pos) }];
       });
       const roadCells = new Set(routes.flatMap((r) => routeCells(r.route).map(cellKey)));
-      drawTerrainDetails(
-        ctx,
-        t,
-        visible,
+      // The ground moves only with the camera and the world; animation frames leave it be.
+      const groundCtx = groundRef.current?.getContext('2d');
+      const selectedDistrict = sel?.type === 'district' ? sel.id : '';
+      const key = [
+        cam.x,
+        cam.y,
         cam.zoom,
-        currentDistricts,
-        current.map((c) => c.plot.pos),
-        roadCells,
-        time,
-        animate,
-      );
+        w,
+        h,
+        dpr,
+        t.night,
+        t.ground,
+        selectedDistrict,
+        currentDistricts.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
+        current.map((c) => `${c.plot.pos.x},${c.plot.pos.y}`).join(';'),
+        roadCells.size,
+      ].join('|');
+      if (groundCtx && key !== groundKey.current) {
+        groundKey.current = key;
+        groundCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        groundCtx.fillStyle = t.ground;
+        groundCtx.fillRect(0, 0, w, h);
+        groundCtx.setTransform(...world);
+        terrain.current.draw(groundCtx, t, visible, cam.zoom, currentDistricts);
+        drawGrid(groundCtx, t, visible, cam.zoom);
+        for (const d of currentDistricts) {
+          drawDistrict(groundCtx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
+        }
+        details.current.draw(
+          groundCtx,
+          t,
+          visible,
+          cam.zoom,
+          currentDistricts,
+          current.map((c) => c.plot.pos),
+          roadCells,
+        );
+      }
+      if (animate) drawWaterGlints(ctx, visible, cam.zoom, currentDistricts, time);
       for (const city of current) {
         const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
         if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
@@ -912,18 +969,11 @@ function useMapSurface(input: MapSurfaceInput) {
           season: city.season,
           weather: city.weather,
         };
-        drawCity(ctx, t, drawable, time, animate && !city.hidden);
+        if (cam.zoom < CITY_BITMAP_ZOOM) bitmaps.current.draw(ctx, t, drawable, cam.zoom);
+        else drawCity(ctx, t, drawable, time, animate && !city.hidden);
         ctx.globalAlpha = 1;
       }
       roadsUpTo(Infinity);
-      const tint = daylightTint(now, t.night);
-      if (tint) {
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.globalCompositeOperation = tint.op;
-        ctx.fillStyle = tint.colour;
-        ctx.fillRect(0, 0, w, h);
-        ctx.globalCompositeOperation = 'source-over';
-      }
       drawMinimap();
     };
 
@@ -959,8 +1009,11 @@ function useMapSurface(input: MapSurfaceInput) {
         }
       }
       if (!ctx || !tokens.current) return;
-      if (dirty.current || animated()) {
+      // Far out, what still moves is a few cars: a redraw every few frames is plenty.
+      const idle = !dirty.current && camera.current.zoom < CITY_BITMAP_ZOOM && now - lastDrawn < 66;
+      if (!idle && (dirty.current || animated())) {
         draw(now);
+        lastDrawn = now;
         dirty.current = false;
       }
     };
@@ -1549,6 +1602,7 @@ function useMapSurface(input: MapSurfaceInput) {
 
   return {
     canvasRef,
+    groundRef,
     containerRef,
     probeRef,
     minimapRef,
@@ -1560,6 +1614,7 @@ function useMapSurface(input: MapSurfaceInput) {
     closeMenu: () => setMenu(null),
     linking,
     cancelLinking: () => setLinking(null),
+    night,
   };
 }
 

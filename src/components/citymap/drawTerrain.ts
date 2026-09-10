@@ -1,7 +1,7 @@
 import type { District } from '../../stores/cityMapStore';
 import { TH, TW, hash2, type Point } from './cityGeometry';
 import { tree, type MapTokens } from './drawCity';
-import { cellOf, groundColour, isWater, terrainCell, underCity, type TerrainCell } from './terrain';
+import { cellOf, groundColour, terrainCell, underCity, type TerrainCell } from './terrain';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -12,22 +12,116 @@ interface Visible {
   y1: number;
 }
 
-/** Cells per chunk side, in lattice coordinates. */
-const CHUNK = 16;
-const CACHE_CAP = 240;
 const ZOOM_BUCKETS = [0.5, 1, 2];
 
-function chunkBox(cs: number, ct: number): Visible {
-  const s0 = cs * CHUNK;
-  const t0 = ct * CHUNK;
-  const s1 = s0 + CHUNK - 1;
-  const t1 = t0 + CHUNK - 1;
+/** Cells per chunk side: fewer at a finer scale, so a chunk is about a megabyte whatever the zoom. */
+function chunkCells(scale: number): number {
+  return Math.round(16 / scale);
+}
+
+/**
+ * Chunk bitmaps, least recently used first out, held to a byte budget rather
+ * than a count: a 4K window zoomed right out shows a few hundred chunks, and a
+ * count cap below that repaints the edge of the view on every frame.
+ */
+class ChunkCache {
+  private entries = new Map<string, HTMLCanvasElement>();
+  private bytes = 0;
+  private fingerprint = '';
+
+  constructor(private budget: number) {}
+
+  /** Drops everything when the world it was painted for has changed. */
+  reset(fingerprint: string): void {
+    if (fingerprint === this.fingerprint) return;
+    this.entries.clear();
+    this.bytes = 0;
+    this.fingerprint = fingerprint;
+  }
+
+  /** A budget below what one view holds would evict and repaint on every frame; it grows to fit, with room to pan. */
+  fit(viewBytes: number): void {
+    this.budget = Math.max(this.budget, Math.ceil(viewBytes * 1.5));
+  }
+
+  get(key: string, paint: (canvas: HTMLCanvasElement) => void): HTMLCanvasElement {
+    let canvas = this.entries.get(key);
+    if (canvas) {
+      this.entries.delete(key);
+      this.entries.set(key, canvas);
+      return canvas;
+    }
+    canvas = document.createElement('canvas');
+    paint(canvas);
+    const size = canvas.width * canvas.height * 4;
+    while (this.bytes + size > this.budget && this.entries.size > 0) {
+      const oldest = this.entries.keys().next().value!;
+      const dropped = this.entries.get(oldest)!;
+      this.bytes -= dropped.width * dropped.height * 4;
+      this.entries.delete(oldest);
+    }
+    this.entries.set(key, canvas);
+    this.bytes += size;
+    return canvas;
+  }
+}
+
+/** The chunks a view touches, one chunk of margin on each side. */
+function chunkRange(visible: Visible, cells: number): { cs0: number; cs1: number; ct0: number; ct1: number } {
+  const a = cellOf({ x: visible.x0, y: visible.y0 });
+  const b = cellOf({ x: visible.x1, y: visible.y0 });
+  const c = cellOf({ x: visible.x0, y: visible.y1 });
+  const d = cellOf({ x: visible.x1, y: visible.y1 });
+  return {
+    cs0: Math.floor(Math.min(a.s, b.s, c.s, d.s) / cells) - 1,
+    cs1: Math.floor(Math.max(a.s, b.s, c.s, d.s) / cells) + 1,
+    ct0: Math.floor(Math.min(a.t, b.t, c.t, d.t) / cells) - 1,
+    ct1: Math.floor(Math.max(a.t, b.t, c.t, d.t) / cells) + 1,
+  };
+}
+
+/** The chunks of a view that are on screen, with what they cost. */
+function visibleChunks(
+  visible: Visible,
+  cells: number,
+  box: (cs: number, ct: number, cells: number) => Visible,
+  scale: number,
+) {
+  const { cs0, cs1, ct0, ct1 } = chunkRange(visible, cells);
+  const shown: { cs: number; ct: number; box: Visible }[] = [];
+  let bytes = 0;
+  for (let cs = cs0; cs <= cs1; cs++) {
+    for (let ct = ct0; ct <= ct1; ct++) {
+      const b = box(cs, ct, cells);
+      if (b.x1 < visible.x0 || b.x0 > visible.x1 || b.y1 < visible.y0 || b.y0 > visible.y1) continue;
+      shown.push({ cs, ct, box: b });
+      bytes += (b.x1 - b.x0) * scale * (b.y1 - b.y0) * scale * 4;
+    }
+  }
+  return { shown, bytes };
+}
+
+function bucketFor(zoom: number): number {
+  return ZOOM_BUCKETS.find((b) => b >= zoom) ?? ZOOM_BUCKETS[ZOOM_BUCKETS.length - 1];
+}
+
+function chunkBox(cs: number, ct: number, cells: number): Visible {
+  const s0 = cs * cells;
+  const t0 = ct * cells;
+  const s1 = s0 + cells - 1;
+  const t1 = t0 + cells - 1;
   return {
     x0: (s0 - t1) * TW - TW,
     x1: (s1 - t0) * TW + TW,
     y0: (s0 + t0) * TH - TH,
     y1: (s1 + t1) * TH + TH,
   };
+}
+
+/** Water outside any district, the kind that gets a sandy shore. */
+function openWater(s: number, t: number, zones: readonly District[]): boolean {
+  const cell = terrainCell(s, t, zones);
+  return cell.ground === 'water' && !cell.zone;
 }
 
 function diamond(ctx: Ctx, x: number, y: number): void {
@@ -61,18 +155,19 @@ function paintChunk(
   dots: boolean,
   t: MapTokens,
 ): void {
-  const box = chunkBox(cs, ct);
+  const cells = chunkCells(scale);
+  const box = chunkBox(cs, ct, cells);
   canvas.width = Math.ceil((box.x1 - box.x0) * scale);
   canvas.height = Math.ceil((box.y1 - box.y0) * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   ctx.setTransform(scale, 0, 0, scale, -box.x0 * scale, -box.y0 * scale);
 
-  const s0 = cs * CHUNK;
-  const t0 = ct * CHUNK;
+  const s0 = cs * cells;
+  const t0 = ct * cells;
   // One cell of overlap: a diamond's corners reach into the neighbouring chunk's box.
-  for (let s = s0 - 1; s <= s0 + CHUNK; s++) {
-    for (let u = t0 - 1; u <= t0 + CHUNK; u++) {
+  for (let s = s0 - 1; s <= s0 + cells; s++) {
+    for (let u = t0 - 1; u <= t0 + cells; u++) {
       const cell = terrainCell(s, u, zones);
       const x = (s - u) * TW;
       const y = (s + u) * TH;
@@ -80,7 +175,7 @@ function paintChunk(
       ctx.fillStyle = colour || t.water;
       diamond(ctx, x, y);
       ctx.fill();
-      if (cell.ground === 'water' && !cell.zone && EDGES.every((e) => isWater(s + e.ds, u + e.dt))) {
+      if (cell.ground === 'water' && !cell.zone && EDGES.every((e) => openWater(s + e.ds, u + e.dt, zones))) {
         ctx.fillStyle = 'rgba(10,30,60,0.14)';
         diamond(ctx, x, y);
         ctx.fill();
@@ -91,13 +186,13 @@ function paintChunk(
   }
   // Shores after the ground, so the sand lies over both sides of the edge; a district's water has its own banks.
   ctx.fillStyle = t.night ? 'rgba(200,190,150,0.28)' : 'rgba(255,243,205,0.7)';
-  for (let s = s0 - 1; s <= s0 + CHUNK; s++) {
-    for (let u = t0 - 1; u <= t0 + CHUNK; u++) {
-      if (!isWater(s, u) || terrainCell(s, u, zones).zone) continue;
+  for (let s = s0 - 1; s <= s0 + cells; s++) {
+    for (let u = t0 - 1; u <= t0 + cells; u++) {
+      if (!openWater(s, u, zones)) continue;
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       for (const e of EDGES) {
-        if (isWater(s + e.ds, u + e.dt)) continue;
+        if (openWater(s + e.ds, u + e.dt, zones)) continue;
         const a = e.a(x, y);
         const b = e.b(x, y);
         ctx.beginPath();
@@ -185,54 +280,32 @@ function zoneMarks(ctx: Ctx, cell: TerrainCell, x: number, y: number, s: number,
 
 /**
  * The ground, chunk by chunk, cached per zoom bucket. The cache is keyed on
- * the climates and the theme too: a city moving or changing its biome
- * recolours the land around it.
+ * the districts and the theme too: a district moving or changing its
+ * landscape recolours the land under it.
  */
 export class TerrainLayer {
-  private cache = new Map<string, HTMLCanvasElement>();
-  private fingerprint = '';
+  private cache = new ChunkCache(96 * 1024 * 1024);
 
   draw(ctx: Ctx, t: MapTokens, visible: Visible, zoom: number, zones: readonly District[]): void {
-    const fingerprint = [
-      t.night ? 'n' : 'd',
-      t.water,
-      zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
-    ].join('|');
-    if (fingerprint !== this.fingerprint) {
-      this.cache.clear();
-      this.fingerprint = fingerprint;
-    }
-    const scale = ZOOM_BUCKETS.find((b) => b >= zoom) ?? ZOOM_BUCKETS[ZOOM_BUCKETS.length - 1];
-    // Below the detail zoom the chunk carries the vegetation as dots; above it, the live pass draws it.
+    this.cache.reset(
+      [
+        t.night ? 'n' : 'd',
+        t.water,
+        zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
+      ].join('|'),
+    );
+    const scale = bucketFor(zoom);
+    // Below the detail zoom the chunk carries the vegetation as dots; above it, the detail layer draws it.
     const dots = zoom < DETAIL_ZOOM;
-    const a = cellOf({ x: visible.x0, y: visible.y0 });
-    const b = cellOf({ x: visible.x1, y: visible.y0 });
-    const c = cellOf({ x: visible.x0, y: visible.y1 });
-    const d = cellOf({ x: visible.x1, y: visible.y1 });
-    const cs0 = Math.floor(Math.min(a.s, b.s, c.s, d.s) / CHUNK) - 1;
-    const cs1 = Math.floor(Math.max(a.s, b.s, c.s, d.s) / CHUNK) + 1;
-    const ct0 = Math.floor(Math.min(a.t, b.t, c.t, d.t) / CHUNK) - 1;
-    const ct1 = Math.floor(Math.max(a.t, b.t, c.t, d.t) / CHUNK) + 1;
+    const { shown, bytes } = visibleChunks(visible, chunkCells(scale), chunkBox, scale);
+    this.cache.fit(bytes);
     ctx.save();
     ctx.imageSmoothingEnabled = true;
-    for (let cs = cs0; cs <= cs1; cs++) {
-      for (let ct = ct0; ct <= ct1; ct++) {
-        const box = chunkBox(cs, ct);
-        if (box.x1 < visible.x0 || box.x0 > visible.x1 || box.y1 < visible.y0 || box.y0 > visible.y1) continue;
-        const key = `${scale}:${dots ? 'dots' : 'bare'}:${cs}:${ct}`;
-        let canvas = this.cache.get(key);
-        if (!canvas) {
-          canvas = document.createElement('canvas');
-          paintChunk(canvas, cs, ct, scale, zones, dots, t);
-          if (this.cache.size >= CACHE_CAP) this.cache.delete(this.cache.keys().next().value!);
-          this.cache.set(key, canvas);
-        } else {
-          // Re-insert so the least recently used is what the cap drops.
-          this.cache.delete(key);
-          this.cache.set(key, canvas);
-        }
-        ctx.drawImage(canvas, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
-      }
+    for (const { cs, ct, box } of shown) {
+      const canvas = this.cache.get(`${scale}:${dots ? 'dots' : 'bare'}:${cs}:${ct}`, (c) =>
+        paintChunk(c, cs, ct, scale, zones, dots, t),
+      );
+      ctx.drawImage(canvas, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
     }
     ctx.restore();
   }
@@ -242,32 +315,36 @@ export class TerrainLayer {
 export const DETAIL_ZOOM = 0.75;
 const FINE_ZOOM = 1.2;
 
-/**
- * What stands on the ground: trees on forest cells, stones on rock, tufts and
- * flowers close up, a glint on the water. Drawn live, since trees keep clear
- * of cities and roads, which move.
- */
-export function drawTerrainDetails(
-  ctx: Ctx,
-  t: MapTokens,
-  visible: Visible,
-  zoom: number,
+/** A detail chunk reaches above its cells: a tree's crown stands well over the cell it grows on. */
+const DETAIL_REACH = 40;
+
+function detailBox(cs: number, ct: number, cells: number): Visible {
+  const box = chunkBox(cs, ct, cells);
+  return { x0: box.x0 - DETAIL_REACH, x1: box.x1 + DETAIL_REACH, y0: box.y0 - DETAIL_REACH, y1: box.y1 + TH };
+}
+
+function paintDetails(
+  canvas: HTMLCanvasElement,
+  cs: number,
+  ct: number,
+  scale: number,
+  fine: boolean,
   zones: readonly District[],
   cities: readonly Point[],
   roadCells: ReadonlySet<string>,
-  time: number,
-  animate: boolean,
+  t: MapTokens,
 ): void {
-  if (zoom < DETAIL_ZOOM) return;
-  const fine = zoom >= FINE_ZOOM;
-  const a = cellOf({ x: visible.x0, y: visible.y0 });
-  const b = cellOf({ x: visible.x1, y: visible.y0 });
-  const c = cellOf({ x: visible.x0, y: visible.y1 });
-  const d = cellOf({ x: visible.x1, y: visible.y1 });
-  const s0 = Math.min(a.s, b.s, c.s, d.s) - 1;
-  const s1 = Math.max(a.s, b.s, c.s, d.s) + 1;
-  const t0 = Math.min(a.t, b.t, c.t, d.t) - 1;
-  const t1 = Math.max(a.t, b.t, c.t, d.t) + 1;
+  const cells = chunkCells(scale);
+  const box = detailBox(cs, ct, cells);
+  canvas.width = Math.ceil((box.x1 - box.x0) * scale);
+  canvas.height = Math.ceil((box.y1 - box.y0) * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(scale, 0, 0, scale, -box.x0 * scale, -box.y0 * scale);
+  const s0 = cs * cells - 2;
+  const s1 = cs * cells + cells + 1;
+  const t0 = ct * cells - 2;
+  const t1 = ct * cells + cells + 1;
   // Back to front, so a tree stands in front of the one behind it.
   for (let sum = s0 + t0; sum <= s1 + t1; sum++) {
     for (let s = s0; s <= s1; s++) {
@@ -275,26 +352,14 @@ export function drawTerrainDetails(
       if (u < t0 || u > t1) continue;
       const x = (s - u) * TW;
       const y = (s + u) * TH;
-      if (x < visible.x0 - 40 || x > visible.x1 + 40 || y < visible.y0 - 40 || y > visible.y1 + 20) continue;
       const cell = terrainCell(s, u, zones);
+      if (cell.ground === 'water') continue;
+      if (roadCells.has(`${s},${u}`) || underCity({ x, y }, cities)) continue;
       const h = hash2(s, u);
       if (cell.zone) {
-        if (cell.ground !== 'water' && !roadCells.has(`${s},${u}`) && !underCity({ x, y }, cities)) {
-          zoneDetail(ctx, t, cell, x, y, s, u, h, fine, time, animate);
-        }
+        zoneDetail(ctx, t, cell, x, y, s, u, h, fine, 0, false);
         continue;
       }
-      if (cell.ground === 'water') {
-        if (animate && zoom >= 0.9 && h > 0.6) {
-          const twinkle = Math.sin(time / 900 + h * 40) > 0.94;
-          if (twinkle) {
-            ctx.fillStyle = 'rgba(255,255,255,0.8)';
-            ctx.fillRect(x + (h - 0.5) * 20, y + (hash2(u, s) - 0.5) * 8, 2, 1.2);
-          }
-        }
-        continue;
-      }
-      if (roadCells.has(`${s},${u}`) || underCity({ x, y }, cities)) continue;
       const jitterX = (hash2(s + 3, u) - 0.5) * TW * 0.9;
       const jitterY = (hash2(s, u + 3) - 0.5) * TH * 0.9;
       if (cell.ground === 'forest') {
@@ -306,6 +371,76 @@ export function drawTerrainDetails(
         if (h < 0.08) flowers(ctx, x + jitterX, y + jitterY, '#f2d36b');
         else if (h > 0.9) tuft(ctx, t, x + jitterX, y + jitterY, cell.ground === 'dry' ? '#a89f5e' : '#7ea86a');
       }
+    }
+  }
+}
+
+/**
+ * What stands on the ground: trees on forest cells, stones on rock, tufts and
+ * flowers close up, a district's own growth. Chunked and cached like the
+ * ground, keyed on the cities and roads too, since trees keep clear of them;
+ * a city being dragged repaints the chunks around it and nothing else.
+ */
+export class DetailLayer {
+  private cache = new ChunkCache(64 * 1024 * 1024);
+
+  draw(
+    ctx: Ctx,
+    t: MapTokens,
+    visible: Visible,
+    zoom: number,
+    zones: readonly District[],
+    cities: readonly Point[],
+    roadCells: ReadonlySet<string>,
+  ): void {
+    if (zoom < DETAIL_ZOOM) return;
+    const fine = zoom >= FINE_ZOOM;
+    this.cache.reset(
+      [
+        t.night ? 'n' : 'd',
+        zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
+        cities.map((c) => `${c.x},${c.y}`).join(';'),
+        [...roadCells].join(';'),
+      ].join('|'),
+    );
+    const scale = bucketFor(zoom);
+    const { shown, bytes } = visibleChunks(visible, chunkCells(scale), detailBox, scale);
+    this.cache.fit(bytes);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    for (const { cs, ct, box } of shown) {
+      const canvas = this.cache.get(`${scale}:${fine ? 'fine' : 'coarse'}:${cs}:${ct}`, (c) =>
+        paintDetails(c, cs, ct, scale, fine, zones, cities, roadCells, t),
+      );
+      ctx.drawImage(canvas, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+    }
+    ctx.restore();
+  }
+}
+
+/** A glint on the water now and then, the one thing on the ground that moves; close up only. */
+export function drawWaterGlints(
+  ctx: Ctx,
+  visible: Visible,
+  zoom: number,
+  zones: readonly District[],
+  time: number,
+): void {
+  if (zoom < FINE_ZOOM) return;
+  const a = cellOf({ x: visible.x0, y: visible.y0 });
+  const b = cellOf({ x: visible.x1, y: visible.y0 });
+  const c = cellOf({ x: visible.x0, y: visible.y1 });
+  const d = cellOf({ x: visible.x1, y: visible.y1 });
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  for (let s = Math.min(a.s, b.s, c.s, d.s); s <= Math.max(a.s, b.s, c.s, d.s); s++) {
+    for (let u = Math.min(a.t, b.t, c.t, d.t); u <= Math.max(a.t, b.t, c.t, d.t); u++) {
+      const h = hash2(s, u);
+      if (h <= 0.6 || Math.sin(time / 900 + h * 40) <= 0.94) continue;
+      if (terrainCell(s, u, zones).ground !== 'water') continue;
+      const x = (s - u) * TW;
+      const y = (s + u) * TH;
+      if (x < visible.x0 || x > visible.x1 || y < visible.y0 || y > visible.y1) continue;
+      ctx.fillRect(x + (h - 0.5) * 20, y + (hash2(u, s) - 0.5) * 8, 2, 1.2);
     }
   }
 }

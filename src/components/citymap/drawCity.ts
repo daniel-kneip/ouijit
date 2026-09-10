@@ -1217,10 +1217,17 @@ export function drawRoad(
   }
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  const inBand = (y: number, reach = 40) => !band || (y + reach >= band.y0 && y - reach < band.y1);
+  // Only the legs that touch the band: a long road crosses many bands, and re-stroking all of it for each adds up.
   const trace = () => {
     ctx.beginPath();
-    ctx.moveTo(route[0].x, route[0].y);
-    for (let i = 1; i < route.length; i++) ctx.lineTo(route[i].x, route[i].y);
+    for (let i = 1; i < route.length; i++) {
+      const a = route[i - 1];
+      const b = route[i];
+      if (band && (Math.max(a.y, b.y) + 8 < band.y0 || Math.min(a.y, b.y) - 8 >= band.y1)) continue;
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
   };
   ctx.strokeStyle = highlighted ? t.accent : t.night ? '#4b5450' : '#8d938c';
   ctx.lineWidth = 12;
@@ -1237,26 +1244,29 @@ export function drawRoad(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  drawBridges(ctx, t, route);
+  drawBridges(ctx, t, route, band);
 
   // Direction arrows painted on the asphalt, and a large one where the road arrives.
   const end = alongRoute(route, lengths, 1);
-  ctx.save();
-  ctx.translate(end.x - Math.cos(end.angle) * 12, end.y - Math.sin(end.angle) * 12);
-  ctx.rotate(end.angle);
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.beginPath();
-  ctx.moveTo(9, 0);
-  ctx.lineTo(-5, -6);
-  ctx.lineTo(-1, 0);
-  ctx.lineTo(-5, 6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  if (inBand(end.y, 12)) {
+    ctx.save();
+    ctx.translate(end.x - Math.cos(end.angle) * 12, end.y - Math.sin(end.angle) * 12);
+    ctx.rotate(end.angle);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(9, 0);
+    ctx.lineTo(-5, -6);
+    ctx.lineTo(-1, 0);
+    ctx.lineTo(-5, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
   const arrows = Math.max(2, Math.min(6, Math.floor(len / 120)));
   for (let k = 0; k < arrows; k++) {
     const at = alongRoute(route, lengths, (k + 0.5) / arrows);
+    if (!inBand(at.y, 8)) continue;
     ctx.save();
     ctx.translate(at.x, at.y);
     ctx.rotate(at.angle);
@@ -1271,18 +1281,22 @@ export function drawRoad(
 
   const start = alongRoute(route, lengths, 0);
   const startDir = alongRoute(route, lengths, Math.min(1, 26 / len));
-  drawSignpost(
-    ctx,
-    start.x + Math.cos(start.angle) * 26 - Math.sin(start.angle) * 16,
-    start.y + Math.sin(start.angle) * 26 + Math.cos(start.angle) * 16,
-    startDir.angle,
-    destination,
-  );
+  const postY = start.y + Math.sin(start.angle) * 26 + Math.cos(start.angle) * 16;
+  if (inBand(postY, 60)) {
+    drawSignpost(
+      ctx,
+      start.x + Math.cos(start.angle) * 26 - Math.sin(start.angle) * 16,
+      postY,
+      startDir.angle,
+      destination,
+    );
+  }
 
   const cars = Math.max(1, Math.min(4, Math.floor(len / 200)));
   for (let k = 0; k < cars; k++) {
     const phase = animate ? (time / (len * 14) + k / cars + seed * 0.37) % 1 : (k + 0.5) / cars;
     const at = alongRoute(route, lengths, phase);
+    if (!inBand(at.y, 10)) continue;
     ctx.save();
     ctx.translate(at.x, at.y);
     ctx.rotate(at.angle);
@@ -1307,11 +1321,29 @@ export function drawRoad(
 }
 
 /** Planks and railings over every cell of water on the route, each cell's stretch a little long so runs join. */
-function drawBridges(ctx: Ctx, t: MapTokens, route: readonly Point[]): void {
-  const cells = routeCells(route);
+const bridgeMemo = new Map<string, { cells: ReturnType<typeof routeCells>; wet: boolean[] }>();
+
+/** Which cells of a route are water, worked out once per route: the answer never changes for the same points. */
+function bridgeCells(route: readonly Point[]): { cells: ReturnType<typeof routeCells>; wet: boolean[] } {
+  const key = route.map((p) => `${p.x},${p.y}`).join('|');
+  let known = bridgeMemo.get(key);
+  if (!known) {
+    const cells = routeCells(route);
+    known = { cells, wet: cells.map((c) => isWater(c.s, c.t)) };
+    if (bridgeMemo.size > 2000) bridgeMemo.clear();
+    bridgeMemo.set(key, known);
+  }
+  return known;
+}
+
+function drawBridges(ctx: Ctx, t: MapTokens, route: readonly Point[], band?: { y0: number; y1: number }): void {
+  const { cells, wet } = bridgeCells(route);
+  if (!wet.includes(true)) return;
   for (let i = 0; i < cells.length; i++) {
     const c = cells[i];
-    if (!isWater(c.s, c.t)) continue;
+    if (!wet[i]) continue;
+    const cy0 = (c.s + c.t) * TH;
+    if (band && (cy0 + 30 < band.y0 || cy0 - 30 >= band.y1)) continue;
     const next = cells[i + 1] ?? cells[i - 1];
     const dir = next ? { s: Math.sign(next.s - c.s), t: Math.sign(next.t - c.t) } : { s: 1, t: 0 };
     if (!cells[i + 1] && cells[i - 1]) {
