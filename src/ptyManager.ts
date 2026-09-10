@@ -4,7 +4,7 @@ import type { PtyId, PtySpawnOptions, PtySpawnResult, SandboxProviderId } from '
 import type { WrapperSandboxProvider } from './sandbox/provider';
 import { generateId } from './utils/ids';
 import { getApiPort, clearHookStatus, clearAllHookStatuses } from './hookServer';
-import { getWrapperBinDir, getUserDataPath, getCliPath } from './paths';
+import { getWrapperBinDir, getUserDataPath, getCliPath, getCliReferencePath } from './paths';
 import { getShellIntegrationDir, resolveShellIntegration } from './shellIntegration';
 import { typedPush } from './ipc/helpers';
 import { getLogger } from './logger';
@@ -206,6 +206,7 @@ export async function spawnPty(
     const shellIntegrationDir = getShellIntegrationDir();
     finalEnv['OUIJIT_WRAPPER_DIR'] = wrapperBinDir;
     finalEnv['OUIJIT_SHELL_INTEGRATION_DIR'] = shellIntegrationDir;
+    finalEnv['OUIJIT_CLI_REFERENCE'] = getCliReferencePath();
 
     // Prepend wrapper bin dir so `claude` and `ouijit` resolve to our wrappers first
     finalEnv['PATH'] = `${wrapperBinDir}:${finalEnv['PATH'] || ''}`;

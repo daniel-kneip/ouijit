@@ -61,6 +61,7 @@ vi.mock('node:os', async (importOriginal) => {
 vi.mock('../paths', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../paths')>()),
   getWrapperBinDir: () => path.join(_testHomedir || os.homedir(), '.config', 'Ouijit', 'bin'),
+  getCliReferencePath: () => path.join(_testHomedir || os.homedir(), '.config', 'Ouijit', 'ouijit-cli-reference.md'),
 }));
 
 vi.mock('../ptyManager', () => ({
@@ -142,6 +143,24 @@ describe('CLI_REFERENCE', () => {
 
     // The anchoring rule a whole review fails on.
     expect(CLI_REFERENCE).toContain('ADDED line');
+  });
+
+  test('opens with the way of working the user expects, before the commands', () => {
+    const guide = CLI_REFERENCE.slice(0, CLI_REFERENCE.indexOf('# Ouijit CLI Reference'));
+    expect(guide).toContain('# Working in Ouijit');
+    for (const step of [
+      'ouijit terminal name',
+      'ouijit task current',
+      'ouijit task comments',
+      'ouijit task comment',
+      'in_review',
+      'ouijit task notes --text',
+      'ouijit task resolve-note',
+      'ouijit task create',
+    ]) {
+      expect(guide).toContain(step);
+    }
+    expect(CLI_REFERENCE).toContain('OUIJIT_CLI_REFERENCE');
   });
 
   test('documents the ouijit CLI and no other tool', () => {

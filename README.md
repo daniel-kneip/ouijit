@@ -90,7 +90,7 @@ To request support for another harness, [open an issue](https://github.com/ouiji
 
 ## CLI
 
-Every terminal Ouijit opens has the `ouijit` command on PATH, and the supported harnesses learn it automatically. So you shape the app by asking your agent: it can file follow-up tasks, move its own card, set up hooks, stage review comments, switch themes, or open panels beside itself. The CLI is what makes those requests work:
+Every terminal Ouijit opens has the `ouijit` command on PATH, and the supported harnesses learn it automatically: their system prompt gets a guide on how to work in Ouijit (name the terminal, read the ticket, comment when waiting, hand over to review, read the review notes) and the full CLI. Any other harness finds that guide at `$OUIJIT_CLI_REFERENCE` to pass along in its start hook, and `ouijit guide` prints it. So you shape the app by asking your agent: it can file follow-up tasks, move its own card, set up hooks, stage review comments, switch themes, or open panels beside itself. The CLI is what makes those requests work:
 
 ```bash
 # "file a task for the flaky login test"

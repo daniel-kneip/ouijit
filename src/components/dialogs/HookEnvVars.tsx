@@ -7,6 +7,7 @@ const ENV_VARS = [
   '$OUIJIT_TASK_BRANCH',
   '$OUIJIT_TASK_NAME',
   '$OUIJIT_TASK_DESCRIPTION',
+  '$OUIJIT_CLI_REFERENCE',
 ];
 
 /**
@@ -27,6 +28,13 @@ export function HookEnvVars() {
       <summary>Environment variables</summary>
       <p className="mt-2 mb-0 text-text-tertiary leading-snug">
         Ouijit sets these in the hook&apos;s shell. Reference one in your command, or click to copy.
+      </p>
+      <p className="mt-2 mb-0 text-text-tertiary leading-snug">
+        <code className="font-mono">$OUIJIT_CLI_REFERENCE</code> is the file that tells an agent how to work in Ouijit
+        and what the <code className="font-mono">ouijit</code> CLI can do. Claude Code, Codex, Pi, OpenCode and Kiro CLI
+        load it by themselves; give it to any other harness as its system prompt, for example{' '}
+        <code className="font-mono">--append-system-prompt-file &quot;$OUIJIT_CLI_REFERENCE&quot;</code> or{' '}
+        <code className="font-mono">&quot;$(cat &quot;$OUIJIT_CLI_REFERENCE&quot;)&quot;</code> inside the prompt.
       </p>
       <ul>
         {ENV_VARS.map((v) => (

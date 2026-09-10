@@ -19,6 +19,7 @@ import { registerPreviewCommands } from './commands/preview';
 import { registerThemeCommands } from './commands/theme';
 import { registerPrCommands } from './commands/pr';
 import { registerTerminalCommands } from './commands/terminal';
+import { registerGuideCommand } from './commands/guide';
 
 const program = new Command();
 
@@ -35,7 +36,8 @@ Examples:
   ouijit task set-status 5 in_review
   ouijit hook set start --name "Install" --command "npm install"
   ouijit tag add 5 bug
-  ouijit pr list`,
+  ouijit pr list
+  ouijit guide`,
   );
 
 function requireProject(): string {
@@ -55,6 +57,7 @@ registerTerminalCommands(program);
 registerMarkdownCommands(program);
 registerPreviewCommands(program);
 registerThemeCommands(program);
+registerGuideCommand(program);
 
 // Command actions are async; parse() would let an API rejection surface as an
 // uncaught error with a raw stack trace. parseAsync + a single catch turns any
