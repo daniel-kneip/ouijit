@@ -160,7 +160,12 @@ first, so the same task always lays out the same way.
 The renderer is a plain 2D canvas rather than React Flow nodes: a city is a
 few hundred small shapes with ambient animation, and the map should stay
 cheap with fifty cities on it. Labels, the sidebar and the inspector are DOM,
-so they stay legible at any zoom and keep keyboard access.
+so they stay legible at any zoom and keep keyboard access. What moves (cars,
+cranes, dust, clouds, halos) is painted on the canvas four times a second,
+not animated as DOM: every CSS-animated element is a compositor layer with a
+GPU surface of its own, a car's as large as its whole road, and a map of
+them ran the GPU process to gigabytes. The ground is a second canvas
+repainted only when the view changes.
 
 ## Kenney assets
 

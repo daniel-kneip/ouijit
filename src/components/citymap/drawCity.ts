@@ -637,6 +637,8 @@ function drawSite(
   site: DrawSite,
   slot: { i: number; j: number; wall: string; storeys: number },
   faded: boolean,
+  time: number,
+  animate: boolean,
 ): void {
   const { x: cx, y: cy } = cellCenter(slot.i, slot.j);
   const col = stateColor(t, site.state);
@@ -647,6 +649,19 @@ function drawSite(
   }
   const exited = site.state === 'exited';
   const needsYou = site.state === 'waiting' || site.state === 'error';
+  if (needsYou) {
+    const pulse = animate ? 0.5 + 0.5 * Math.sin(time / 420) : 0.7;
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.18 + 0.14 * pulse;
+    diamond(ctx, cx, cy, TW * 1.9, TH * 1.9);
+    ctx.fill();
+    ctx.globalAlpha = 0.55 + 0.35 * pulse;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    diamond(ctx, cx, cy, TW * 1.45, TH * 1.45);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   ctx.fillStyle = tone('#e3d3a3', exited ? 0.2 : 1, t.night ? -18 : 0);
   diamond(ctx, cx, cy, TW * 0.92, TH * 0.92);
   ctx.fill();
@@ -676,22 +691,48 @@ function drawSite(
   const mastBase = cy - CRANE.mastLift;
   const craneCol = exited ? t.exited : '#f2c14e';
   const topY = mastBase - CRANE.mastHeight;
-  // A working site's jib swings, which is CSS over the mast; the others stand still and are painted whole.
-  if (site.state === 'working') isoBox(ctx, t, mastX, mastBase, 2.6, 1.3, CRANE.mastHeight, craneCol);
-  else crane(ctx, t, mastX, mastBase, CRANE.mastHeight, CRANE.baseAngle, CRANE.hook, craneCol, slot.wall);
+  const swinging = site.state === 'working' && animate;
+  const angle = swinging ? CRANE.baseAngle + Math.sin(time / 2600) * CRANE.swing : CRANE.baseAngle;
+  const hookLen = swinging ? 14 + Math.sin(time / 1900) * 8 : CRANE.hook;
+  crane(ctx, t, mastX, mastBase, CRANE.mastHeight, angle, hookLen, craneCol, slot.wall);
 
-  if (site.state === 'waiting') {
+  if (site.state === 'working') {
+    const puffs = animate ? 3 : 1;
+    for (let k = 0; k < puffs; k++) {
+      const ph = animate ? (time / 1500 + k / 3) % 1 : 0.4;
+      ctx.fillStyle = `rgba(200,180,140,${(1 - ph) * 0.45})`;
+      ctx.beginPath();
+      ctx.arc(cx - 8 + k * 5, cy - 2 - ph * 18, 3 + ph * 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (site.state === 'waiting') {
+    const blink = animate ? 0.55 + 0.45 * Math.sin(time / 260) : 1;
     ctx.fillStyle = col;
-    ctx.globalAlpha = 0.18;
+    ctx.globalAlpha = 0.18 * blink;
     ctx.beginPath();
     ctx.arc(mastX, topY - 8, 12, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = blink;
     ctx.beginPath();
     ctx.arc(mastX, topY - 8, 4.2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+    const pulse = animate ? (time / 1400) % 1 : 0.4;
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = (1 - pulse) * 0.7;
+    ctx.lineWidth = 1.5;
+    diamond(ctx, cx, cy, TW * (0.9 + pulse * 0.6), TH * (0.9 + pulse * 0.6));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   } else if (site.state === 'error') {
-    const by = topY - 12;
+    for (let k = 0; k < 3; k++) {
+      const ph = animate ? (time / 1800 + k / 3) % 1 : k / 3;
+      ctx.fillStyle = `rgba(90,40,40,${(1 - ph) * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(cx - 6 + Math.sin(ph * 6) * 3, cy - 4 - ph * 26, 3 + ph * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const by = topY - 12 + (animate ? Math.sin(time / 500) * 1.5 : 0);
     ctx.fillStyle = col;
     ctx.beginPath();
     ctx.moveTo(mastX, by - 9);
@@ -704,12 +745,21 @@ function drawSite(
     ctx.fillRect(mastX - 1, by + 2, 2, 2);
   }
 
-  if (needsYou) drawPin(ctx, mastX, topY - 16, col, site.state === 'waiting' ? '!' : '×');
+  if (needsYou) drawPin(ctx, mastX, topY - 16, col, site.state === 'waiting' ? '!' : '×', time, animate);
 }
 
 /** A marker that stands above everything on the lot, so it reads at any zoom the city itself reads at. */
-function drawPin(ctx: Ctx, x: number, baseY: number, color: string, glyph: string): void {
-  const top = baseY - 34;
+function drawPin(
+  ctx: Ctx,
+  x: number,
+  baseY: number,
+  color: string,
+  glyph: string,
+  time: number,
+  animate: boolean,
+): void {
+  const bob = animate ? Math.sin(time / 380) * 2 : 0;
+  const top = baseY - 34 + bob;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -736,7 +786,8 @@ function drawPin(ctx: Ctx, x: number, baseY: number, color: string, glyph: strin
   ctx.textBaseline = 'alphabetic';
 }
 
-export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity): void {
+/** Painted a few times a second while `animate` is on; at `time` 0 and off, a still that any bitmap can keep. */
+export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, animate = false): void {
   const { cells, slots } = cityLayout(city.taskNumber);
   const faded = city.presence === 'settled';
   const blueprint = city.presence === 'blueprint';
@@ -818,7 +869,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity): void {
       continue;
     }
     if (site && here) {
-      drawSite(ctx, t, site, here.slot, faded);
+      drawSite(ctx, t, site, here.slot, faded, time, animate && !faded);
       continue;
     }
     const seed = hash2(city.taskNumber * 31 + cell.i, cell.j);
@@ -882,7 +933,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity): void {
     ctx.fill();
     ctx.globalAlpha = 1;
     flag(ctx, t, 0, 2, 44, t.review);
-    const bob = 0;
+    const bob = animate ? Math.sin(time / 700) * 2 : 0;
     ctx.strokeStyle = t.review;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -906,13 +957,72 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity): void {
     ctx.fillRect(-8, -26, 12, 1.5);
     ctx.fillRect(-8, -22, 8, 1.5);
   }
+  if (!blueprint && !faded) drawWeather(ctx, city.weather, city.taskNumber, time, animate);
   ctx.restore();
 }
 
-export function drawSelectionRing(ctx: Ctx, t: MapTokens, pos: Point, zoom: number): void {
+/** Clouds drift over a city at work; a city with a problem sits under rain. */
+function drawWeather(ctx: Ctx, weather: Weather, seed: number, time: number, animate: boolean): void {
+  if (weather === 'clear') return;
+  const rain = weather === 'rain';
+  const drift = animate ? ((time / 90 + seed * 37) % (CITY_HALF_W * 2 + 120)) - CITY_HALF_W - 60 : -20;
+  const y = -CITY_HALF_H - 62;
+  const clouds = rain
+    ? [{ x: drift, s: 1.15 }]
+    : [
+        { x: drift, s: 1 },
+        { x: drift - 90, s: 0.7 },
+      ];
+  for (const c of clouds) {
+    ctx.fillStyle = rain ? 'rgba(88,96,108,0.92)' : 'rgba(255,255,255,0.85)';
+    for (const [dx, dy, r] of [
+      [0, 0, 11],
+      [-12, 4, 8],
+      [13, 3, 9],
+      [4, -6, 8],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(c.x + dx * c.s, y + dy * c.s, r * c.s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = rain ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.07)';
+    ctx.beginPath();
+    ctx.ellipse(c.x, -6, 26 * c.s, 13 * c.s, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (!rain) return;
+  const cx = clouds[0].x;
+  ctx.strokeStyle = 'rgba(120,150,200,0.7)';
+  ctx.lineWidth = 1;
+  const fall = animate ? (time / 12) % 14 : 6;
+  for (let k = -2; k <= 2; k++) {
+    const x = cx + k * 8;
+    for (let d = 0; d < 3; d++) {
+      const yy = y + 14 + ((fall + d * 14 + k * 3) % 42);
+      ctx.beginPath();
+      ctx.moveTo(x + 1.5, yy);
+      ctx.lineTo(x, yy + 6);
+      ctx.stroke();
+    }
+  }
+  const flash = animate && (time + seed * 700) % 4200 < 110;
+  if (flash) {
+    ctx.strokeStyle = '#ffe98a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + 4, y + 10);
+    ctx.lineTo(cx - 2, y + 26);
+    ctx.lineTo(cx + 3, y + 26);
+    ctx.lineTo(cx - 4, y + 44);
+    ctx.stroke();
+  }
+}
+
+export function drawSelectionRing(ctx: Ctx, t: MapTokens, pos: Point, zoom: number, time = 0, animate = false): void {
   ctx.save();
   ctx.translate(pos.x, pos.y);
   ctx.setLineDash([8, 6]);
+  ctx.lineDashOffset = animate ? -(time / 40) % 14 : 0;
   ctx.strokeStyle = t.accent;
   ctx.lineWidth = 2 / zoom;
   diamond(ctx, 0, 0, CITY_HALF_W + 12, CITY_HALF_H + 8);
@@ -1086,6 +1196,12 @@ export function routeMidpoint(route: readonly Point[]): Point {
  * every city's buildings. `band` limits the drawing to the rows between two
  * cities' depths, so a caller paints the road slice by slice as it goes.
  */
+/** Where the cars are: the clock they drive by, and which road this is, so two roads' cars are not in step. */
+export interface RoadMotion {
+  time: number;
+  seed: number;
+}
+
 export function drawRoad(
   ctx: Ctx,
   t: MapTokens,
@@ -1093,6 +1209,7 @@ export function drawRoad(
   highlighted: boolean,
   destination: string,
   band?: { y0: number; y1: number },
+  motion?: RoadMotion,
 ): void {
   if (route.length < 2) return;
   const lengths: number[] = [];
@@ -1185,6 +1302,33 @@ export function drawRoad(
       startDir.angle,
       destination,
     );
+  }
+
+  const { count, durationMs } = carsFor(route);
+  const seed = motion?.seed ?? 0;
+  for (let k = 0; k < count; k++) {
+    const phase = motion ? (motion.time / durationMs + k / count + seed * 0.37) % 1 : (k + 0.5) / count;
+    const at = alongRoute(route, lengths, phase);
+    if (!inBand(at.y, 10)) continue;
+    ctx.save();
+    ctx.translate(at.x, at.y);
+    ctx.rotate(at.angle);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.roundRect(-6, -2.5, 12, 6, 2);
+    ctx.fill();
+    ctx.fillStyle = CAR_COLOURS[(seed + k) % CAR_COLOURS.length];
+    ctx.beginPath();
+    ctx.roundRect(-6, -3.5, 12, 6, 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(-3, -2.5, 5, 4, 1);
+    ctx.fill();
+    ctx.fillStyle = '#fff6c2';
+    ctx.fillRect(5, -3, 1.5, 2);
+    ctx.fillRect(5, 1, 1.5, 2);
+    ctx.restore();
   }
 
   ctx.restore();

@@ -87,9 +87,6 @@ import {
   drawRoad,
   roadSpan,
   routeMidpoint,
-  carsFor,
-  CAR_COLOURS,
-  CRANE,
   drawSelectionRing,
   withAlpha,
   type DrawCity,
@@ -906,7 +903,7 @@ function useMapSurface(input: MapSurfaceInput) {
     };
 
     let frame = 0;
-    const draw = () => {
+    const draw = (time: number) => {
       const t = tokens.current;
       const { w, h, dpr } = size.current;
       const cam = camera.current;
@@ -981,11 +978,11 @@ function useMapSurface(input: MapSurfaceInput) {
         const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
         if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
       }
-      const roadDraws = routes.map(({ road, touches, route }) => {
+      const roadDraws = routes.map(({ road, touches, route }, index) => {
         const span = roadSpan(route);
         return (band: { y0: number; y1: number }) => {
           if (span.y1 < band.y0 || span.y0 >= band.y1) return;
-          drawRoad(ctx, t, route, touches, `#${road.to}`, band);
+          drawRoad(ctx, t, route, touches, `#${road.to}`, band, moving ? { time, seed: index } : undefined);
         };
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
@@ -1008,7 +1005,7 @@ function useMapSurface(input: MapSurfaceInput) {
           continue;
         if (city.hidden) ctx.globalAlpha = 0.22;
         if (selectedTask === city.task.taskNumber || linkingRef.current === city.task.taskNumber) {
-          drawSelectionRing(ctx, t, p, cam.zoom);
+          drawSelectionRing(ctx, t, p, cam.zoom, time, moving);
         }
         const drawable: DrawCity = {
           taskNumber: city.task.taskNumber,
@@ -1022,13 +1019,15 @@ function useMapSurface(input: MapSurfaceInput) {
           weather: city.weather,
         };
         if (cam.zoom < CITY_BITMAP_ZOOM) bitmaps.current.draw(ctx, t, drawable, cam.zoom);
-        else drawCity(ctx, t, drawable);
+        else drawCity(ctx, t, drawable, time, moving && !city.hidden);
         ctx.globalAlpha = 1;
       }
       roadsUpTo(Infinity);
       drawMinimap();
     };
 
+    const moving = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let lastMotion = 0;
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop);
       const tw = tween.current;
@@ -1048,10 +1047,14 @@ function useMapSurface(input: MapSurfaceInput) {
         }
       }
       if (!ctx || !tokens.current) return;
-      // Nothing on the canvas moves by itself: everything animated is CSS in
-      // the layer above. A frame is drawn when something changed or the camera flies.
-      if (dirty.current) {
-        draw();
+      // The moving things (cars, cranes, dust, clouds, halos) are painted here a
+      // few times a second rather than animated as DOM: every CSS-animated element
+      // is a compositor layer with a GPU surface of its own, and a map of them
+      // ran to gigabytes. A frame is drawn on that tick, or when something changed.
+      const tick = moving && now - lastMotion >= MOTION_INTERVAL;
+      if (dirty.current || tick) {
+        if (tick) lastMotion = now;
+        draw(now);
         dirty.current = false;
       }
     };
@@ -1467,122 +1470,6 @@ function useMapSurface(input: MapSurfaceInput) {
     const nodes: React.ReactNode[] = [];
     const selectedTask = selectedTaskNumber(selection);
     const byNumber = new Map(cities.map((c) => [c.task.taskNumber, c]));
-    // Cars drive on a CSS motion path in a layer scaled to the map, so they
-    // move without a frame of JavaScript; the layer follows the camera.
-    const origin = toScreen({ x: 0, y: 0 });
-    const cars: React.ReactNode[] = [];
-    roads.forEach((road, index) => {
-      const from = byNumber.get(road.from);
-      const to = byNumber.get(road.to);
-      if (!from || !to || from.hidden || to.hidden) return;
-      const route = roadRoute(from.plot.pos, to.plot.pos);
-      if (route.length < 2) return;
-      const { count, durationMs } = carsFor(route);
-      const path = route.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-      for (let k = 0; k < count; k++) {
-        cars.push(
-          <span
-            key={`${road.id}-${k}`}
-            className="city-car"
-            data-testid={`city-car-${road.id}`}
-            style={{
-              offsetPath: `path('${path}')`,
-              animationDuration: `${durationMs}ms`,
-              animationDelay: `${-Math.round(durationMs * ((k / count + index * 0.37) % 1))}ms`,
-              background: CAR_COLOURS[(index + k) % CAR_COLOURS.length],
-            }}
-          />,
-        );
-      }
-    });
-    // Everything that moves on a city is CSS too: the swinging jib and dust of a
-    // working site, the halo and smoke of one that needs the user, the weather.
-    const fx: React.ReactNode[] = [];
-    const near = zoom >= CITY_BITMAP_ZOOM;
-    for (const city of cities) {
-      if (city.hidden || city.task.status === 'done' || city.task.status === 'todo') continue;
-      const { slots } = cityLayout(city.task.taskNumber);
-      const base = city.plot.pos;
-      for (const site of city.sites) {
-        const slot = slots[site.slot];
-        if (!slot) continue;
-        const c = cellCenter(slot.i, slot.j);
-        const x = base.x + c.x;
-        const y = base.y + c.y;
-        if (site.state === 'working') {
-          const top = y - CRANE.mastLift - CRANE.mastHeight;
-          fx.push(
-            <div
-              key={`crane-${site.ptyId}`}
-              className="city-fx city-crane-arm"
-              data-testid={`city-fx-crane-${site.ptyId}`}
-              style={{ left: x, top }}
-            >
-              <span className="city-crane-jib" />
-              <span className="city-crane-hook">
-                <span className="city-crane-line" />
-                <span className="city-crane-load" style={{ background: slot.wall }} />
-              </span>
-            </div>,
-          );
-          if (near) fx.push(<Puffs key={`dust-${site.ptyId}`} x={x - 8} y={y - 2} kind="dust" />);
-        } else if (site.state === 'waiting' || site.state === 'error') {
-          fx.push(
-            <span
-              key={`halo-${site.ptyId}`}
-              className="city-fx city-halo"
-              data-testid={`city-fx-halo-${site.ptyId}`}
-              style={{ left: x, top: y, background: SITE_COLOR[site.state] }}
-            />,
-          );
-          if (site.state === 'error' && near)
-            fx.push(<Puffs key={`smoke-${site.ptyId}`} x={x - 6} y={y - 4} kind="smoke" />);
-        }
-      }
-      if (city.weather !== 'clear') {
-        const rain = city.weather === 'rain';
-        const top = base.y - CITY_HALF_H - 62;
-        fx.push(
-          <span
-            key={`cloud-${city.task.taskNumber}`}
-            className={`city-fx city-cloud ${rain ? 'city-cloud-rain' : ''}`}
-            data-testid={`city-fx-${city.weather}-${city.task.taskNumber}`}
-            style={{ left: base.x, top, animationDelay: `${-(city.task.taskNumber * 3700) % 33000}ms` }}
-          >
-            {rain && near && <span className="city-rain" />}
-            {rain && (
-              <span
-                className="city-lightning"
-                style={{ animationDelay: `${-(city.task.taskNumber * 700) % 4200}ms` }}
-              />
-            )}
-          </span>,
-        );
-        if (!rain) {
-          fx.push(
-            <span
-              key={`cloud2-${city.task.taskNumber}`}
-              className="city-fx city-cloud city-cloud-small"
-              style={{
-                left: base.x - 90,
-                top: top + 4,
-                animationDelay: `${-(city.task.taskNumber * 3700 + 9000) % 33000}ms`,
-              }}
-            />,
-          );
-        }
-      }
-    }
-    nodes.push(
-      <div
-        key="world"
-        className="absolute left-0 top-0"
-        style={{ transform: `translate(${origin.x}px, ${origin.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
-      >
-        {cars}
-        {fx}
-      </div>,
-    );
     for (const district of districts) {
       const p = toScreen(districtCorners(district)[0]);
       const selected = selection?.type === 'district' && selection.id === district.id;
@@ -1719,11 +1606,7 @@ function useMapSurface(input: MapSurfaceInput) {
             }}
             onContextMenu={(e) => onContextMenu(e, { type: 'site', city, site })}
           >
-            {alert ? (
-              <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
-            ) : (
-              <SiteDot state={site.state} />
-            )}
+            {alert ? <span className="inline-block w-2 h-2 rounded-full bg-white" /> : <SiteDot state={site.state} />}
             <span className={site.state === 'exited' ? 'text-text-tertiary' : alert ? '' : 'text-text-primary'}>
               {site.label}
             </span>
@@ -1815,21 +1698,6 @@ function SiteDot({ state, className = '' }: { state: SiteState; className?: stri
       className={`inline-block w-2 h-2 rounded-full shrink-0 ${className}`}
       style={{ background: SITE_COLOR[state] }}
     />
-  );
-}
-
-/** Three puffs rising and thinning in turn: dust off a site at work, smoke off one with a problem. */
-function Puffs({ x, y, kind }: { x: number; y: number; kind: 'dust' | 'smoke' }) {
-  return (
-    <span className="city-fx" style={{ left: x, top: y }} data-testid={`city-fx-${kind}`}>
-      {[0, 1, 2].map((k) => (
-        <span
-          key={k}
-          className={`city-puff city-puff-${kind}`}
-          style={{ left: k * 5, animationDelay: `${-k * 500}ms` }}
-        />
-      ))}
-    </span>
   );
 }
 
@@ -2128,6 +1996,9 @@ function AttentionRow({
     </div>
   );
 }
+
+/** Four frames a second: motion the eye reads as such, at a cost the CPU does not notice. */
+const MOTION_INTERVAL = 250;
 
 const INSPECTOR_CLASS = 'flex flex-col h-full min-h-0';
 const NAME_INPUT_CLASS =
