@@ -160,12 +160,25 @@ first, so the same task always lays out the same way.
 The renderer is a plain 2D canvas rather than React Flow nodes: a city is a
 few hundred small shapes with ambient animation, and the map should stay
 cheap with fifty cities on it. Labels, the sidebar and the inspector are DOM,
-so they stay legible at any zoom and keep keyboard access. What moves (cars,
-cranes, dust, clouds, halos) is painted on the canvas four times a second,
+so they stay legible at any zoom and keep keyboard access. What moves
+(cranes, dust, clouds, halos, the selection ring) is painted on the canvas,
 not animated as DOM: every CSS-animated element is a compositor layer with a
-GPU surface of its own, a car's as large as its whole road, and a map of
-them ran the GPU process to gigabytes. The ground is a second canvas
-repainted only when the view changes.
+GPU surface of its own, and a map of them ran the GPU process to gigabytes.
+
+A city moves while an agent is at work on it and is otherwise still, so the
+map reads as calm and a motion frame stays small. `motionAreas` collects the
+cities on screen with a working, waiting or failing site, plus the selected
+one for its travelling dashes, pads each by `CITY_MOTION_REACH` and hands
+back those rectangles; the frame clears and clips to them and draws what they
+touch in the usual order, so the depth sorting still holds. Past half the
+view it repaints the scene instead, below `CITY_BITMAP_ZOOM` — where a city
+is a stamp and its crane a pixel — nothing moves at all, and with nothing
+stirring no frame is drawn. The ground stays a second canvas, repainted only
+when the view changes.
+
+The loop then times its own draws and spends at most `MOTION_BUDGET` of the
+clock on them: a cheap scene animates at 30 frames a second, an expensive one
+slows down rather than taking the machine with it.
 
 ## Kenney assets
 

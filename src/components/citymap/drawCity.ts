@@ -933,15 +933,16 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
     ctx.fill();
     ctx.globalAlpha = 1;
     flag(ctx, t, 0, 2, 44, t.review);
-    const bob = animate ? Math.sin(time / 700) * 2 : 0;
+    // The magnifier sits still: a city moves while an agent is at work on it, and a
+    // review waits for a person. It also keeps the city out of the motion frames.
     ctx.strokeStyle = t.review;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(14, -52 + bob, 5, 0, Math.PI * 2);
+    ctx.arc(14, -52, 5, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(18, -48 + bob);
-    ctx.lineTo(23, -43 + bob);
+    ctx.moveTo(18, -48);
+    ctx.lineTo(23, -43);
     ctx.stroke();
   } else if (city.presence === 'settled') {
     flag(ctx, t, 0, 2, 36, t.done);
@@ -960,6 +961,18 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
   if (!blueprint && !faded) drawWeather(ctx, city.weather, city.taskNumber, time, animate);
   ctx.restore();
 }
+
+/**
+ * How far a city's moving parts reach from its centre, so a caller can repaint just
+ * that much of the map: the crane and its pin stand above, the trailing cloud drifts
+ * a good way past the left edge of the lot.
+ */
+export const CITY_MOTION_REACH = {
+  left: CITY_HALF_W + 190,
+  right: CITY_HALF_W + 110,
+  top: CITY_HALF_H + 140,
+  bottom: CITY_HALF_H + 24,
+};
 
 /** Clouds drift over a city at work; a city with a problem sits under rain. */
 function drawWeather(ctx: Ctx, weather: Weather, seed: number, time: number, animate: boolean): void {
@@ -1130,21 +1143,6 @@ export function drawDistrict(ctx: Ctx, t: MapTokens, d: DrawDistrict, selected: 
   }
 }
 
-/** Where a straight road leaves a city: on the edge of its ground diamond. */
-export const CAR_COLOURS = ['#e0524d', '#3f7fd8', '#f2b134', '#3fa66b', '#f0f0f0', '#7a5cc9'];
-
-/** How many cars a road carries and how long one takes to drive it; the same speed on every road. */
-export function carsFor(route: readonly Point[]): { count: number; durationMs: number } {
-  const len = routeLength(route);
-  return { count: Math.max(1, Math.min(4, Math.floor(len / 200))), durationMs: Math.round(len * 14) };
-}
-
-export function routeLength(route: readonly Point[]): number {
-  let total = 0;
-  for (let i = 1; i < route.length; i++) total += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
-  return total;
-}
-
 /** The rows of the map a road touches, signpost included, so a caller can skip the bands it is not in. */
 export function roadSpan(route: readonly Point[]): { y0: number; y1: number } {
   let y0 = Infinity;
@@ -1196,12 +1194,6 @@ export function routeMidpoint(route: readonly Point[]): Point {
  * every city's buildings. `band` limits the drawing to the rows between two
  * cities' depths, so a caller paints the road slice by slice as it goes.
  */
-/** Where the cars are: the clock they drive by, and which road this is, so two roads' cars are not in step. */
-export interface RoadMotion {
-  time: number;
-  seed: number;
-}
-
 export function drawRoad(
   ctx: Ctx,
   t: MapTokens,
@@ -1209,7 +1201,6 @@ export function drawRoad(
   highlighted: boolean,
   destination: string,
   band?: { y0: number; y1: number },
-  motion?: RoadMotion,
 ): void {
   if (route.length < 2) return;
   const lengths: number[] = [];
@@ -1302,33 +1293,6 @@ export function drawRoad(
       startDir.angle,
       destination,
     );
-  }
-
-  const { count, durationMs } = carsFor(route);
-  const seed = motion?.seed ?? 0;
-  for (let k = 0; k < count; k++) {
-    const phase = motion ? (motion.time / durationMs + k / count + seed * 0.37) % 1 : (k + 0.5) / count;
-    const at = alongRoute(route, lengths, phase);
-    if (!inBand(at.y, 10)) continue;
-    ctx.save();
-    ctx.translate(at.x, at.y);
-    ctx.rotate(at.angle);
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.roundRect(-6, -2.5, 12, 6, 2);
-    ctx.fill();
-    ctx.fillStyle = CAR_COLOURS[(seed + k) % CAR_COLOURS.length];
-    ctx.beginPath();
-    ctx.roundRect(-6, -3.5, 12, 6, 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.roundRect(-3, -2.5, 5, 4, 1);
-    ctx.fill();
-    ctx.fillStyle = '#fff6c2';
-    ctx.fillRect(5, -3, 1.5, 2);
-    ctx.fillRect(5, 1, 1.5, 2);
-    ctx.restore();
   }
 
   ctx.restore();

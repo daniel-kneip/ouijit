@@ -79,6 +79,7 @@ import {
   WEATHER_LABEL,
 } from './cityGeometry';
 import {
+  CITY_MOTION_REACH,
   districtColor,
   drawCity,
   drawDistrict,
@@ -94,6 +95,7 @@ import {
 } from './drawCity';
 import { DetailLayer, TerrainLayer } from './drawTerrain';
 import { CITY_BITMAP_ZOOM, CityBitmaps } from './cityLod';
+import { type Area, motionAreas } from './motionAreas';
 import { HarnessUsageBar } from './HarnessUsageBar';
 import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
 
@@ -732,7 +734,7 @@ function useMapSurface(input: MapSurfaceInput) {
 
   useEffect(() => {
     dirty.current = true;
-  }, [cities, roads, districts, selection]);
+  }, [cities, roads, districts, selection, linking]);
 
   useEffect(() => {
     if (linking == null) return;
@@ -903,12 +905,11 @@ function useMapSurface(input: MapSurfaceInput) {
     };
 
     let frame = 0;
-    const draw = (time: number) => {
+    /** `patches` limits the frame to the parts of the world that move; without it the scene is repainted. */
+    const draw = (time: number, patches?: readonly Area[]) => {
       const t = tokens.current;
       const { w, h, dpr } = size.current;
       const cam = camera.current;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
       const tl = toWorld(0, 0);
       const br = toWorld(w, h);
       const visible = { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y };
@@ -920,10 +921,46 @@ function useMapSurface(input: MapSurfaceInput) {
         dpr * (w / 2 - cam.x * cam.zoom),
         dpr * (h / 2 - cam.y * cam.zoom),
       ] as const;
-      ctx.setTransform(...world);
       const { cities: current, roads: currentRoads, districts: currentDistricts, selection: sel } = model.current;
       const now = new Date();
-      t.lit = windowsLit(now, t.night);
+      const lit = windowsLit(now, t.night);
+      // A patch has to land on whole device pixels: cut one in half and the clip lets in
+      // a fraction of what is redrawn while the clear takes all of it, and the seam shows.
+      const snap = (a: Area): Area => {
+        const dx = (x: number) => dpr * (cam.zoom * (x - cam.x) + w / 2);
+        const dy = (y: number) => dpr * (cam.zoom * (y - cam.y) + h / 2);
+        const wx = (x: number) => (x / dpr - w / 2) / cam.zoom + cam.x;
+        const wy = (y: number) => (y / dpr - h / 2) / cam.zoom + cam.y;
+        return {
+          x0: wx(Math.floor(dx(a.x0))),
+          y0: wy(Math.floor(dy(a.y0))),
+          x1: wx(Math.ceil(dx(a.x1))),
+          y1: wy(Math.ceil(dy(a.y1))),
+        };
+      };
+      // Windows come on at the hour, over the whole map rather than the parts of it that move.
+      const partial = patches && lit === t.lit;
+      const areas = partial ? patches.map(snap) : [visible];
+      t.lit = lit;
+      if (partial) {
+        ctx.setTransform(...world);
+        ctx.save();
+        ctx.beginPath();
+        for (const a of areas) {
+          ctx.clearRect(a.x0, a.y0, a.x1 - a.x0, a.y1 - a.y0);
+          ctx.rect(a.x0, a.y0, a.x1 - a.x0, a.y1 - a.y0);
+        }
+        // What the patches touch is drawn again in the order it always is, so a crane still
+        // passes behind the city in front of it; the clip holds it inside the parts redrawn.
+        ctx.clip();
+      } else {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        ctx.setTransform(...world);
+      }
+      const touched = (x0: number, y0: number, x1: number, y1: number) =>
+        areas.some((a) => x1 >= a.x0 && x0 <= a.x1 && y1 >= a.y0 && y0 <= a.y1);
+      const animate = moving && cam.zoom >= CITY_BITMAP_ZOOM;
       const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
       const selectedTask = selectedTaskNumber(sel);
       const routes = currentRoads.flatMap((road) => {
@@ -976,13 +1013,18 @@ function useMapSurface(input: MapSurfaceInput) {
       }
       for (const city of current) {
         const parent = city.task.parentTaskNumber != null ? byNumber.get(city.task.parentTaskNumber) : undefined;
-        if (parent) drawPath(ctx, t, parent.plot.pos, city.plot.pos);
+        if (!parent) continue;
+        const a = parent.plot.pos;
+        const b = city.plot.pos;
+        if (!touched(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y))) continue;
+        drawPath(ctx, t, a, b);
       }
-      const roadDraws = routes.map(({ road, touches, route }, index) => {
+      const roadDraws = routes.map(({ road, touches, route }) => {
         const span = roadSpan(route);
         return (band: { y0: number; y1: number }) => {
           if (span.y1 < band.y0 || span.y0 >= band.y1) return;
-          drawRoad(ctx, t, route, touches, `#${road.to}`, band, moving ? { time, seed: index } : undefined);
+          if (!touched(-Infinity, Math.max(span.y0, band.y0), Infinity, Math.min(span.y1, band.y1))) return;
+          drawRoad(ctx, t, route, touches, `#${road.to}`, band);
         };
       });
       const ordered = [...current].sort((a, b) => a.plot.pos.y - b.plot.pos.y);
@@ -1000,12 +1042,18 @@ function useMapSurface(input: MapSurfaceInput) {
           p.x + CITY_HALF_W < tl.x - 60 ||
           p.x - CITY_HALF_W > br.x + 60 ||
           p.y + CITY_HALF_H < tl.y - 120 ||
-          p.y - CITY_HALF_H > br.y + 100
+          p.y - CITY_HALF_H > br.y + 100 ||
+          !touched(
+            p.x - CITY_MOTION_REACH.left,
+            p.y - CITY_MOTION_REACH.top,
+            p.x + CITY_MOTION_REACH.right,
+            p.y + CITY_MOTION_REACH.bottom,
+          )
         )
           continue;
         if (city.hidden) ctx.globalAlpha = 0.22;
         if (selectedTask === city.task.taskNumber || linkingRef.current === city.task.taskNumber) {
-          drawSelectionRing(ctx, t, p, cam.zoom, time, moving);
+          drawSelectionRing(ctx, t, p, cam.zoom, time, animate);
         }
         const drawable: DrawCity = {
           taskNumber: city.task.taskNumber,
@@ -1019,15 +1067,41 @@ function useMapSurface(input: MapSurfaceInput) {
           weather: city.weather,
         };
         if (cam.zoom < CITY_BITMAP_ZOOM) bitmaps.current.draw(ctx, t, drawable, cam.zoom);
-        else drawCity(ctx, t, drawable, time, moving && !city.hidden);
+        else drawCity(ctx, t, drawable, time, animate && !city.hidden);
         ctx.globalAlpha = 1;
       }
       roadsUpTo(Infinity);
+      if (partial) {
+        ctx.restore();
+        return;
+      }
       drawMinimap();
     };
 
     const moving = !matchMedia('(prefers-reduced-motion: reduce)').matches;
     let lastMotion = 0;
+    let interval = MOTION_MIN_INTERVAL;
+    let cost = 0;
+    const stirring = (): Area[] | null => {
+      const { w, h } = size.current;
+      const { cities: current, selection: sel } = model.current;
+      const tl = toWorld(0, 0);
+      const br = toWorld(w, h);
+      const ringed = new Set<number>();
+      const selected = selectedTaskNumber(sel);
+      if (selected != null) ringed.add(selected);
+      if (linkingRef.current != null) ringed.add(linkingRef.current);
+      return motionAreas(
+        current.map((city) => ({
+          taskNumber: city.task.taskNumber,
+          pos: city.plot.pos,
+          hidden: city.hidden,
+          states: city.sites.map((site) => site.state),
+        })),
+        { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y },
+        ringed,
+      );
+    };
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop);
       const tw = tween.current;
@@ -1047,16 +1121,22 @@ function useMapSurface(input: MapSurfaceInput) {
         }
       }
       if (!ctx || !tokens.current) return;
-      // The moving things (cars, cranes, dust, clouds, halos) are painted here a
-      // few times a second rather than animated as DOM: every CSS-animated element
-      // is a compositor layer with a GPU surface of its own, and a map of them
-      // ran to gigabytes. A frame is drawn on that tick, or when something changed.
-      const tick = moving && now - lastMotion >= MOTION_INTERVAL;
-      if (dirty.current || tick) {
-        if (tick) lastMotion = now;
-        draw(now);
+      if (dirty.current) {
         dirty.current = false;
+        lastMotion = now;
+        draw(now);
+        return;
       }
+      // Below the bitmap zoom a city is a stamp and its crane a pixel, so nothing moves.
+      if (!moving || camera.current.zoom < CITY_BITMAP_ZOOM || now - lastMotion < interval) return;
+      lastMotion = now;
+      const patches = stirring();
+      if (patches && !patches.length) return;
+      const started = performance.now();
+      draw(now, patches ?? undefined);
+      const took = performance.now() - started;
+      cost = cost ? cost * 0.8 + took * 0.2 : took;
+      interval = Math.min(MOTION_MAX_INTERVAL, Math.max(MOTION_MIN_INTERVAL, cost / MOTION_BUDGET));
     };
     frame = requestAnimationFrame(loop);
     return () => {
@@ -1997,8 +2077,14 @@ function AttentionRow({
   );
 }
 
-/** Four frames a second: motion the eye reads as such, at a cost the CPU does not notice. */
-const MOTION_INTERVAL = 250;
+// Motion is painted on the canvas rather than animated as DOM: every CSS-animated
+// element becomes a compositor layer with a GPU surface of its own, and a map of them
+// ran to gigabytes. A motion frame costs a repaint, so the loop times its own draws and
+// spends at most MOTION_BUDGET of the clock on them; what it cannot keep up with, it
+// draws less often.
+const MOTION_BUDGET = 0.25;
+const MOTION_MIN_INTERVAL = 1000 / 30;
+const MOTION_MAX_INTERVAL = 200;
 
 const INSPECTOR_CLASS = 'flex flex-col h-full min-h-0';
 const NAME_INPUT_CLASS =
