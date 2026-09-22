@@ -107,6 +107,8 @@ Examples:
   ouijit task comment "Waiting for the API key from ops"
   ouijit task comment --task 5 --author kiro "Tests are red on main too"
   ouijit task notes --text        # the review notes on this terminal's task, ready to act on
+  ouijit task review --text       # the last review handed over, verdict and comments
+  ouijit task reviews             # every review of this task, newest first
   ouijit task resolve-note 3f2c…  # a note you have addressed
   ouijit task delete 5`,
     );
@@ -376,6 +378,29 @@ Examples:
       const result = await get<{ notes: unknown[]; text: string }>(`/api/tasks/${num}/notes${projectQuery(project)}`);
       if (opts.text) process.stdout.write(result.text ? result.text + '\n' : '');
       else printJson(result.notes);
+    });
+
+  task
+    .command('review')
+    .description("The last review handed over on a task's diff, with every comment on it")
+    .argument('[number]', 'task number')
+    .option('--text', 'print the review as the text the app hands an agent, not JSON')
+    .action(async (number: string | undefined, opts: { text?: boolean }) => {
+      const num = await resolveTaskNumber(number);
+      const project = requireProject();
+      const result = await get<{ review: unknown; text: string }>(`/api/tasks/${num}/review${projectQuery(project)}`);
+      if (opts.text) process.stdout.write(result.text ? result.text + '\n' : '');
+      else printJson(result.review);
+    });
+
+  task
+    .command('reviews')
+    .description('Every review of a task, newest first')
+    .argument('[number]', 'task number')
+    .action(async (number: string | undefined) => {
+      const num = await resolveTaskNumber(number);
+      const project = requireProject();
+      printJson(await get(`/api/tasks/${num}/reviews${projectQuery(project)}`));
     });
 
   task

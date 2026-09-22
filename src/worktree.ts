@@ -21,6 +21,7 @@ import {
   setTaskMergeTarget,
   getGlobalSetting,
   clearDiffNotes,
+  deleteReviewsForWorktree,
   deleteWorktreeDiffLenses,
   type TaskMetadata,
 } from './db';
@@ -772,6 +773,7 @@ export async function removeTaskWorktree(
     // again the next time the task starts: left here they would come back with
     // it, describing a tree rebuilt since.
     await clearDiffNotes(worktreePath);
+    await deleteReviewsForWorktree(worktreePath);
     await deleteWorktreeDiffLenses(projectPath, worktreePath);
 
     // Delete task metadata

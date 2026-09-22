@@ -8,6 +8,7 @@ import { PendingRow } from '../ui/PendingRow';
 import { ActionMenu } from '../ui/ActionMenu';
 import { MenuDivider, MenuItem } from '../ui/Menu';
 import { SegmentedGroup, segmentBase, segmentQuiet } from '../ui/SegmentedGroup';
+import { pasteIntoTerminal } from '../terminal/pasteIntoTerminal';
 
 interface DiffNotesIslandProps {
   notes: DiffNote[];
@@ -22,15 +23,6 @@ interface DiffNotesIslandProps {
   onJump: (note: DiffNote) => void;
   onDiscard: (id: string) => Promise<void>;
   onClear: () => Promise<void>;
-}
-
-/**
- * Wrapped in bracketed-paste markers: without them the terminal reads each
- * newline as Enter and submits a multi-line note partway through. Nothing
- * follows the closing marker, so the text sits in the prompt unsent.
- */
-function pasteIntoTerminal(ptyId: string, text: string): void {
-  window.api.pty.write(ptyId, `\x1b[200~${text}\x1b[201~`);
 }
 
 export function DiffNotesIsland({ notes, inView, subject, ptyId, onJump, onDiscard, onClear }: DiffNotesIslandProps) {

@@ -52,6 +52,8 @@ import {
 } from '../taskLifecycle';
 import { discardNote, liveNotes } from '../diffNotesService';
 import { formatNotesForAgent } from '../diffNotes';
+import { lastSubmittedReview, listReviews } from '../reviewService';
+import { formatReviewForAgent } from '../reviews';
 import { diffSubject } from '../diffSource';
 import {
   getAvailability as getGithubAvailability,
@@ -255,6 +257,15 @@ function assertOwnTaskIfSandboxed(r: ParsedRequest, project: string, taskNumber:
   if (!ctx || ctx.projectPath !== project || ctx.taskId !== taskNumber) {
     throw new HttpError(403, 'Sandboxed sessions may only reach their own task');
   }
+}
+
+/** The task's last handed-over review, with its comments and as text for an agent. */
+async function taskReview(project: string, taskNumber: number) {
+  const task = await getTaskWithWorkspace(project, taskNumber);
+  if (!task) throw new HttpError(404, `Task ${taskNumber} not found`);
+  const review = task.worktreePath ? await lastSubmittedReview(task.worktreePath) : null;
+  if (!review) return { review: null, text: '' };
+  return { review, text: formatReviewForAgent(review, diffSubject(review.base, review.branch)) };
 }
 
 /** The task's diff notes, followed to where their code went, and the same as text for an agent. */
@@ -522,6 +533,34 @@ const routes: Route[] = [
       return addTaskComment(project, num, r.body.body, author);
     },
     true,
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/review',
+    (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      return taskReview(project, num);
+    },
+    false,
+    'sandbox',
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/reviews',
+    async (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      const task = await getTaskWithWorkspace(project, num);
+      if (!task) throw new HttpError(404, `Task ${num} not found`);
+      return task.worktreePath ? listReviews(task.worktreePath) : [];
+    },
+    false,
+    'sandbox',
   ),
 
   route(

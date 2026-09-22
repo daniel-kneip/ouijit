@@ -233,6 +233,17 @@ const mockApi = {
     discard: vi.fn().mockResolvedValue({ success: true }),
     clear: vi.fn().mockResolvedValue({ success: true }),
   },
+  reviews: {
+    current: vi.fn().mockResolvedValue(null),
+    list: vi.fn().mockResolvedValue([]),
+    get: vi.fn().mockResolvedValue(null),
+    start: vi.fn().mockResolvedValue(null),
+    retarget: vi.fn().mockResolvedValue(undefined),
+    viewed: vi.fn().mockResolvedValue([]),
+    markViewed: vi.fn().mockResolvedValue(undefined),
+    handOver: vi.fn().mockResolvedValue(null),
+    abandon: vi.fn().mockResolvedValue({ success: true }),
+  },
   github: {
     availability: vi.fn().mockResolvedValue({ available: false, reason: 'flag-off' }),
     inbox: vi

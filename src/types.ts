@@ -32,6 +32,7 @@ import type {
   PrFileVersions,
 } from './github/types';
 import type { DiffNote, SaveDiffNoteInput } from './diffNotes';
+import type { Review, ReviewWithComments, StartReviewInput } from './reviews';
 import type { DiffLensTarget } from './lens/worktreeSubject';
 import type { LensChangedPayload } from './lens/subjectKeys';
 import type { LensInput, LensSummary } from './lens/config';
@@ -675,6 +676,7 @@ export interface ElectronAPI {
   github: GithubAPI;
   /** Notes written on a worktree's own diff */
   diffNotes: DiffNotesAPI;
+  reviews: ReviewsAPI;
   /** Hotspot, coupling, and ownership signals mined from git history */
   analysis: AnalysisAPI;
   /** Agent-written grouping over a worktree's own diff */
@@ -729,6 +731,30 @@ export interface DiffNotesAPI {
   save(input: SaveDiffNoteInput): Promise<{ success: boolean }>;
   discard(id: string): Promise<{ success: boolean }>;
   clear(worktreePath: string): Promise<{ success: boolean }>;
+}
+
+/**
+ * A review of a worktree's diff. Starting one gives the notes written on it a
+ * home and the reader a record of which files they have been through; handing
+ * it over closes it and leaves the agent something to fetch.
+ */
+export interface ReviewsAPI {
+  current(worktreePath: string): Promise<ReviewWithComments | null>;
+  list(worktreePath: string): Promise<Review[]>;
+  /** One review with its comments, for handing it to the agent again. */
+  get(id: string): Promise<ReviewWithComments | null>;
+  /** Answers with the open review where there already is one. */
+  start(input: StartReviewInput): Promise<Review>;
+  /** Records the comparison being read, which the hand-over quotes. */
+  retarget(id: string, base: string | null): Promise<void>;
+  viewed(id: string): Promise<string[]>;
+  markViewed(id: string, path: string, viewed: boolean): Promise<void>;
+  handOver(
+    id: string,
+    state: 'accepted' | 'changes_requested',
+    summary: string | null,
+  ): Promise<ReviewWithComments | null>;
+  abandon(id: string): Promise<{ success: boolean }>;
 }
 
 /**

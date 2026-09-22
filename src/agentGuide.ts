@@ -13,7 +13,7 @@ What the user expects of you:
 2. Read the ticket before you start. \`ouijit task current\` gives the ticket owning this terminal with its description, branch and status; \`ouijit task comments\` the thread of comments on it.
 3. Comment on the ticket whenever you are blocked, waiting on the user, or handing the work back: \`ouijit task comment "Waiting for the API key from ops"\`. The user reads it on the card and on the map; it is how they know what to do next without opening the terminal.
 4. When the work is done, move the ticket to review: \`ouijit task set-status <number> in_review --skip-hook\` (\`--run-hook\` runs the project's review hook instead, which may open a pull request). The user reviews the diff in the app.
-5. The user leaves review notes on your diff. When you continue on a ticket, read them with \`ouijit task notes --text\`, address each one, resolve it with \`ouijit task resolve-note <id>\`, and move the ticket back to review.
+5. The user reviews your diff and hands it back as Accepted or Changes requested. When you continue on a ticket, read the verdict and its comments with \`ouijit task review --text\`, address every comment, and move the ticket back to review. Loose notes outside a review are \`ouijit task notes --text\`; resolve one you have handled with \`ouijit task resolve-note <id>\`.
 6. Work that does not belong to this ticket becomes its own ticket: \`ouijit task create "<name>" --prompt "<why>"\`. Do not change other tickets' status, and do not edit files in other worktrees.
 
 # Ouijit CLI Reference
@@ -58,10 +58,17 @@ ouijit task comments [number]                 # → [{id, taskNumber, body, auth
 ouijit task comment "<text>"                  # add a comment to this terminal's task (author: cli)
 ouijit task comment --task <number> --author <you> "<text>"
 
-The user writes review notes on your diff in the app. Read them before you continue, and resolve each one you have addressed:
+The user reads your diff in the app and hands it back as one review: a verdict (Accepted or Changes requested), what they typed with it, and a comment per place in the code. Read it before you continue:
+ouijit task review --text                     # the last review: verdict, summary, then path:line, the quoted code, the comment
+ouijit task review                            # the same as JSON, with each comment's id
+ouijit task reviews                           # every review of this task, newest first
+
+They can also leave notes without opening a review; those stay outstanding until you resolve them:
 ouijit task notes --text                      # the notes as text: path:line, the quoted code, the note
 ouijit task notes                             # the same as JSON, with ids
 ouijit task resolve-note <id>                 # discard a note you have handled
+
+A review pins the code as it stood when it was opened, so after your next round the user can read only what changed since.
 
 ## Tag Commands
 ouijit tag list                               # → all tags across projects

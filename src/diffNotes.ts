@@ -61,14 +61,15 @@ export function formatNotesForAgent(notes: DiffNote[], subject: string): string 
 
   const heading = `${notes.length} ${notes.length === 1 ? 'note' : 'notes'} on ${subject}.`;
 
-  const blocks = notes.map((note) => {
-    // A LEFT anchor's numbers are in the file as it was, and resolve against
-    // nothing on disk.
-    const where = `${note.path}:${describeLines(note.startLine, note.line)}${note.side === 'LEFT' ? ' (removed)' : ''}`;
-    return [where, quote(note.snippet), note.body.trim()].filter(Boolean).join('\n');
-  });
+  return [heading, ...notes.map(formatNoteBlock)].join('\n\n');
+}
 
-  return [heading, ...blocks].join('\n\n');
+/** One note as `path:line`, the quoted source under it, then the body. */
+export function formatNoteBlock(note: DiffNote): string {
+  // A LEFT anchor's numbers are in the file as it was, and resolve against
+  // nothing on disk.
+  const where = `${note.path}:${describeLines(note.startLine, note.line)}${note.side === 'LEFT' ? ' (removed)' : ''}`;
+  return [where, quote(note.snippet), note.body.trim()].filter(Boolean).join('\n');
 }
 
 /** The snippet as quoted lines, with only the shared indent removed. */

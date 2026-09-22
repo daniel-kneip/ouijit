@@ -20,6 +20,7 @@ import { ReviewDraftRepo, type ReviewDraftRow } from './repos/reviewDraftRepo';
 import { DiffLensRepo, type DiffLensRow } from './repos/diffLensRepo';
 import { worktreeKeyPrefix } from '../lens/subjectKeys';
 import { DiffNoteRepo, type DiffNoteRow } from './repos/diffNoteRepo';
+import { ReviewRepo, type ReviewRow } from './repos/reviewRepo';
 import type { Harness, ProjectSettings, ScriptHook } from '../types';
 import { getLogger } from '../logger';
 
@@ -70,6 +71,7 @@ let diffLensRepo: DiffLensRepo | null = null;
 let diffNoteRepo: DiffNoteRepo | null = null;
 let harnessRepo: HarnessRepo | null = null;
 let taskCommentRepo: TaskCommentRepo | null = null;
+let reviewRepo: ReviewRepo | null = null;
 
 function repos() {
   if (!taskRepo) {
@@ -85,6 +87,7 @@ function repos() {
     diffNoteRepo = new DiffNoteRepo(db);
     harnessRepo = new HarnessRepo(db);
     taskCommentRepo = new TaskCommentRepo(db);
+    reviewRepo = new ReviewRepo(db);
   }
   return {
     projectRepo: projectRepo!,
@@ -98,6 +101,7 @@ function repos() {
     diffNoteRepo: diffNoteRepo!,
     harnessRepo: harnessRepo!,
     taskCommentRepo: taskCommentRepo!,
+    reviewRepo: reviewRepo!,
   };
 }
 
@@ -116,6 +120,7 @@ export function _resetCacheForTesting(): void {
   diffNoteRepo = new DiffNoteRepo(db);
   harnessRepo = new HarnessRepo(db);
   taskCommentRepo = new TaskCommentRepo(db);
+  reviewRepo = new ReviewRepo(db);
 }
 
 // ── Row → TaskMetadata conversion ────────────────────────────────────
@@ -468,6 +473,90 @@ export async function moveDiffNote(id: string, startLine: number, line: number):
 export async function clearDiffNotes(worktreePath: string): Promise<void> {
   const { diffNoteRepo: dr } = repos();
   dr.deleteForWorktree(worktreePath);
+}
+
+export async function clearOutstandingDiffNotes(worktreePath: string): Promise<void> {
+  const { diffNoteRepo: dr } = repos();
+  dr.deleteOutstanding(worktreePath);
+}
+
+export async function getReviewNotes(reviewId: string): Promise<DiffNoteRow[]> {
+  const { diffNoteRepo: dr } = repos();
+  return dr.getForReview(reviewId);
+}
+
+export async function adoptLooseDiffNotes(worktreePath: string, reviewId: string): Promise<void> {
+  const { diffNoteRepo: dr } = repos();
+  dr.adoptLoose(worktreePath, reviewId);
+}
+
+// ── Reviews ──────────────────────────────────────────────────────────
+
+export type { ReviewRow } from './repos/reviewRepo';
+
+export async function getReviews(worktreePath: string): Promise<ReviewRow[]> {
+  const { reviewRepo: rr } = repos();
+  return rr.getForWorktree(worktreePath);
+}
+
+export async function getReview(id: string): Promise<ReviewRow | undefined> {
+  const { reviewRepo: rr } = repos();
+  return rr.get(id);
+}
+
+export async function getOpenReview(worktreePath: string): Promise<ReviewRow | undefined> {
+  const { reviewRepo: rr } = repos();
+  return rr.open(worktreePath);
+}
+
+export async function nextReviewSeq(worktreePath: string): Promise<number> {
+  const { reviewRepo: rr } = repos();
+  return rr.nextSeq(worktreePath);
+}
+
+export async function insertReview(row: ReviewRow): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.insert(row);
+}
+
+export async function submitReview(
+  id: string,
+  state: 'accepted' | 'changes_requested',
+  summary: string | null,
+  at: string,
+): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.submit(id, state, summary, at);
+}
+
+export async function setReviewBase(id: string, base: string | null): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.setBase(id, base);
+}
+
+export async function deleteReview(id: string): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.delete(id);
+}
+
+export async function deleteReviewsForWorktree(worktreePath: string): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.deleteForWorktree(worktreePath);
+}
+
+export async function getReviewViewedFiles(reviewId: string): Promise<string[]> {
+  const { reviewRepo: rr } = repos();
+  return rr.viewedFiles(reviewId);
+}
+
+export async function setReviewFileViewed(
+  reviewId: string,
+  filePath: string,
+  viewed: boolean,
+  at: string,
+): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.setViewed(reviewId, filePath, viewed, at);
 }
 
 // ── Lenses ───────────────────────────────────────────────────────────

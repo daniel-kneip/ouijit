@@ -33,6 +33,7 @@ import type {
 } from './github/types';
 import type { LensInput } from './lens/config';
 import type { SaveDiffNoteInput } from './diffNotes';
+import type { StartReviewInput } from './reviews';
 import type { DiffLensTarget } from './lens/worktreeSubject';
 import type { LensChangedPayload } from './lens/subjectKeys';
 
@@ -430,6 +431,19 @@ contextBridge.exposeInMainWorld('api', {
     save: (input: SaveDiffNoteInput) => typedInvoke('diff-notes:save', input),
     discard: (id: string) => typedInvoke('diff-notes:discard', id),
     clear: (worktreePath: string) => typedInvoke('diff-notes:clear', worktreePath),
+  },
+
+  reviews: {
+    current: (worktreePath: string) => typedInvoke('review:current', worktreePath),
+    list: (worktreePath: string) => typedInvoke('review:list', worktreePath),
+    get: (id: string) => typedInvoke('review:get', id),
+    start: (input: StartReviewInput) => typedInvoke('review:start', input),
+    retarget: (id: string, base: string | null) => typedInvoke('review:retarget', id, base),
+    viewed: (id: string) => typedInvoke('review:viewed', id),
+    markViewed: (id: string, path: string, viewed: boolean) => typedInvoke('review:mark-viewed', id, path, viewed),
+    handOver: (id: string, state: 'accepted' | 'changes_requested', summary: string | null) =>
+      typedInvoke('review:hand-over', id, state, summary),
+    abandon: (id: string) => typedInvoke('review:abandon', id),
   },
 
   analysis: {

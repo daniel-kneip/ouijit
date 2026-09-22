@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { formatAge } from './utils/formatDate';
+import { reviewSeqOfBase } from './reviews';
 
 const execFileAsync = promisify(execFile);
 
@@ -922,6 +923,44 @@ export async function getBranchDiffPin(cwd: string, rev: string, targetBranch?: 
 }
 
 /**
+ * How a diff is taken against a base. A branch grew alongside the work, so the
+ * comparison starts where they parted; a review's snapshot is the worktree as it
+ * stood, and a diff against it is direct — a merge base would find the commit
+ * that was HEAD then and leave out everything uncommitted the review pinned.
+ */
+export function diffBaseArgs(base: string): string[] {
+  return reviewSeqOfBase(base) === null ? ['--merge-base', base] : [base];
+}
+
+/**
+ * Pins the worktree as it stands under `ref`, and answers with the commit.
+ *
+ * `git stash create` writes that commit without touching the worktree, the
+ * index or any ref; the ref is what keeps it from being pruned. Untracked files
+ * are not in it, so a later diff against it still shows them as the new files
+ * they are. Null where there is nothing to pin — a repository without a commit.
+ */
+export async function pinWorktreeState(worktreePath: string, ref: string): Promise<string | null> {
+  try {
+    const stashed = await gitAsync(['stash', 'create', 'ouijit review'], worktreePath);
+    const sha = stashed || (await gitAsync(['rev-parse', 'HEAD'], worktreePath));
+    if (!sha) return null;
+    await gitAsync(['update-ref', ref, sha], worktreePath);
+    return sha;
+  } catch {
+    return null;
+  }
+}
+
+export async function dropRef(worktreePath: string, ref: string): Promise<void> {
+  try {
+    await gitAsync(['update-ref', '-d', ref], worktreePath);
+  } catch {
+    // Already gone, which is what the caller wanted.
+  }
+}
+
+/**
  * Runs git off the main thread, with this file's shared defaults. Throws on a
  * non-zero exit, which is how callers ask git a yes/no question.
  */
@@ -1063,8 +1102,8 @@ export async function getGitFileStatus(projectPath: string, diffBase?: string): 
 
     // Run all independent git commands in parallel
     const [numstatResult, nameStatusResult, untrackedResult, commitsAheadResult] = await Promise.allSettled([
-      gitAsync(['diff', '--numstat', '--merge-base', base], projectPath),
-      gitAsync(['diff', '--name-status', '--merge-base', base], projectPath),
+      gitAsync(['diff', '--numstat', ...diffBaseArgs(base)], projectPath),
+      gitAsync(['diff', '--name-status', ...diffBaseArgs(base)], projectPath),
       gitAsync(['ls-files', '--others', '--exclude-standard'], projectPath),
       gitAsync(['rev-list', '--count', `${base}..HEAD`], projectPath),
     ]);
@@ -1184,7 +1223,7 @@ export async function getWorktreeFileDiff(
   oldPath?: string,
   contextLines?: number,
 ): Promise<FileDiff | null> {
-  const args = [...contextArgs(contextLines), '--merge-base', base, '--', filePath];
+  const args = [...contextArgs(contextLines), ...diffBaseArgs(base), '--', filePath];
   if (oldPath && oldPath !== filePath) args.push(oldPath);
   return readFileDiff(gitPath, filePath, args);
 }

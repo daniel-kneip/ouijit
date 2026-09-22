@@ -73,6 +73,7 @@ import type {
 } from '../github/types';
 import type { LensInput, LensSummary } from '../lens/config';
 import type { DiffNote, SaveDiffNoteInput } from '../diffNotes';
+import type { Review, ReviewWithComments, StartReviewInput } from '../reviews';
 import type { AnalysisOverview, DiffSignals } from '../analysis/types';
 import type { DiffLensTarget } from '../lens/worktreeSubject';
 import type { StoredLens } from '../lens/readLens';
@@ -358,6 +359,22 @@ export interface IpcInvokeContract {
   'diff-notes:save': { args: [input: SaveDiffNoteInput]; return: { success: boolean } };
   'diff-notes:discard': { args: [id: string]; return: { success: boolean } };
   'diff-notes:clear': { args: [worktreePath: string]; return: { success: boolean } };
+
+  // ── Reviews ────────────────────────────────────────────────────────
+  // A pass over a worktree's diff: what was viewed, the notes written on it and
+  // the verdict it was handed over with.
+  'review:current': { args: [worktreePath: string]; return: ReviewWithComments | null };
+  'review:list': { args: [worktreePath: string]; return: Review[] };
+  'review:get': { args: [id: string]; return: ReviewWithComments | null };
+  'review:start': { args: [input: StartReviewInput]; return: Review };
+  'review:retarget': { args: [id: string, base: string | null]; return: void };
+  'review:viewed': { args: [id: string]; return: string[] };
+  'review:mark-viewed': { args: [id: string, path: string, viewed: boolean]; return: void };
+  'review:hand-over': {
+    args: [id: string, state: 'accepted' | 'changes_requested', summary: string | null];
+    return: ReviewWithComments | null;
+  };
+  'review:abandon': { args: [id: string]; return: { success: boolean } };
 
   // ── Analysis ───────────────────────────────────────────────────────
   'analysis:refresh': { args: [projectPath: string, force?: boolean]; return: void };

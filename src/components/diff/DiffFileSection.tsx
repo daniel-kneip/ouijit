@@ -50,7 +50,7 @@ export interface DiffFileSectionProps {
    */
   sectionId?: string;
   /** Enables the fold control, on this copy of the file alone. */
-  onCollapsedChange?: (sectionId: string, collapsed: boolean) => void;
+  onCollapsedChange?: (sectionId: string, collapsed: boolean, path: string) => void;
   /** Wording for the fold control — "Viewed" in a review, "Collapse" outside one. */
   collapseLabel?: string;
   /**
@@ -90,7 +90,7 @@ export const DiffFileSection = memo(function DiffFileSection({
   const belowLine = useCallback((anchor: DiffLineAnchor) => renderBelowLine?.(path, anchor), [renderBelowLine, path]);
   const lineMarked = useCallback((anchor: DiffLineAnchor) => markLine?.(path, anchor) ?? false, [markLine, path]);
   const setCollapsed = useCallback(
-    (next: boolean) => onCollapsedChange?.(sectionId ?? path, next),
+    (next: boolean) => onCollapsedChange?.(sectionId ?? path, next, path),
     [onCollapsedChange, sectionId, path],
   );
 
