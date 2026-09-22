@@ -705,6 +705,17 @@ function drawSite(
       ctx.arc(cx - 8 + k * 5, cy - 2 - ph * 18, 3 + ph * 5, 0, Math.PI * 2);
       ctx.fill();
     }
+    // A lamp on the mast, steady: with the motion off the smoke alone would not say
+    // that an agent is at work here rather than that the ticket is unfinished.
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.18;
+    ctx.beginPath();
+    ctx.arc(mastX, topY - 8, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(mastX, topY - 8, 4.2, 0, Math.PI * 2);
+    ctx.fill();
   } else if (site.state === 'waiting') {
     const blink = animate ? 0.55 + 0.45 * Math.sin(time / 260) : 1;
     ctx.fillStyle = col;

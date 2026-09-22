@@ -79,7 +79,7 @@ beforeEach(() => {
     },
     activeIndices: { [project.path]: 0 },
   });
-  useUIStore.setState({ cityMapInspectorCollapsed: false });
+  useUIStore.setState({ cityMapInspectorCollapsed: false, cityMapMotion: true });
   vi.mocked(window.api.globalSettings.get).mockResolvedValue(undefined as never);
   vi.mocked(window.api.globalSettings.set).mockClear();
 });
@@ -326,6 +326,14 @@ describe('the city map', () => {
     expect(sidebar.textContent).toContain('No district');
     expect(screen.getByTestId('fit-all')).toBeTruthy();
     expect(screen.getByTestId('minimap')).toBeTruthy();
+
+    // The map can be held still; the states then read from colour and icon alone.
+    const motion = screen.getByTestId('motion-toggle');
+    expect(motion.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(motion);
+    expect(useUIStore.getState().cityMapMotion).toBe(false);
+    expect(motion.textContent).toContain('off');
+    expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-motion', '0');
   });
 
   test('a status change on the map goes through the board’s transition, hooks included', async () => {

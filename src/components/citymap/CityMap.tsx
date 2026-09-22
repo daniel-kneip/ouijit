@@ -391,6 +391,7 @@ export function CityMap({ projectPath }: CityMapProps) {
   const drawerMode = useUIStore((s) => s.cityMapDrawerMode);
   const drawerGap = useUIStore((s) => s.cityMapDrawerGap[s.cityMapDrawerMode]);
   const inspectorCollapsed = useUIStore((s) => s.cityMapInspectorCollapsed);
+  const motionOn = useUIStore((s) => s.cityMapMotion);
   const drawerOpen = !!openPtyId && !!displayStates[openPtyId];
   // The terminal and the details share one panel, so either covers the same strip of map.
   const panelOpen = drawerOpen || (!!selection && !inspectorCollapsed);
@@ -536,6 +537,19 @@ export function CityMap({ projectPath }: CityMapProps) {
             title="Zoom to 100%"
           >
             1:1
+          </button>
+          <button
+            type="button"
+            aria-pressed={motionOn}
+            className={`px-2.5 py-1 rounded-md border border-border text-[11px] hover:text-text-primary ${
+              motionOn ? 'text-text-secondary' : 'text-text-tertiary'
+            }`}
+            style={{ background: 'var(--color-surface-raised)', boxShadow: 'var(--shadow-panel)' }}
+            onClick={() => useUIStore.getState().setCityMapMotion(!motionOn)}
+            data-testid="motion-toggle"
+            title="Cranes, smoke and clouds moving. A still map says the same in colour and icon."
+          >
+            Motion {motionOn ? 'on' : 'off'}
           </button>
           {tagFilter && (
             <span
@@ -711,6 +725,9 @@ function useMapSurface(input: MapSurfaceInput) {
   const [linking, setLinking] = useState<number | null>(null);
   const linkingRef = useRef<number | null>(null);
   linkingRef.current = linking;
+  const wantsMotion = useUIStore((s) => s.cityMapMotion);
+  const motion = useRef(wantsMotion);
+  motion.current = wantsMotion;
   const themeEpoch = useThemeEpoch();
 
   // The persisted viewport arrives after mount, behind the project's default
@@ -734,7 +751,7 @@ function useMapSurface(input: MapSurfaceInput) {
 
   useEffect(() => {
     dirty.current = true;
-  }, [cities, roads, districts, selection, linking]);
+  }, [cities, roads, districts, selection, linking, wantsMotion]);
 
   useEffect(() => {
     if (linking == null) return;
@@ -960,7 +977,7 @@ function useMapSurface(input: MapSurfaceInput) {
       }
       const touched = (x0: number, y0: number, x1: number, y1: number) =>
         areas.some((a) => x1 >= a.x0 && x0 <= a.x1 && y1 >= a.y0 && y0 <= a.y1);
-      const animate = moving && cam.zoom >= CITY_BITMAP_ZOOM;
+      const animate = moving() && cam.zoom >= CITY_BITMAP_ZOOM;
       const byNumber = new Map(current.map((c) => [c.task.taskNumber, c]));
       const selectedTask = selectedTaskNumber(sel);
       const routes = currentRoads.flatMap((road) => {
@@ -1078,7 +1095,8 @@ function useMapSurface(input: MapSurfaceInput) {
       drawMinimap();
     };
 
-    const moving = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const moving = () => motion.current && !reduced;
     let lastMotion = 0;
     let interval = MOTION_MIN_INTERVAL;
     let cost = 0;
@@ -1128,7 +1146,7 @@ function useMapSurface(input: MapSurfaceInput) {
         return;
       }
       // Below the bitmap zoom a city is a stamp and its crane a pixel, so nothing moves.
-      if (!moving || camera.current.zoom < CITY_BITMAP_ZOOM || now - lastMotion < interval) return;
+      if (!moving() || camera.current.zoom < CITY_BITMAP_ZOOM || now - lastMotion < interval) return;
       lastMotion = now;
       const patches = stirring();
       if (patches && !patches.length) return;

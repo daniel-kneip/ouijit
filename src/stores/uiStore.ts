@@ -54,6 +54,8 @@ interface UIStoreState {
   cityMapDrawerGap: Record<CityMapDrawerMode, number>;
   /** The details panel folded away, leaving only a tab to bring it back. */
   cityMapInspectorCollapsed: boolean;
+  /** Cranes, smoke and clouds moving on the map; off, every city is a still. */
+  cityMapMotion: boolean;
   cityMapSidebarGroup: CityMapSidebarGroup;
 }
 
@@ -80,6 +82,7 @@ interface UIStoreActions {
   setCityMapDrawerMode: (mode: CityMapDrawerMode) => void;
   setCityMapDrawerGap: (mode: CityMapDrawerMode, gap: number) => void;
   setCityMapInspectorCollapsed: (collapsed: boolean) => void;
+  setCityMapMotion: (moving: boolean) => void;
   setCityMapSidebarGroup: (group: CityMapSidebarGroup) => void;
 }
 
@@ -137,6 +140,7 @@ export const useUIStore = create<UIStore>()((set, get) => ({
   cityMapDrawerMode: 'side',
   cityMapDrawerGap: { ...CITY_MAP_DRAWER_DEFAULT_GAP },
   cityMapInspectorCollapsed: false,
+  cityMapMotion: true,
   cityMapSidebarGroup: 'status',
 
   setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
@@ -227,6 +231,11 @@ export const useUIStore = create<UIStore>()((set, get) => ({
     void window.api.globalSettings.set('ui:city-map-inspector-collapsed', collapsed ? '1' : '0');
   },
 
+  setCityMapMotion: (moving) => {
+    set({ cityMapMotion: moving });
+    void window.api.globalSettings.set('ui:city-map-motion', moving ? '1' : '0');
+  },
+
   setCityMapSidebarGroup: (group) => {
     set({ cityMapSidebarGroup: group });
     void window.api.globalSettings.set('ui:city-map-sidebar-group', group);
@@ -234,7 +243,7 @@ export const useUIStore = create<UIStore>()((set, get) => ({
 }));
 
 export async function hydrateUIPreferences(): Promise<void> {
-  const [pinned, collapsed, width, mapWidth, drawerWidth, drawerMode, sideGap, windowGap, inspector, mapGroup] =
+  const [pinned, collapsed, width, mapWidth, drawerWidth, drawerMode, sideGap, windowGap, inspector, motion, mapGroup] =
     await Promise.all([
       window.api.globalSettings.get('ui:sidebar-pinned'),
       window.api.globalSettings.get('ui:diff-file-list-collapsed'),
@@ -245,6 +254,7 @@ export async function hydrateUIPreferences(): Promise<void> {
       window.api.globalSettings.get('ui:city-map-drawer-gap-side'),
       window.api.globalSettings.get('ui:city-map-drawer-gap-window'),
       window.api.globalSettings.get('ui:city-map-inspector-collapsed'),
+      window.api.globalSettings.get('ui:city-map-motion'),
       window.api.globalSettings.get('ui:city-map-sidebar-group'),
     ]);
 
@@ -270,6 +280,7 @@ export async function hydrateUIPreferences(): Promise<void> {
   }
   next.cityMapDrawerGap = gaps;
   if (inspector === '0' || inspector === '1') next.cityMapInspectorCollapsed = inspector === '1';
+  if (motion === '0' || motion === '1') next.cityMapMotion = motion === '1';
   if (mapGroup === 'status' || mapGroup === 'district') next.cityMapSidebarGroup = mapGroup;
 
   useUIStore.setState(next);

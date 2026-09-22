@@ -180,6 +180,14 @@ The loop then times its own draws and spends at most `MOTION_BUDGET` of the
 clock on them: a cheap scene animates at 30 frames a second, an expensive one
 slows down rather than taking the machine with it.
 
+"Motion off" beside "Fit all" stops all of it, and `prefers-reduced-motion`
+does the same without asking. A still map has to say as much as a moving one,
+so every state is drawn rather than animated: a lamp on the mast in the
+agent's colour where one is at work, a yellow `!` pin over a pulsing halo
+where a terminal waits for you, a red `×` pin under a rain cloud where one hit
+a problem, and a flag over a finished city. The labels carry the same colours,
+and the sidebar counts all three.
+
 ## Kenney assets
 
 The demo draws everything procedurally in the flat isometric style of
