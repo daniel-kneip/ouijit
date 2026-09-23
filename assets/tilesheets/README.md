@@ -20,4 +20,7 @@ and one per city culture, on flat `#FF00FF` for keying out.
 `redrawn/` holds the sheets as they came back, with their manifests; the
 adobe sheet follows the oldtown layout. `scripts/cut-tilesheets.py` cuts them
 into `assets/tiles/<sheet>/`, night tiles suffixed `@night`, which is what the
-map loads.
+map loads. They come back at a third of the size they went out, so they are
+cut with `--upscale` and Real-ESRGAN's `RealESRGAN_x4plus.pth` (from the
+Real-ESRGAN releases on GitHub), which keeps their grit where the anime
+model flattens it.

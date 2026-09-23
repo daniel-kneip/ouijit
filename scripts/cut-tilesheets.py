@@ -1,11 +1,15 @@
 """
 Cuts redrawn tile sheets back into tiles for the city map.
 
-    python3 scripts/cut-tilesheets.py assets/tilesheets/redrawn assets/tiles
+    python3 scripts/cut-tilesheets.py assets/tilesheets/redrawn assets/tiles [--upscale RealESRGAN_x4plus.pth]
 
-Needs Pillow, numpy and scipy. Reads each sheet beside its manifest, keys
-out the sheet's ground colour (meant to be #FF00FF), and places every tile in Kenney's 256x352 frame by
-fitting its outline to the original tile's, then writes it at half size.
+Needs Pillow, numpy and scipy; --upscale also torch and spandrel. Reads each
+sheet beside its manifest, keys out the sheet's ground colour (meant to be
+#FF00FF), and places every tile in Kenney's 256x352 frame by fitting its
+outline to the original tile's, then writes it as WebP. Sheets come back from
+the image model far smaller than they went out; --upscale runs a
+super-resolution model over each first, and keeps the result in
+~/.cache/ouijit-tilesheets so a second cut does not pay for it again.
 A terrain's full ground and water tiles lose the rim of their top face and
 come in four turns, `~1` to `~3` beside the first.
 Prints the tiles whose outline still differs from the original's.
@@ -17,6 +21,8 @@ from scipy import ndimage
 
 A = os.path.join(os.path.dirname(__file__), '..', 'assets')
 SRC, OUT = sys.argv[1], sys.argv[2]
+MODEL = sys.argv[sys.argv.index('--upscale') + 1] if '--upscale' in sys.argv else None
+CACHE = os.path.expanduser('~/.cache/ouijit-tilesheets')
 W, H = 256, 352
 PACKS = ['Sketch Town', 'Sketch Town Expansion', 'Sketch Desert']
 DECO = ('tree', 'rocks')
@@ -107,13 +113,37 @@ def seamless(tile):
     return out
 
 def save(img, path):
-    img.convert('RGBa').resize((W // 2, H // 2), Image.LANCZOS).convert('RGBA').save(path, optimize=True)
+    img.save(path, 'WEBP', quality=90, method=6)
+
+def upscaled(path):
+    import hashlib
+    digest = hashlib.sha1(open(path, 'rb').read() + os.path.basename(MODEL).encode()).hexdigest()[:16]
+    cached = os.path.join(CACHE, f'{digest}.png')
+    if os.path.exists(cached): return Image.open(cached).convert('RGB')
+    import torch
+    from spandrel import ModelLoader
+    model = ModelLoader().load_from_file(MODEL).eval()
+    x = torch.from_numpy(np.asarray(Image.open(path).convert('RGB'), np.float32) / 255).permute(2, 0, 1)[None]
+    _, _, h, w = x.shape
+    k, tile, pad = model.scale, 256, 16
+    out = torch.zeros(1, 3, h * k, w * k)
+    with torch.no_grad():
+        for y0 in range(0, h, tile):
+            for x0 in range(0, w, tile):
+                ya, xa, y1, x1 = max(0, y0 - pad), max(0, x0 - pad), min(h, y0 + tile), min(w, x0 + tile)
+                r = model(x[:, :, ya:min(h, y1 + pad), xa:min(w, x1 + pad)])
+                out[:, :, y0 * k:y1 * k, x0 * k:x1 * k] = r[:, :, (y0 - ya) * k:(y1 - ya) * k, (x0 - xa) * k:(x1 - xa) * k]
+    img = Image.fromarray((out[0].clamp(0, 1).permute(1, 2, 0).numpy() * 255 + 0.5).astype(np.uint8))
+    os.makedirs(CACHE, exist_ok=True)
+    img.save(cached)
+    return img
 
 report = []
 for jf in sorted(glob.glob(f'{SRC}/*.json')):
     slug = os.path.basename(jf)[:-5]
     m = json.load(open(jf))
-    sheet = np.asarray(Image.open(f'{SRC}/{m["sheet"]}').convert('RGB'))
+    path = f'{SRC}/{m["sheet"]}'
+    sheet = np.asarray(upscaled(path) if MODEL else Image.open(path).convert('RGB'))
     sx = sheet.shape[1] / m['size'][0]; sy = sheet.shape[0] / m['size'][1]
     ground = background(sheet)
     os.makedirs(f'{OUT}/{slug}', exist_ok=True)
@@ -134,9 +164,9 @@ for jf in sorted(glob.glob(f'{SRC}/*.json')):
         suffix = '@night' if night else ''
         if slug.startswith('terrain-') and name in SEAMLESS:
             for n, block in enumerate(seamless(Image.fromarray(placed, 'RGBA'))):
-                save(block, f'{OUT}/{slug}/{name}{f"~{n}" if n else ""}{suffix}.png')
+                save(block, f'{OUT}/{slug}/{name}{f"~{n}" if n else ""}{suffix}.webp')
         else:
-            save(Image.fromarray(placed, 'RGBA'), f'{OUT}/{slug}/{name}{suffix}.png')
+            save(Image.fromarray(placed, 'RGBA'), f'{OUT}/{slug}/{name}{suffix}.webp')
         mask = placed[..., 3] > 128
         iou = (mask & ref).sum() / max(1, (mask | ref).sum())
         report.append((slug, 'night' if night else 'day', name, round(float(iou), 2)))
