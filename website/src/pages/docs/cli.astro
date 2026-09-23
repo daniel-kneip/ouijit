@@ -70,6 +70,28 @@ ouijit task delete 5</code></pre>
   <pre class="glass-bevel"><code>TASK=$(ouijit task current | jq -r .taskNumber)
 ouijit task set-status "$TASK" in_review</code></pre>
 
+  <h2>Comments and reviews</h2>
+  <p>
+    A task carries a thread of comments, read on its card and on the map. The review side is the
+    <a href="/docs/diff/">diff panel</a>'s: notes on lines, and reviews that hand a set of them back with a verdict.
+    The task defaults to the one owning this terminal.
+  </p>
+  <pre class="glass-bevel"><code>ouijit task comments                          # the comment thread
+ouijit task comment "Waiting for the API key from ops"
+ouijit task comment --task 5 --author kiro "Tests are red on main too"
+ouijit task review --text                     # the last review handed over: verdict, summary, comments
+ouijit task reviews                           # every review of the task, newest first
+ouijit task notes --text                      # notes written outside a review, still outstanding
+ouijit task resolve-note 3f2c…                # discard a note you have addressed</code></pre>
+
+  <h2>Terminals and the agent guide</h2>
+  <p>
+    A terminal's name shows on its header, its card and the map. <code>ouijit guide</code> prints how to work in
+    Ouijit followed by this reference, as the supported agents get it in their system prompt.
+  </p>
+  <pre class="glass-bevel"><code>ouijit terminal name "Auth middleware"
+ouijit guide</code></pre>
+
   <h2>Hooks</h2>
   <p>
     Manage the <a href="/docs/hooks/">lifecycle hooks</a> and the editor command. Hook types are

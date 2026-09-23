@@ -11,7 +11,7 @@
  *   3. The "Supported harnesses" list matches the wrapper binaries the app
  *      installs (src/hookServer.ts).
  *   4. Every `ouijit` invocation in README, docs-page code fences and the
- *      agent CLI reference (src/hookServer.ts) is a real CLI command.
+ *      agent CLI reference (src/agentGuide.ts) is a real CLI command.
  *   5. Every CLI command is mentioned in the docs pages and in the agent
  *      reference, so a new command cannot ship undocumented; an agent will
  *      not use a command it was never told about.
@@ -68,15 +68,16 @@ for (const [ref, source] of imageRefs) {
 
 // 3. Harness list matches the wrappers the app installs.
 const hookServer = fs.readFileSync(path.join(REPO_ROOT, 'src', 'hookServer.ts'), 'utf8');
+const agentGuide = fs.readFileSync(path.join(REPO_ROOT, 'src', 'agentGuide.ts'), 'utf8');
 const wrappers = [...hookServer.matchAll(/export const (\w+)_WRAPPER\b/g)].map((m) => m[1].toLowerCase());
-const cliReference = hookServer.match(/export const CLI_REFERENCE = `([\s\S]*?)\n`;/)?.[1] ?? '';
-if (!cliReference) fail('Could not extract CLI_REFERENCE from src/hookServer.ts — this check is not running.');
+const cliReference = agentGuide.match(/export const CLI_REFERENCE = `([\s\S]*?)\n`;/)?.[1] ?? '';
+if (!cliReference) fail('Could not extract CLI_REFERENCE from src/agentGuide.ts — this check is not running.');
 const harnessSection = readme.match(/## Supported harnesses\n([\s\S]*?)(?=\n## |$)/)?.[1] ?? '';
 
 for (const wrapper of wrappers) {
-  // Wrapper names are binary names (claude, codex, pi, opencode); the README
+  // Wrapper names are binary names (claude, codex, pi, opencode, kiro); the README
   // lists product names, so match case-insensitively on the link text.
-  const pattern = { claude: /claude code/i, codex: /codex/i, pi: /\bpi\b/i, opencode: /opencode/i }[wrapper];
+  const pattern = { claude: /claude code/i, codex: /codex/i, pi: /\bpi\b/i, opencode: /opencode/i, kiro: /kiro/i }[wrapper];
   if (!pattern) fail(`New wrapper ${wrapper.toUpperCase()}_WRAPPER in hookServer.ts — add it to this check and to the README harness list.`);
   else if (!pattern.test(harnessSection)) fail(`README "Supported harnesses" is missing ${wrapper} (the app installs a ${wrapper} wrapper).`);
 }
@@ -117,7 +118,9 @@ if (!fs.existsSync(cliPath)) {
     ...docsPages.map((page) => [page.name, fencesOf(page.text)]),
     ['CLI_REFERENCE', [cliReference]],
   ]) {
-    const invocations = [...fences.join('\n').matchAll(/^ouijit\s+(\S+)(?:\s+(\S+))?/gm)];
+    // Blanks, not \s: a command with no subcommand would otherwise take the
+    // first word of the next line as one.
+    const invocations = [...fences.join('\n').matchAll(/^ouijit[ \t]+(\S+)(?:[ \t]+(\S+))?/gm)];
     for (const [, group, sub] of invocations) {
       if (!isCommand([], group)) {
         fail(`${source} example uses unknown command: ouijit ${group}`);
@@ -131,7 +134,7 @@ if (!fs.existsSync(cliPath)) {
   //    docs pages and in the agent reference, under one of its names.
   const coverageTargets = [
     { text: docsPages.map((p) => p.text).join('\n'), where: `${DOCS_DIR}/` },
-    { text: cliReference, where: 'the agent CLI reference (CLI_REFERENCE in src/hookServer.ts)' },
+    { text: cliReference, where: 'the agent CLI reference (CLI_REFERENCE in src/agentGuide.ts)' },
   ];
   const requireDocumented = (groupPath, aliasSets) => {
     for (const names of aliasSets) {
