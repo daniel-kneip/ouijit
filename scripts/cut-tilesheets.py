@@ -4,7 +4,7 @@ Cuts redrawn tile sheets back into tiles for the city map.
     python3 scripts/cut-tilesheets.py assets/tilesheets/redrawn assets/tiles
 
 Needs Pillow, numpy and scipy. Reads each sheet beside its manifest, keys
-out the #FF00FF ground, and places every tile in Kenney's 256x352 frame by
+out the sheet's ground colour (meant to be #FF00FF), and places every tile in Kenney's 256x352 frame by
 fitting its outline to the original tile's, then writes it at half size.
 A terrain's full ground and water tiles lose the rim of their top face and
 come in four turns, `~1` to `~3` beside the first.
@@ -26,11 +26,17 @@ def reference(slug, name):
         f = f'{A}/{p}/Tiles/{name}.png'
         if os.path.exists(f): return np.asarray(Image.open(f).convert('RGBA'))[:, :, 3] > 128
 
-def key(rgb):
+def background(sheet):
+    """The sheet's ground colour: the commonest colour, which is whatever the tiles stand on, magenta or not."""
+    px = sheet[::4, ::4].reshape(-1, 3)
+    bins = (px // 16).astype(np.int32)
+    ids = bins[:, 0] * 256 + bins[:, 1] * 16 + bins[:, 2]
+    common = np.bincount(ids).argmax()
+    return px[ids == common].astype(np.float32).mean(axis=0)
+
+def key(rgb, k):
     rgb = rgb.astype(np.float32)
-    m = np.minimum(rgb[..., 0], rgb[..., 2]) - rgb[..., 1]
-    a = np.clip((210 - m) / 110, 0, 1)
-    k = np.array([250, 0, 250], np.float32)
+    a = np.clip((np.linalg.norm(rgb - k, axis=-1) - 45) / 70, 0, 1)
     out = np.clip((rgb - (1 - a[..., None]) * k) / np.maximum(a, 1e-3)[..., None], 0, 255)
     return np.dstack([out, a * 255]).astype(np.uint8)
 
@@ -109,16 +115,19 @@ for jf in sorted(glob.glob(f'{SRC}/*.json')):
     m = json.load(open(jf))
     sheet = np.asarray(Image.open(f'{SRC}/{m["sheet"]}').convert('RGB'))
     sx = sheet.shape[1] / m['size'][0]; sy = sheet.shape[0] / m['size'][1]
+    ground = background(sheet)
     os.makedirs(f'{OUT}/{slug}', exist_ok=True)
     for t in m['tiles']:
         night = (t['section'] or '').startswith('NIGHT')
         name = t['name']
         pad_y, pad_x = round(20 * sy), round(8 * sx)
         x0 = max(0, round(t['x'] * sx) - pad_x); y0 = max(0, round(t['y'] * sy) - pad_y)
-        x1 = round((t['x'] + W) * sx) + pad_x; y1 = round((t['y'] + H) * sy)
-        rgba = isolate(key(sheet[y0:y1, x0:x1]), W * sx, H * sy)
+        x1 = round((t['x'] + W) * sx) + pad_x; y1 = round((t['y'] + H) * sy) + pad_y
+        rgba = isolate(key(sheet[y0:y1, x0:x1], ground), W * sx, H * sy)
         ref = reference(slug, name)
         if rgba is None: report.append((slug, 'night' if night else 'day', name, 0.0)); continue
+        top = int(np.nonzero((rgba[..., 3] > 100).any(axis=1))[0][0])
+        rgba[top + round((bbox(ref)[3] - bbox(ref)[1]) * sy * 1.04):, :, 3] = 0
         big = Image.fromarray(rgba, 'RGBA').convert('RGBa').resize(
             (round(rgba.shape[1] / sx), round(rgba.shape[0] / sy)), Image.LANCZOS).convert('RGBA')
         placed = fit(np.asarray(big), ref, name.startswith(DECO))
