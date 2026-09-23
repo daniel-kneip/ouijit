@@ -1,0 +1,231 @@
+{
+ "sheet": "terrain-meadow.png",
+ "key": "#FF00FF",
+ "size": [
+  1704,
+  2738
+ ],
+ "cell": [
+  256,
+  352
+ ],
+ "anchor": "Kenney Sketch frame: top face centred at (128,181), one block 110 px",
+ "tiles": [
+  {
+   "name": "grass_center_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 24,
+   "y": 174
+  },
+  {
+   "name": "grass_corner_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 304,
+   "y": 174
+  },
+  {
+   "name": "grass_slope_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 584,
+   "y": 174
+  },
+  {
+   "name": "grass_slopeConcave_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 864,
+   "y": 174
+  },
+  {
+   "name": "grass_slopeConvex_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1144,
+   "y": 174
+  },
+  {
+   "name": "grass_water_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1424,
+   "y": 174
+  },
+  {
+   "name": "grass_waterConcave_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 24,
+   "y": 584
+  },
+  {
+   "name": "grass_waterConvex_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 304,
+   "y": 584
+  },
+  {
+   "name": "grass_waterRiver_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 584,
+   "y": 584
+  },
+  {
+   "name": "grass_river_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 864,
+   "y": 584
+  },
+  {
+   "name": "grass_riverBend_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1144,
+   "y": 584
+  },
+  {
+   "name": "grass_riverCorner_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1424,
+   "y": 584
+  },
+  {
+   "name": "grass_riverCrossing_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 24,
+   "y": 994
+  },
+  {
+   "name": "grass_riverEnd_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 304,
+   "y": 994
+  },
+  {
+   "name": "grass_riverEndSquare_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 584,
+   "y": 994
+  },
+  {
+   "name": "grass_riverSlope_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 864,
+   "y": 994
+  },
+  {
+   "name": "grass_riverSplit_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1144,
+   "y": 994
+  },
+  {
+   "name": "grass_riverBridge_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1424,
+   "y": 994
+  },
+  {
+   "name": "grass_path_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 24,
+   "y": 1404
+  },
+  {
+   "name": "grass_pathBend_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 304,
+   "y": 1404
+  },
+  {
+   "name": "grass_pathCorner_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 584,
+   "y": 1404
+  },
+  {
+   "name": "grass_pathCrossing_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 864,
+   "y": 1404
+  },
+  {
+   "name": "grass_pathEnd_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1144,
+   "y": 1404
+  },
+  {
+   "name": "grass_pathEndSquare_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1424,
+   "y": 1404
+  },
+  {
+   "name": "grass_pathSlope_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 24,
+   "y": 1814
+  },
+  {
+   "name": "grass_pathSplit_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 304,
+   "y": 1814
+  },
+  {
+   "name": "dirt_center_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 584,
+   "y": 1814
+  },
+  {
+   "name": "dirt_low_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 864,
+   "y": 1814
+  },
+  {
+   "name": "water_center_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1144,
+   "y": 1814
+  },
+  {
+   "name": "water_fall_N",
+   "section": "Ground and transitions (N; E/S/W are the same shape turned)",
+   "x": 1424,
+   "y": 1814
+  },
+  {
+   "name": "tree_single_N",
+   "section": "What stands on it",
+   "x": 24,
+   "y": 2308
+  },
+  {
+   "name": "tree_multiple_N",
+   "section": "What stands on it",
+   "x": 304,
+   "y": 2308
+  },
+  {
+   "name": "tree_pine_N",
+   "section": "What stands on it",
+   "x": 584,
+   "y": 2308
+  },
+  {
+   "name": "tree_pineLarge_N",
+   "section": "What stands on it",
+   "x": 864,
+   "y": 2308
+  },
+  {
+   "name": "rocks_grass_N",
+   "section": "What stands on it",
+   "x": 1144,
+   "y": 2308
+  },
+  {
+   "name": "rocks_dirt_N",
+   "section": "What stands on it",
+   "x": 1424,
+   "y": 2308
+  }
+ ]
+}

@@ -1,0 +1,147 @@
+{
+ "sheet": "city-adobe.png",
+ "key": "#FF00FF",
+ "size": [
+  1704,
+  1918
+ ],
+ "cell": [
+  256,
+  352
+ ],
+ "anchor": "Kenney Sketch frame: top face centred at (128,181), one block 110 px",
+ "tiles": [
+  {
+   "name": "building_center_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 174
+  },
+  {
+   "name": "dome_N",
+   "section": "DAY",
+   "x": 304,
+   "y": 174
+  },
+  {
+   "name": "dome_small_N",
+   "section": "DAY",
+   "x": 584,
+   "y": 174
+  },
+  {
+   "name": "building_dark_center_N",
+   "section": "DAY",
+   "x": 864,
+   "y": 174
+  },
+  {
+   "name": "building_dark_center_door_N",
+   "section": "DAY",
+   "x": 1144,
+   "y": 174
+  },
+  {
+   "name": "building_dark_center_windows_N",
+   "section": "DAY",
+   "x": 1424,
+   "y": 174
+  },
+  {
+   "name": "grass_center_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 584
+  },
+  {
+   "name": "grass_path_N",
+   "section": "DAY",
+   "x": 304,
+   "y": 584
+  },
+  {
+   "name": "grass_path_E",
+   "section": "DAY",
+   "x": 584,
+   "y": 584
+  },
+  {
+   "name": "grass_pathCrossing_N",
+   "section": "DAY",
+   "x": 864,
+   "y": 584
+  },
+  {
+   "name": "dirt_center_N",
+   "section": "DAY",
+   "x": 1144,
+   "y": 584
+  },
+  {
+   "name": "building_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 1078
+  },
+  {
+   "name": "dome_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 1078
+  },
+  {
+   "name": "dome_small_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 1078
+  },
+  {
+   "name": "building_dark_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 1078
+  },
+  {
+   "name": "building_dark_center_door_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 1078
+  },
+  {
+   "name": "building_dark_center_windows_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1424,
+   "y": 1078
+  },
+  {
+   "name": "grass_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 1488
+  },
+  {
+   "name": "grass_path_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 1488
+  },
+  {
+   "name": "grass_path_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 1488
+  },
+  {
+   "name": "grass_pathCrossing_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 1488
+  },
+  {
+   "name": "dirt_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 1488
+  }
+ ]
+}
