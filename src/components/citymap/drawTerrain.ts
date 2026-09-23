@@ -266,9 +266,7 @@ function paintTiles(
       if (u < t0 - 1 || u > t1 || !inWorld(world, s, u)) continue;
       const cell = terrainCell(s, u, zones);
       const water = cell.ground === 'water' || cell.ground === 'brine';
-      const turn = Math.floor(hash2(s * 7 + 1, u * 13 + 5) * 4);
-      const name = `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N${turn ? `~${turn}` : ''}`;
-      drawTile(ctx, name, (s - u) * TW, (s + u) * TH);
+      drawTile(ctx, groundTile(cell, s, u, water), (s - u) * TW, (s + u) * TH);
     }
   }
 }
@@ -296,6 +294,11 @@ const ZONE_SET: Record<DistrictTerrain, string> = {
   mushroom: 'terrain-moss',
   salt: 'terrain-salt',
 };
+
+function groundTile(cell: TerrainCell, s: number, u: number, water: boolean): string {
+  const turn = Math.floor(hash2(s * 7 + 1, u * 13 + 5) * 4);
+  return `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N${turn ? `~${turn}` : ''}`;
+}
 
 function tileSet(cell: TerrainCell): string {
   return cell.zone ? ZONE_SET[cell.zone] : GROUND_SET[cell.ground];
@@ -457,8 +460,13 @@ function paintDetails(
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       const cell = terrainCell(s, u, zones);
+      const built = underCity({ x, y }, cities);
+      if (sketch && built && (cell.ground === 'water' || cell.ground === 'brine')) {
+        drawTile(ctx, groundTile(cell, s, u, false), x, y);
+        continue;
+      }
       if (cell.ground === 'water') continue;
-      if (roadCells.has(`${s},${u}`) || underCity({ x, y }, cities)) continue;
+      if (roadCells.has(`${s},${u}`) || built) continue;
       const h = hash2(s, u);
       const jitterX = (hash2(s + 3, u) - 0.5) * TW * 0.9;
       const jitterY = (hash2(s, u + 3) - 0.5) * TH * 0.9;

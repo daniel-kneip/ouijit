@@ -10,7 +10,6 @@ import {
   cityLayout,
   hash2,
   type Biome,
-  type CityCell,
   type CityPresence,
   type CityStyle,
   type Culture,
@@ -857,31 +856,22 @@ function sketchPlant(ctx: Ctx, biome: Biome, culture: Culture, x: number, y: num
   else drawTile(ctx, many ? 'terrain-meadow/tree_multiple_N' : 'terrain-meadow/tree_single_N', x, y, 1);
 }
 
-/** The city's ground as tiles cut flush with the land round it, roads worn into it, outlined in the task colour. */
-function sketchGround(ctx: Ctx, t: MapTokens, city: DrawCity, cells: readonly CityCell[]): void {
-  const { culture, biome } = city.style;
-  const mid = (N - 1) / 2;
-  ctx.save();
+/** Where the city stands on the land: its lot tinted and ringed in the task colour, dark under the ring so it holds on any ground, and never thinner than a few pixels. */
+function cityMarker(ctx: Ctx, city: DrawCity): void {
+  ctx.fillStyle = withAlpha(city.color, 0.22);
   diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
-  ctx.clip();
-  for (const cell of cells) {
-    const { x, y } = cellCenter(cell.i, cell.j);
-    let name: string;
-    if (cell.type === 'road')
-      name =
-        cell.i === mid && cell.j === mid
-          ? cityTile(t, culture, 'grass_pathCrossing_N')
-          : cityTile(t, culture, `grass_path_${cell.j === mid ? 'N' : 'E'}`);
-    else if (cell.type === 'lot') name = cityTile(t, culture, 'dirt_center_N');
-    else if (biome === 'desert') name = 'terrain-dry/grass_center_N';
-    else name = cityTile(t, culture, 'grass_center_N');
-    drawTile(ctx, name, x, y);
-  }
-  ctx.restore();
-  ctx.strokeStyle = city.color;
-  ctx.lineWidth = 2.5;
-  diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
+  ctx.fill();
+  const m = ctx.getTransform();
+  const px = 1 / Math.hypot(m.a, m.b);
+  const width = Math.max(4, 3 * px);
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(20,16,12,0.55)';
+  ctx.lineWidth = width + Math.max(3, 2 * px);
   ctx.stroke();
+  ctx.strokeStyle = city.color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.lineJoin = 'miter';
 }
 
 /** Painted a few times a second while `animate` is on; at `time` 0 and off, a still that any bitmap can keep. */
@@ -901,11 +891,8 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
   ctx.translate(city.pos.x, city.pos.y);
   const order = [...cells].sort((a, b) => a.i + a.j - (b.i + b.j));
 
-  if (sketch) {
-    ctx.filter = sketchFilter(t, faded, true);
-    sketchGround(ctx, t, city, order);
-    ctx.filter = 'none';
-  } else if (blueprint) {
+  if (sketch) cityMarker(ctx, city);
+  else if (blueprint) {
     ctx.fillStyle = withAlpha(city.color, 0.12);
     diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
     ctx.fill();
