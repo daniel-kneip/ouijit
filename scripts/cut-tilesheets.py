@@ -6,10 +6,12 @@ Cuts redrawn tile sheets back into tiles for the city map.
 Needs Pillow, numpy and scipy. Reads each sheet beside its manifest, keys
 out the #FF00FF ground, and places every tile in Kenney's 256x352 frame by
 fitting its outline to the original tile's, then writes it at half size.
+A terrain's full ground and water tiles lose the rim of their top face and
+come in four turns, `~1` to `~3` beside the first.
 Prints the tiles whose outline still differs from the original's.
 """
 import json, os, sys, glob, collections
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 import numpy as np
 from scipy import ndimage
 
@@ -78,6 +80,29 @@ def fit(tile, ref, deco):
     frame.paste(crop.resize((w, h), Image.LANCZOS), (dx, dy))
     return np.asarray(frame.convert('RGBA'))
 
+FACE = (128, 181, 116, 55)
+FACE_INSET = 0.18
+SEAMLESS = ('grass_center_N', 'water_center_N')
+
+def seamless(tile):
+    """The block with its top face cut in from the rim and stretched back to the grid's diamond, so neighbours meet without a line; four ways round, which the diamond allows."""
+    cx, cy, hw, hh = FACE
+    k = 1 - FACE_INSET
+    inner = tile.crop((round(cx - hw * k), round(cy - hh * k), round(cx + hw * k), round(cy + hh * k)))
+    size = (2 * hw + 2, 2 * hh + 2)
+    top = inner.convert('RGBa').resize(size, Image.LANCZOS).convert('RGBA')
+    mask = Image.new('L', size, 0)
+    ImageDraw.Draw(mask).polygon([(hw + 1, 0), (2 * hw + 2, hh + 1), (hw + 1, 2 * hh + 2), (0, hh + 1)], fill=255)
+    out = []
+    for turned in (top, ImageOps.mirror(top), ImageOps.flip(top), top.rotate(180)):
+        block = tile.copy()
+        block.paste(turned, (cx - hw - 1, cy - hh - 1), mask)
+        out.append(block)
+    return out
+
+def save(img, path):
+    img.convert('RGBa').resize((W // 2, H // 2), Image.LANCZOS).convert('RGBA').save(path, optimize=True)
+
 report = []
 for jf in sorted(glob.glob(f'{SRC}/*.json')):
     slug = os.path.basename(jf)[:-5]
@@ -97,8 +122,12 @@ for jf in sorted(glob.glob(f'{SRC}/*.json')):
         big = Image.fromarray(rgba, 'RGBA').convert('RGBa').resize(
             (round(rgba.shape[1] / sx), round(rgba.shape[0] / sy)), Image.LANCZOS).convert('RGBA')
         placed = fit(np.asarray(big), ref, name.startswith(DECO))
-        Image.fromarray(placed, 'RGBA').convert('RGBa').resize((W // 2, H // 2), Image.LANCZOS).convert('RGBA').save(
-            f'{OUT}/{slug}/{name}{"@night" if night else ""}.png', optimize=True)
+        suffix = '@night' if night else ''
+        if slug.startswith('terrain-') and name in SEAMLESS:
+            for n, block in enumerate(seamless(Image.fromarray(placed, 'RGBA'))):
+                save(block, f'{OUT}/{slug}/{name}{f"~{n}" if n else ""}{suffix}.png')
+        else:
+            save(Image.fromarray(placed, 'RGBA'), f'{OUT}/{slug}/{name}{suffix}.png')
         mask = placed[..., 3] > 128
         iou = (mask & ref).sum() / max(1, (mask | ref).sum())
         report.append((slug, 'night' if night else 'day', name, round(float(iou), 2)))

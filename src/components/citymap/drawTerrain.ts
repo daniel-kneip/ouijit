@@ -266,7 +266,9 @@ function paintTiles(
       if (u < t0 - 1 || u > t1 || !inWorld(world, s, u)) continue;
       const cell = terrainCell(s, u, zones);
       const water = cell.ground === 'water' || cell.ground === 'brine';
-      drawTile(ctx, `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N`, (s - u) * TW, (s + u) * TH);
+      const turn = Math.floor(hash2(s * 7 + 1, u * 13 + 5) * 4);
+      const name = `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N${turn ? `~${turn}` : ''}`;
+      drawTile(ctx, name, (s - u) * TW, (s + u) * TH);
     }
   }
 }

@@ -6,6 +6,7 @@ type Ctx = CanvasRenderingContext2D;
 const urls = import.meta.glob<string>(
   [
     '../../../assets/tiles/terrain-*/{grass_center,water_center,tree_single,tree_multiple,tree_pine,tree_pineLarge,rocks_grass,tree,trees,rocks}_N.png',
+    '../../../assets/tiles/terrain-*/{grass,water}_center_N~*.png',
     '../../../assets/tiles/city-*/{building,roof}_*.png',
     '../../../assets/tiles/city-*/{grass_center,grass_path,grass_pathCrossing,dirt_center}_*.png',
   ],
