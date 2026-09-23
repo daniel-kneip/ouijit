@@ -5,15 +5,15 @@ type Ctx = CanvasRenderingContext2D;
 
 const urls = import.meta.glob<string>(
   [
-    '../../../assets/tiles/terrain-*/{grass_center,water_center,tree_single,tree_multiple,tree_pine,tree_pineLarge,rocks_grass,tree,trees,rocks}_N.png',
-    '../../../assets/tiles/terrain-*/{grass,water}_center_N~*.png',
-    '../../../assets/tiles/city-*/{building,roof}_*.png',
+    '../../../assets/tiles/terrain-*/{grass_center,water_center,tree_single,tree_multiple,tree_pine,tree_pineLarge,rocks_grass,tree,trees,rocks}_N.webp',
+    '../../../assets/tiles/terrain-*/{grass,water}_center_N~*.webp',
+    '../../../assets/tiles/city-*/{building,roof}_*.webp',
   ],
   { eager: true, query: '?url', import: 'default' },
 );
 
 function spriteName(path: string): string {
-  return /tiles\/([^/]+\/[^/]+)\.png$/.exec(path)?.[1] ?? path;
+  return /tiles\/([^/]+\/[^/]+)\.webp$/.exec(path)?.[1] ?? path;
 }
 
 /**
