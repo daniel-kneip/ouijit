@@ -1,11 +1,11 @@
-import { TW } from './cityGeometry';
+import { TH, TW } from './cityGeometry';
 import { canvasCaches } from './canvasMemory';
 
 type Ctx = CanvasRenderingContext2D;
 
 const urls = import.meta.glob<string>(
   [
-    '../../../assets/Sketch Town/Tiles/{grass_center,grass_pathCrossing,dirt_center}_N.png',
+    '../../../assets/Sketch Town/Tiles/{grass_center,grass_pathCrossing,dirt_center,water_center,rocks_grass}_N.png',
     '../../../assets/Sketch Town/Tiles/grass_path_{N,E}.png',
     '../../../assets/Sketch Town/Tiles/building_{center,window,windows,door,doorWindows}{,Beige}_{N,E}.png',
     '../../../assets/Sketch Town/Tiles/roof_{gable,slant}{Beige,Brown,Green,Purple}_{N,E}.png',
@@ -29,17 +29,20 @@ function spriteName(path: string): string {
 }
 
 /**
- * Where a tile's top face is centred in its 256×352 image, and how tall one
- * block of the tile stands. Kenney draws every tile as a block on the same
- * grid, so a roof or a tree is placed as the block above the one it rests on.
+ * Kenney's tiles sit on a 232×110 isometric grid, the image placed so a
+ * block's top face is centred at (128, 181) and one block stands 110 high.
+ * Our lattice is exactly 2:1, so the two axes scale apart to keep neighbouring
+ * tiles flush.
  */
-const FACE_X = 127.5;
-const FACE_Y = 186;
-const FACE_HALF_W = 116.5;
-const BLOCK_PX = 104;
+const FACE_X = 128;
+const FACE_Y = 181;
+const GRID_HALF_W = 116;
+const GRID_HALF_H = 55;
+const BLOCK_PX = 110;
 
-export const SKETCH_SCALE = TW / FACE_HALF_W;
-export const SKETCH_BLOCK = BLOCK_PX * SKETCH_SCALE;
+const SCALE_X = TW / GRID_HALF_W;
+const SCALE_Y = TH / GRID_HALF_H;
+export const SKETCH_BLOCK = BLOCK_PX * SCALE_Y;
 
 interface Sprite {
   /** Largest first, each half the one before. */
@@ -130,8 +133,8 @@ export function sketchTilesReady(): boolean {
 export function drawTile(ctx: Ctx, name: string, cx: number, cy: number, level = 0): void {
   const sprite = sprites.get(name);
   if (!sprite) return;
-  const w = sprite.w * SKETCH_SCALE;
-  const h = sprite.h * SKETCH_SCALE;
+  const w = sprite.w * SCALE_X;
+  const h = sprite.h * SCALE_Y;
   const m = ctx.getTransform();
   const onScreen = w * Math.hypot(m.a, m.b);
   let pick = sprite.levels[0];
@@ -141,8 +144,8 @@ export function drawTile(ctx: Ctx, name: string, cx: number, cy: number, level =
   }
   ctx.drawImage(
     pick,
-    cx + (sprite.x - FACE_X) * SKETCH_SCALE,
-    cy - level * SKETCH_BLOCK + (sprite.y - FACE_Y) * SKETCH_SCALE,
+    cx + (sprite.x - FACE_X) * SCALE_X,
+    cy - level * SKETCH_BLOCK + (sprite.y - FACE_Y) * SCALE_Y,
     w,
     h,
   );

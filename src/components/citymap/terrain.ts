@@ -158,6 +158,33 @@ export function cityCells(pos: Point): { s0: number; s1: number; t0: number; t1:
   return { s0: c.s - half, s1: c.s + half, t0: c.t - half, t1: c.t + half };
 }
 
+export interface CellBounds {
+  s0: number;
+  s1: number;
+  t0: number;
+  t1: number;
+}
+
+const WORLD_RADIUS = 35;
+const WORLD_MARGIN = 2;
+
+/** The land: 70 cells a side round the centre, grown to take in every city with a little shore. */
+export function worldBounds(cities: readonly Point[]): CellBounds {
+  const b = { s0: -WORLD_RADIUS, s1: WORLD_RADIUS - 1, t0: -WORLD_RADIUS, t1: WORLD_RADIUS - 1 };
+  for (const pos of cities) {
+    const c = cityCells(pos);
+    b.s0 = Math.min(b.s0, c.s0 - WORLD_MARGIN);
+    b.s1 = Math.max(b.s1, c.s1 + WORLD_MARGIN);
+    b.t0 = Math.min(b.t0, c.t0 - WORLD_MARGIN);
+    b.t1 = Math.max(b.t1, c.t1 + WORLD_MARGIN);
+  }
+  return b;
+}
+
+export function inWorld(b: CellBounds, s: number, t: number): boolean {
+  return s >= b.s0 && s <= b.s1 && t >= b.t0 && t <= b.t1;
+}
+
 /** Whether a world point lies under some city's ground, with a cell's margin around it. */
 export function underCity(p: Point, cities: readonly Point[]): boolean {
   return cities.some((c) => Math.abs(c.x - p.x) < CITY_HALF_W + TW && Math.abs(c.y - p.y) < CITY_HALF_H + TH);

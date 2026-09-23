@@ -2,7 +2,8 @@ import { canvasCaches, releaseCanvas } from './canvasMemory';
 import type { District } from '../../stores/cityMapStore';
 import { TH, TW, hash2, type Point } from './cityGeometry';
 import { tree, type MapTokens } from './drawCity';
-import { cellOf, groundColour, terrainCell, underCity, type TerrainCell } from './terrain';
+import { cellOf, groundColour, inWorld, terrainCell, underCity, type CellBounds, type TerrainCell } from './terrain';
+import { SKETCH_BLOCK, drawTile, sketchTilesReady } from './sketchTiles';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -119,6 +120,7 @@ function visibleChunks(
       bytes += (b.x1 - b.x0) * scale * (b.y1 - b.y0) * scale * 4;
     }
   }
+  shown.sort((a, b) => a.cs + a.ct - (b.cs + b.ct));
   return { shown, bytes };
 }
 
@@ -135,7 +137,7 @@ function chunkBox(cs: number, ct: number, cells: number): Visible {
     x0: (s0 - t1) * TW - TW,
     x1: (s1 - t0) * TW + TW,
     y0: (s0 + t0) * TH - TH,
-    y1: (s1 + t1) * TH + TH,
+    y1: (s1 + t1) * TH + TH + SKETCH_BLOCK,
   };
 }
 
@@ -173,6 +175,7 @@ function paintChunk(
   ct: number,
   scale: number,
   zones: readonly District[],
+  world: CellBounds,
   dots: boolean,
   t: MapTokens,
 ): void {
@@ -186,9 +189,14 @@ function paintChunk(
 
   const s0 = cs * cells;
   const t0 = ct * cells;
+  if (sketchTilesReady()) {
+    paintTiles(ctx, s0, t0, cells, zones, world);
+    return;
+  }
   // One cell of overlap: a diamond's corners reach into the neighbouring chunk's box.
   for (let s = s0 - 1; s <= s0 + cells; s++) {
     for (let u = t0 - 1; u <= t0 + cells; u++) {
+      if (!inWorld(world, s, u)) continue;
       const cell = terrainCell(s, u, zones);
       const x = (s - u) * TW;
       const y = (s + u) * TH;
@@ -209,7 +217,7 @@ function paintChunk(
   ctx.fillStyle = t.night ? 'rgba(200,190,150,0.28)' : 'rgba(255,243,205,0.7)';
   for (let s = s0 - 1; s <= s0 + cells; s++) {
     for (let u = t0 - 1; u <= t0 + cells; u++) {
-      if (!openWater(s, u, zones)) continue;
+      if (!inWorld(world, s, u) || !openWater(s, u, zones)) continue;
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       for (const e of EDGES) {
@@ -224,6 +232,32 @@ function paintChunk(
         ctx.closePath();
         ctx.fill();
       }
+    }
+  }
+}
+
+/**
+ * The ground as tiles, back to front so a block's side hangs behind the one in
+ * front of it. The ring past the chunk's own cells is two deep on the far
+ * side: the side of the chunk's last row reaches down over the next one.
+ */
+function paintTiles(
+  ctx: Ctx,
+  s0: number,
+  t0: number,
+  cells: number,
+  zones: readonly District[],
+  world: CellBounds,
+): void {
+  const s1 = s0 + cells + 1;
+  const t1 = t0 + cells + 1;
+  for (let sum = s0 + t0 - 2; sum <= s1 + t1; sum++) {
+    for (let s = s0 - 1; s <= s1; s++) {
+      const u = sum - s;
+      if (u < t0 - 1 || u > t1 || !inWorld(world, s, u)) continue;
+      const ground = terrainCell(s, u, zones).ground;
+      const water = ground === 'water' || ground === 'brine';
+      drawTile(ctx, water ? 'town/water_center_N' : 'town/grass_center_N', (s - u) * TW, (s + u) * TH);
     }
   }
 }
@@ -311,24 +345,27 @@ export class TerrainLayer {
     this.cache.dispose();
   }
 
-  draw(ctx: Ctx, t: MapTokens, visible: Visible, zoom: number, zones: readonly District[]): void {
+  draw(ctx: Ctx, t: MapTokens, visible: Visible, zoom: number, zones: readonly District[], world: CellBounds): void {
+    const sketch = sketchTilesReady();
     this.cache.reset(
       [
         t.night ? 'n' : 'd',
         t.water,
         zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
+        `${world.s0},${world.s1},${world.t0},${world.t1}`,
+        sketch ? 'tiles' : 'shapes',
       ].join('|'),
     );
     const scale = bucketFor(zoom);
     // Below the detail zoom the chunk carries the vegetation as dots; above it, the detail layer draws it.
-    const dots = zoom < DETAIL_ZOOM;
+    const dots = !sketch && zoom < DETAIL_ZOOM;
     const { shown, bytes } = visibleChunks(visible, chunkCells(scale), chunkBox, scale);
     this.cache.fit(bytes);
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     for (const { cs, ct, box } of shown) {
       const canvas = this.cache.get(`${scale}:${dots ? 'dots' : 'bare'}:${cs}:${ct}`, (c) =>
-        paintChunk(c, cs, ct, scale, zones, dots, t),
+        paintChunk(c, cs, ct, scale, zones, world, dots, t),
       );
       ctx.drawImage(canvas, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
     }
@@ -355,10 +392,12 @@ function paintDetails(
   scale: number,
   fine: boolean,
   zones: readonly District[],
+  world: CellBounds,
   cities: readonly Point[],
   roadCells: ReadonlySet<string>,
   t: MapTokens,
 ): void {
+  const sketch = sketchTilesReady();
   const cells = chunkCells(scale);
   const box = detailBox(cs, ct, cells);
   canvas.width = Math.ceil((box.x1 - box.x0) * scale);
@@ -375,6 +414,7 @@ function paintDetails(
     for (let s = s0; s <= s1; s++) {
       const u = sum - s;
       if (u < t0 || u > t1) continue;
+      if (!inWorld(world, s, u)) continue;
       const x = (s - u) * TW;
       const y = (s + u) * TH;
       const cell = terrainCell(s, u, zones);
@@ -387,6 +427,11 @@ function paintDetails(
       }
       const jitterX = (hash2(s + 3, u) - 0.5) * TW * 0.9;
       const jitterY = (hash2(s, u + 3) - 0.5) * TH * 0.9;
+      if (sketch) {
+        tileDetail(ctx, cell, x + jitterX * 0.4, y + jitterY * 0.4, h);
+        if (fine && cell.ground !== 'forest' && h > 0.92) tuft(ctx, t, x + jitterX, y + jitterY, '#7ea86a');
+        continue;
+      }
       if (cell.ground === 'forest') {
         if (h < 0.85) tree(ctx, t, x + jitterX, y + jitterY, 0.75 + h * 0.35);
         if (h < 0.3) tree(ctx, t, x - jitterX * 0.6, y + 3 - jitterY, 0.65);
@@ -398,6 +443,14 @@ function paintDetails(
       }
     }
   }
+}
+
+function tileDetail(ctx: Ctx, cell: TerrainCell, x: number, y: number, h: number): void {
+  if (cell.ground === 'forest' && h < 0.85)
+    drawTile(ctx, h < 0.3 ? 'town/tree_multiple_N' : 'town/tree_single_N', x, y, 1);
+  else if (cell.ground === 'heath' && h < 0.2)
+    drawTile(ctx, h < 0.07 ? 'town/tree_pineLarge_N' : 'town/tree_pine_N', x, y, 1);
+  else if (cell.ground === 'rock' && h < 0.3) drawTile(ctx, 'town/rocks_grass_N', x, y, 1);
 }
 
 /**
@@ -419,14 +472,18 @@ export class DetailLayer {
     visible: Visible,
     zoom: number,
     zones: readonly District[],
+    world: CellBounds,
     cities: readonly Point[],
     roadCells: ReadonlySet<string>,
   ): void {
-    if (zoom < DETAIL_ZOOM) return;
+    const sketch = sketchTilesReady();
+    if (!sketch && zoom < DETAIL_ZOOM) return;
     const fine = zoom >= FINE_ZOOM;
     this.cache.reset(
       [
         t.night ? 'n' : 'd',
+        `${world.s0},${world.s1},${world.t0},${world.t1}`,
+        sketch ? 'tiles' : 'shapes',
         zones.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
         cities.map((c) => `${c.x},${c.y}`).join(';'),
         [...roadCells].join(';'),
@@ -439,7 +496,7 @@ export class DetailLayer {
     ctx.imageSmoothingEnabled = true;
     for (const { cs, ct, box } of shown) {
       const canvas = this.cache.get(`${scale}:${fine ? 'fine' : 'coarse'}:${cs}:${ct}`, (c) =>
-        paintDetails(c, cs, ct, scale, fine, zones, cities, roadCells, t),
+        paintDetails(c, cs, ct, scale, fine, zones, world, cities, roadCells, t),
       );
       ctx.drawImage(canvas, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
     }

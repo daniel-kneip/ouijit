@@ -4,6 +4,7 @@ import {
   cityCells,
   daylightTint,
   groundColour,
+  inWorld,
   isWater,
   latticePoint,
   riverCentre,
@@ -11,6 +12,7 @@ import {
   routeCells,
   terrainCell,
   windowsLit,
+  worldBounds,
 } from '../components/citymap/terrain';
 import { N } from '../components/citymap/cityGeometry';
 import type { District } from '../stores/cityMapStore';
@@ -75,6 +77,25 @@ describe('the land under the cities', () => {
     ]);
     expect(onRiver.ground).toBe('brine');
     expect(groundColour(onRiver, false)).toMatch(/^hsl\(/);
+  });
+
+  test('the land is 70 cells a side, and grows to take in a city founded past its edge', () => {
+    const empty = worldBounds([]);
+    expect(empty.s1 - empty.s0 + 1).toBe(70);
+    expect(empty.t1 - empty.t0 + 1).toBe(70);
+    expect(inWorld(empty, 0, 0)).toBe(true);
+    expect(inWorld(empty, 40, 0)).toBe(false);
+
+    const far = latticePoint(60, -5);
+    const grown = worldBounds([far]);
+    const city = cityCells(far);
+    for (const [s, t] of [
+      [city.s0, city.t0],
+      [city.s1, city.t1],
+    ]) {
+      expect(inWorld(grown, s, t)).toBe(true);
+    }
+    expect(grown.t0).toBe(empty.t0);
   });
 
   test('a road leaves one city along the lattice, bends once, arrives at the other, and bridges the river', () => {

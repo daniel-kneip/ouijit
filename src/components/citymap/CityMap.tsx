@@ -94,12 +94,12 @@ import {
   type DrawCity,
   type MapTokens,
 } from './drawCity';
-import { loadSketchTiles } from './sketchTiles';
+import { loadSketchTiles, sketchTilesReady } from './sketchTiles';
 import { DetailLayer, TerrainLayer } from './drawTerrain';
 import { CITY_BITMAP_ZOOM, CityBitmaps } from './cityLod';
 import { type Area, motionAreas } from './motionAreas';
 import { HarnessUsageBar } from './HarnessUsageBar';
-import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
+import { cellKey, daylightTint, roadRoute, routeCells, windowsLit, worldBounds } from './terrain';
 
 const cityMapLog = log.scope('cityMap');
 
@@ -1009,6 +1009,7 @@ function useMapSurface(input: MapSurfaceInput) {
       const roadCells = new Set(routes.flatMap((r) => routeCells(r.route).map(cellKey)));
       // The ground moves only with the camera and the world; animation frames leave it be.
       const groundCtx = groundRef.current?.getContext('2d');
+      const land = worldBounds(current.map((c) => c.plot.pos));
       const selectedDistrict = sel?.type === 'district' ? sel.id : '';
       const key = [
         cam.x,
@@ -1023,6 +1024,7 @@ function useMapSurface(input: MapSurfaceInput) {
         currentDistricts.map((d) => `${d.id},${d.x},${d.y},${d.w},${d.h},${d.terrain}`).join(';'),
         current.map((c) => `${c.plot.pos.x},${c.plot.pos.y}`).join(';'),
         roadCells.size,
+        sketchTilesReady(),
       ].join('|');
       if (groundCtx && key !== groundKey.current) {
         groundKey.current = key;
@@ -1030,7 +1032,7 @@ function useMapSurface(input: MapSurfaceInput) {
         groundCtx.fillStyle = t.ground;
         groundCtx.fillRect(0, 0, w, h);
         groundCtx.setTransform(...world);
-        terrain.current.draw(groundCtx, t, visible, cam.zoom, currentDistricts);
+        terrain.current.draw(groundCtx, t, visible, cam.zoom, currentDistricts, land);
         drawGrid(groundCtx, t, visible, cam.zoom);
         for (const d of currentDistricts) {
           drawDistrict(groundCtx, t, d, sel?.type === 'district' && sel.id === d.id, cam.zoom);
@@ -1041,6 +1043,7 @@ function useMapSurface(input: MapSurfaceInput) {
           visible,
           cam.zoom,
           currentDistricts,
+          land,
           current.map((c) => c.plot.pos),
           roadCells,
         );

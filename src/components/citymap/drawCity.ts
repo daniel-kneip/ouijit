@@ -848,10 +848,13 @@ function sketchPlant(ctx: Ctx, biome: Biome, culture: Culture, x: number, y: num
   else drawTile(ctx, many ? 'town/tree_multiple_N' : 'town/tree_single_N', x, y, 1);
 }
 
-/** The city's ground as a slab of tiles, roads worn into it, outlined in the task colour. */
+/** The city's ground as tiles cut flush with the land round it, roads worn into it, outlined in the task colour. */
 function sketchGround(ctx: Ctx, city: DrawCity, cells: readonly CityCell[]): void {
   const sand = city.style.biome === 'desert' || city.style.culture === 'adobe';
   const mid = (N - 1) / 2;
+  ctx.save();
+  diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
+  ctx.clip();
   for (const cell of cells) {
     const { x, y } = cellCenter(cell.i, cell.j);
     if (cell.type === 'road') {
@@ -860,6 +863,7 @@ function sketchGround(ctx: Ctx, city: DrawCity, cells: readonly CityCell[]): voi
     } else if (cell.type === 'lot') drawTile(ctx, 'town/dirt_center_N', x, y);
     else drawTile(ctx, sand ? 'desert/grass_center_N' : 'town/grass_center_N', x, y);
   }
+  ctx.restore();
   ctx.strokeStyle = city.color;
   ctx.lineWidth = 2.5;
   diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
