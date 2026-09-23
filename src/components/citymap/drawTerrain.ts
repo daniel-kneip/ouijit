@@ -1,8 +1,17 @@
 import { canvasCaches, releaseCanvas } from './canvasMemory';
-import type { District } from '../../stores/cityMapStore';
+import type { District, DistrictTerrain } from '../../stores/cityMapStore';
 import { TH, TW, hash2, type Point } from './cityGeometry';
 import { tree, type MapTokens } from './drawCity';
-import { cellOf, groundColour, inWorld, terrainCell, underCity, type CellBounds, type TerrainCell } from './terrain';
+import {
+  cellOf,
+  groundColour,
+  inWorld,
+  terrainCell,
+  underCity,
+  type CellBounds,
+  type Ground,
+  type TerrainCell,
+} from './terrain';
 import { SKETCH_BLOCK, drawTile, sketchTilesReady } from './sketchTiles';
 
 type Ctx = CanvasRenderingContext2D;
@@ -255,11 +264,39 @@ function paintTiles(
     for (let s = s0 - 1; s <= s1; s++) {
       const u = sum - s;
       if (u < t0 - 1 || u > t1 || !inWorld(world, s, u)) continue;
-      const ground = terrainCell(s, u, zones).ground;
-      const water = ground === 'water' || ground === 'brine';
-      drawTile(ctx, water ? 'town/water_center_N' : 'town/grass_center_N', (s - u) * TW, (s + u) * TH);
+      const cell = terrainCell(s, u, zones);
+      const water = cell.ground === 'water' || cell.ground === 'brine';
+      drawTile(ctx, `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N`, (s - u) * TW, (s + u) * TH);
     }
   }
+}
+
+const GROUND_SET: Record<Ground, string> = {
+  water: 'terrain-meadow',
+  meadow: 'terrain-meadow',
+  dry: 'terrain-dry',
+  forest: 'terrain-forest',
+  heath: 'terrain-heath',
+  rock: 'terrain-rock',
+  lava: 'terrain-lava',
+  ice: 'terrain-ice',
+  marsh: 'terrain-marsh',
+  moss: 'terrain-moss',
+  salt: 'terrain-salt',
+  brine: 'terrain-salt',
+};
+
+const ZONE_SET: Record<DistrictTerrain, string> = {
+  blossom: 'terrain-blossom',
+  volcanic: 'terrain-lava',
+  marsh: 'terrain-marsh',
+  glacier: 'terrain-ice',
+  mushroom: 'terrain-moss',
+  salt: 'terrain-salt',
+};
+
+function tileSet(cell: TerrainCell): string {
+  return cell.zone ? ZONE_SET[cell.zone] : GROUND_SET[cell.ground];
 }
 
 /**
@@ -421,12 +458,16 @@ function paintDetails(
       if (cell.ground === 'water') continue;
       if (roadCells.has(`${s},${u}`) || underCity({ x, y }, cities)) continue;
       const h = hash2(s, u);
+      const jitterX = (hash2(s + 3, u) - 0.5) * TW * 0.9;
+      const jitterY = (hash2(s, u + 3) - 0.5) * TH * 0.9;
+      if (sketch && cell.zone === 'blossom') {
+        tileDetail(ctx, cell, x + jitterX * 0.4, y + jitterY * 0.4, h);
+        continue;
+      }
       if (cell.zone) {
         zoneDetail(ctx, t, cell, x, y, s, u, h, fine, 0, false);
         continue;
       }
-      const jitterX = (hash2(s + 3, u) - 0.5) * TW * 0.9;
-      const jitterY = (hash2(s, u + 3) - 0.5) * TH * 0.9;
       if (sketch) {
         tileDetail(ctx, cell, x + jitterX * 0.4, y + jitterY * 0.4, h);
         if (fine && cell.ground !== 'forest' && h > 0.92) tuft(ctx, t, x + jitterX, y + jitterY, '#7ea86a');
@@ -446,11 +487,14 @@ function paintDetails(
 }
 
 function tileDetail(ctx: Ctx, cell: TerrainCell, x: number, y: number, h: number): void {
-  if (cell.ground === 'forest' && h < 0.85)
-    drawTile(ctx, h < 0.3 ? 'town/tree_multiple_N' : 'town/tree_single_N', x, y, 1);
+  const set = tileSet(cell);
+  if (cell.zone === 'blossom') {
+    if (h < 0.55) drawTile(ctx, `${set}/${h < 0.2 ? 'tree_multiple' : 'tree_single'}_N`, x, y, 1);
+  } else if (cell.ground === 'forest' && h < 0.85)
+    drawTile(ctx, `${set}/${h < 0.3 ? 'tree_multiple' : 'tree_single'}_N`, x, y, 1);
   else if (cell.ground === 'heath' && h < 0.2)
-    drawTile(ctx, h < 0.07 ? 'town/tree_pineLarge_N' : 'town/tree_pine_N', x, y, 1);
-  else if (cell.ground === 'rock' && h < 0.3) drawTile(ctx, 'town/rocks_grass_N', x, y, 1);
+    drawTile(ctx, `${set}/${h < 0.07 ? 'tree_pineLarge' : 'tree_pine'}_N`, x, y, 1);
+  else if (cell.ground === 'rock' && h < 0.3) drawTile(ctx, `${set}/rocks_grass_N`, x, y, 1);
 }
 
 /**

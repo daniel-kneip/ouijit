@@ -1,0 +1,387 @@
+{
+ "sheet": "city-oldtown.jpeg",
+ "key": "#FF00FF",
+ "size": [
+  1704,
+  5198
+ ],
+ "cell": [
+  256,
+  352
+ ],
+ "anchor": "Kenney Sketch frame: top face centred at (128,181), one block 110 px",
+ "tiles": [
+  {
+   "name": "building_door_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 174
+  },
+  {
+   "name": "building_door_E",
+   "section": "DAY",
+   "x": 304,
+   "y": 174
+  },
+  {
+   "name": "building_doorWindows_N",
+   "section": "DAY",
+   "x": 584,
+   "y": 174
+  },
+  {
+   "name": "building_doorWindows_E",
+   "section": "DAY",
+   "x": 864,
+   "y": 174
+  },
+  {
+   "name": "building_windows_N",
+   "section": "DAY",
+   "x": 1144,
+   "y": 174
+  },
+  {
+   "name": "building_windows_E",
+   "section": "DAY",
+   "x": 1424,
+   "y": 174
+  },
+  {
+   "name": "building_window_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 584
+  },
+  {
+   "name": "building_window_E",
+   "section": "DAY",
+   "x": 304,
+   "y": 584
+  },
+  {
+   "name": "building_center_N",
+   "section": "DAY",
+   "x": 584,
+   "y": 584
+  },
+  {
+   "name": "building_center_E",
+   "section": "DAY",
+   "x": 864,
+   "y": 584
+  },
+  {
+   "name": "building_doorBeige_N",
+   "section": "DAY",
+   "x": 1144,
+   "y": 584
+  },
+  {
+   "name": "building_doorBeige_E",
+   "section": "DAY",
+   "x": 1424,
+   "y": 584
+  },
+  {
+   "name": "building_doorWindowsBeige_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 994
+  },
+  {
+   "name": "building_doorWindowsBeige_E",
+   "section": "DAY",
+   "x": 304,
+   "y": 994
+  },
+  {
+   "name": "building_windowsBeige_N",
+   "section": "DAY",
+   "x": 584,
+   "y": 994
+  },
+  {
+   "name": "building_windowsBeige_E",
+   "section": "DAY",
+   "x": 864,
+   "y": 994
+  },
+  {
+   "name": "building_windowBeige_N",
+   "section": "DAY",
+   "x": 1144,
+   "y": 994
+  },
+  {
+   "name": "building_windowBeige_E",
+   "section": "DAY",
+   "x": 1424,
+   "y": 994
+  },
+  {
+   "name": "building_centerBeige_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 1404
+  },
+  {
+   "name": "building_centerBeige_E",
+   "section": "DAY",
+   "x": 304,
+   "y": 1404
+  },
+  {
+   "name": "roof_gableBrown_N",
+   "section": "DAY",
+   "x": 584,
+   "y": 1404
+  },
+  {
+   "name": "roof_gableBrown_E",
+   "section": "DAY",
+   "x": 864,
+   "y": 1404
+  },
+  {
+   "name": "roof_gablePurple_N",
+   "section": "DAY",
+   "x": 1144,
+   "y": 1404
+  },
+  {
+   "name": "roof_gablePurple_E",
+   "section": "DAY",
+   "x": 1424,
+   "y": 1404
+  },
+  {
+   "name": "roof_churchBrown_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 1814
+  },
+  {
+   "name": "roof_churchPurple_N",
+   "section": "DAY",
+   "x": 304,
+   "y": 1814
+  },
+  {
+   "name": "grass_center_N",
+   "section": "DAY",
+   "x": 584,
+   "y": 1814
+  },
+  {
+   "name": "grass_path_N",
+   "section": "DAY",
+   "x": 864,
+   "y": 1814
+  },
+  {
+   "name": "grass_path_E",
+   "section": "DAY",
+   "x": 1144,
+   "y": 1814
+  },
+  {
+   "name": "grass_pathCrossing_N",
+   "section": "DAY",
+   "x": 1424,
+   "y": 1814
+  },
+  {
+   "name": "dirt_center_N",
+   "section": "DAY",
+   "x": 24,
+   "y": 2224
+  },
+  {
+   "name": "building_door_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 2718
+  },
+  {
+   "name": "building_door_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 2718
+  },
+  {
+   "name": "building_doorWindows_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 2718
+  },
+  {
+   "name": "building_doorWindows_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 2718
+  },
+  {
+   "name": "building_windows_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 2718
+  },
+  {
+   "name": "building_windows_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1424,
+   "y": 2718
+  },
+  {
+   "name": "building_window_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 3128
+  },
+  {
+   "name": "building_window_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 3128
+  },
+  {
+   "name": "building_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 3128
+  },
+  {
+   "name": "building_center_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 3128
+  },
+  {
+   "name": "building_doorBeige_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 3128
+  },
+  {
+   "name": "building_doorBeige_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1424,
+   "y": 3128
+  },
+  {
+   "name": "building_doorWindowsBeige_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 3538
+  },
+  {
+   "name": "building_doorWindowsBeige_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 3538
+  },
+  {
+   "name": "building_windowsBeige_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 3538
+  },
+  {
+   "name": "building_windowsBeige_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 3538
+  },
+  {
+   "name": "building_windowBeige_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 3538
+  },
+  {
+   "name": "building_windowBeige_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1424,
+   "y": 3538
+  },
+  {
+   "name": "building_centerBeige_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 3948
+  },
+  {
+   "name": "building_centerBeige_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 3948
+  },
+  {
+   "name": "roof_gableBrown_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 3948
+  },
+  {
+   "name": "roof_gableBrown_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 3948
+  },
+  {
+   "name": "roof_gablePurple_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 3948
+  },
+  {
+   "name": "roof_gablePurple_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1424,
+   "y": 3948
+  },
+  {
+   "name": "roof_churchBrown_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 4358
+  },
+  {
+   "name": "roof_churchPurple_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 304,
+   "y": 4358
+  },
+  {
+   "name": "grass_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 584,
+   "y": 4358
+  },
+  {
+   "name": "grass_path_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 864,
+   "y": 4358
+  },
+  {
+   "name": "grass_path_E",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1144,
+   "y": 4358
+  },
+  {
+   "name": "grass_pathCrossing_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 1424,
+   "y": 4358
+  },
+  {
+   "name": "dirt_center_N",
+   "section": "NIGHT (same tiles, toned for night; windows should glow)",
+   "x": 24,
+   "y": 4768
+  }
+ ]
+}

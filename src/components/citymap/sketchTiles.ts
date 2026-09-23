@@ -5,32 +5,21 @@ type Ctx = CanvasRenderingContext2D;
 
 const urls = import.meta.glob<string>(
   [
-    '../../../assets/Sketch Town/Tiles/{grass_center,grass_pathCrossing,dirt_center,water_center,rocks_grass}_N.png',
-    '../../../assets/Sketch Town/Tiles/grass_path_{N,E}.png',
-    '../../../assets/Sketch Town/Tiles/building_{center,window,windows,door,doorWindows}{,Beige}_{N,E}.png',
-    '../../../assets/Sketch Town/Tiles/roof_{gable,slant}{Beige,Brown,Green,Purple}_{N,E}.png',
-    '../../../assets/Sketch Town/Tiles/roof_{point,rounded,church}{Beige,Brown,Green,Purple}_N.png',
-    '../../../assets/Sketch Town/Tiles/tree_{single,multiple}_N.png',
-    '../../../assets/Sketch Town Expansion/Tiles/tree_{pine,pineLarge}_N.png',
-    '../../../assets/Sketch Desert/Tiles/{grass_center,building_center,dome,dome_small,tree}_N.png',
+    '../../../assets/tiles/terrain-*/{grass_center,water_center,tree_single,tree_multiple,tree_pine,tree_pineLarge,rocks_grass,tree,trees,rocks}_N.png',
+    '../../../assets/tiles/city-*/{building,roof}_*.png',
+    '../../../assets/tiles/city-*/{grass_center,grass_path,grass_pathCrossing,dirt_center}_*.png',
   ],
   { eager: true, query: '?url', import: 'default' },
 );
 
-const PACKS: Record<string, string> = {
-  'Sketch Town': 'town',
-  'Sketch Town Expansion': 'town',
-  'Sketch Desert': 'desert',
-};
-
 function spriteName(path: string): string {
-  const [, pack, file] = /assets\/([^/]+)\/Tiles\/([^/]+)\.png$/.exec(path) ?? [];
-  return `${PACKS[pack]}/${file}`;
+  return /tiles\/([^/]+\/[^/]+)\.png$/.exec(path)?.[1] ?? path;
 }
 
 /**
- * Kenney's tiles sit on a 232×110 isometric grid, the image placed so a
- * block's top face is centred at (128, 181) and one block stands 110 high.
+ * Tiles are drawn in Kenney's frame: 256×352 on a 232×110 isometric grid, a
+ * block's top face centred at (128, 181) and one block 110 high. An image
+ * at another size is that frame scaled.
  * Our lattice is exactly 2:1, so the two axes scale apart to keep neighbouring
  * tiles flush.
  */
@@ -39,6 +28,7 @@ const FACE_Y = 181;
 const GRID_HALF_W = 116;
 const GRID_HALF_H = 55;
 const BLOCK_PX = 110;
+const FRAME_W = 256;
 
 const SCALE_X = TW / GRID_HALF_W;
 const SCALE_Y = TH / GRID_HALF_H;
@@ -47,6 +37,7 @@ export const SKETCH_BLOCK = BLOCK_PX * SCALE_Y;
 interface Sprite {
   /** Largest first, each half the one before. */
   levels: HTMLCanvasElement[];
+  /** The box below in the 256×352 frame, however large the image was drawn. */
   x: number;
   y: number;
   w: number;
@@ -111,7 +102,8 @@ async function load(name: string, url: string): Promise<void> {
     w = Math.max(1, Math.round(w / 2));
     h = Math.max(1, Math.round(h / 2));
   }
-  sprites.set(name, { levels, ...box });
+  const unit = FRAME_W / img.naturalWidth;
+  sprites.set(name, { levels, x: box.x * unit, y: box.y * unit, w: box.w * unit, h: box.h * unit });
 }
 
 /** Resolves once every tile is decoded; the map draws its own shapes until then. */
@@ -124,6 +116,10 @@ export function loadSketchTiles(): Promise<void> {
 
 export function sketchTilesReady(): boolean {
   return sprites.size > 0 && sprites.size === Object.keys(urls).length;
+}
+
+export function hasTile(name: string): boolean {
+  return sprites.has(name);
 }
 
 /**

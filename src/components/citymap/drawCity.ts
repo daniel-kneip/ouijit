@@ -20,7 +20,7 @@ import {
   type Weather,
 } from './cityGeometry';
 import { isWater, routeCells } from './terrain';
-import { SKETCH_BLOCK, drawTile, sketchTilesReady } from './sketchTiles';
+import { SKETCH_BLOCK, drawTile, hasTile, sketchTilesReady } from './sketchTiles';
 
 export interface MapTokens {
   ground: string;
@@ -805,26 +805,35 @@ const SKETCH_ROOFS: Record<Culture, { shapes: string[]; colours: string[]; beige
   mediterranean: { shapes: ['rounded', 'point'], colours: ['Beige', 'Brown'], beige: 0.8 },
   nordic: { shapes: ['gable', 'slant'], colours: ['Green', 'Brown'], beige: 0 },
   pagoda: { shapes: ['point', 'rounded'], colours: ['Purple', 'Green'], beige: 0.5 },
-  adobe: { shapes: [], colours: [], beige: 1 },
+  adobe: { shapes: ['gable', 'gable', 'church'], colours: ['Brown', 'Purple'], beige: 0.3 },
 };
 
 const pick = <T>(list: readonly T[], u: number): T => list[Math.min(list.length - 1, Math.floor(u * list.length))];
 
-/** How the sprites are toned for the theme and for a city whose work is done. */
-function sketchFilter(t: MapTokens, faded: boolean): string {
+/** A city tile for the theme: its night drawing when the set has one. */
+function cityTile(t: MapTokens, culture: Culture, name: string): string {
+  const day = `city-${culture}/${name}`;
+  return t.night && hasTile(`${day}@night`) ? `${day}@night` : day;
+}
+
+/** How tiles are toned for a city whose work is done, and at night for those drawn only by day. */
+function sketchFilter(t: MapTokens, faded: boolean, drawnForNight: boolean): string {
   const parts = [];
-  if (faded) parts.push('saturate(0.3)', t.night ? 'brightness(0.7)' : 'brightness(1.08)');
-  else if (t.night) parts.push('brightness(0.62)', 'saturate(0.85)');
+  if (faded) parts.push('saturate(0.3)', t.night ? 'brightness(0.85)' : 'brightness(1.08)');
+  if (t.night && !drawnForNight) parts.push('brightness(0.62)', 'saturate(0.85)');
   return parts.join(' ') || 'none';
 }
 
-function sketchBuilding(ctx: Ctx, culture: Culture, x: number, y: number, storeys: number, seed: number): void {
+function sketchBuilding(
+  ctx: Ctx,
+  t: MapTokens,
+  culture: Culture,
+  x: number,
+  y: number,
+  storeys: number,
+  seed: number,
+): void {
   const blocks = storeys <= 2 ? 1 : 2;
-  if (culture === 'adobe') {
-    for (let b = 1; b <= blocks; b++) drawTile(ctx, 'desert/building_center_N', x, y, b);
-    if (seed > 0.4) drawTile(ctx, seed > 0.7 ? 'desert/dome_N' : 'desert/dome_small_N', x, y, blocks + 1);
-    return;
-  }
   const style = SKETCH_ROOFS[culture];
   const u = (k: number) => hash2(Math.floor(seed * 1e6) + k * 131, k);
   const beige = u(1) < style.beige ? 'Beige' : '';
@@ -834,34 +843,39 @@ function sketchBuilding(ctx: Ctx, culture: Culture, x: number, y: number, storey
       b === 1
         ? pick(['door', 'doorWindows', 'windows', 'window'], u(3))
         : pick(['windows', 'window', 'center'], u(3 + b));
-    drawTile(ctx, `town/building_${face}${beige}_${facing}`, x, y, b);
+    drawTile(ctx, cityTile(t, culture, `building_${face}${beige}_${facing}`), x, y, b);
   }
   const shape = pick(style.shapes, u(8));
   const oriented = shape === 'gable' || shape === 'slant' ? facing : 'N';
-  drawTile(ctx, `town/roof_${shape}${pick(style.colours, u(9))}_${oriented}`, x, y, blocks + 1);
+  drawTile(ctx, cityTile(t, culture, `roof_${shape}${pick(style.colours, u(9))}_${oriented}`), x, y, blocks + 1);
 }
 
 function sketchPlant(ctx: Ctx, biome: Biome, culture: Culture, x: number, y: number, many: boolean): void {
-  if (biome === 'desert' || biome === 'tropical') drawTile(ctx, 'desert/tree_N', x, y, 1);
+  if (biome === 'desert' || biome === 'tropical') drawTile(ctx, 'terrain-dry/tree_N', x, y, 1);
   else if (biome === 'tundra' || biome === 'forest' || culture === 'nordic')
-    drawTile(ctx, many ? 'town/tree_pineLarge_N' : 'town/tree_pine_N', x, y, 1);
-  else drawTile(ctx, many ? 'town/tree_multiple_N' : 'town/tree_single_N', x, y, 1);
+    drawTile(ctx, many ? 'terrain-forest/tree_pineLarge_N' : 'terrain-forest/tree_pine_N', x, y, 1);
+  else drawTile(ctx, many ? 'terrain-meadow/tree_multiple_N' : 'terrain-meadow/tree_single_N', x, y, 1);
 }
 
 /** The city's ground as tiles cut flush with the land round it, roads worn into it, outlined in the task colour. */
-function sketchGround(ctx: Ctx, city: DrawCity, cells: readonly CityCell[]): void {
-  const sand = city.style.biome === 'desert' || city.style.culture === 'adobe';
+function sketchGround(ctx: Ctx, t: MapTokens, city: DrawCity, cells: readonly CityCell[]): void {
+  const { culture, biome } = city.style;
   const mid = (N - 1) / 2;
   ctx.save();
   diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
   ctx.clip();
   for (const cell of cells) {
     const { x, y } = cellCenter(cell.i, cell.j);
-    if (cell.type === 'road') {
-      if (cell.i === mid && cell.j === mid) drawTile(ctx, 'town/grass_pathCrossing_N', x, y);
-      else drawTile(ctx, `town/grass_path_${cell.j === mid ? 'N' : 'E'}`, x, y);
-    } else if (cell.type === 'lot') drawTile(ctx, 'town/dirt_center_N', x, y);
-    else drawTile(ctx, sand ? 'desert/grass_center_N' : 'town/grass_center_N', x, y);
+    let name: string;
+    if (cell.type === 'road')
+      name =
+        cell.i === mid && cell.j === mid
+          ? cityTile(t, culture, 'grass_pathCrossing_N')
+          : cityTile(t, culture, `grass_path_${cell.j === mid ? 'N' : 'E'}`);
+    else if (cell.type === 'lot') name = cityTile(t, culture, 'dirt_center_N');
+    else if (biome === 'desert') name = 'terrain-dry/grass_center_N';
+    else name = cityTile(t, culture, 'grass_center_N');
+    drawTile(ctx, name, x, y);
   }
   ctx.restore();
   ctx.strokeStyle = city.color;
@@ -888,8 +902,8 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
   const order = [...cells].sort((a, b) => a.i + a.j - (b.i + b.j));
 
   if (sketch) {
-    ctx.filter = sketchFilter(t, faded);
-    sketchGround(ctx, city, order);
+    ctx.filter = sketchFilter(t, faded, true);
+    sketchGround(ctx, t, city, order);
     ctx.filter = 'none';
   } else if (blueprint) {
     ctx.fillStyle = withAlpha(city.color, 0.12);
@@ -969,9 +983,10 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
       continue;
     }
     if (sketch && (cell.type === 'building' || cell.type === 'park' || (built && here))) {
-      ctx.filter = sketchFilter(t, faded);
-      if (built && here) sketchBuilding(ctx, culture, x, y, here.slot.storeys, seed);
-      else if (cell.type === 'building') sketchBuilding(ctx, culture, x, y, cell.storeys, seed);
+      const building = Boolean(built && here) || cell.type === 'building';
+      ctx.filter = sketchFilter(t, faded, building);
+      if (built && here) sketchBuilding(ctx, t, culture, x, y, here.slot.storeys, seed);
+      else if (cell.type === 'building') sketchBuilding(ctx, t, culture, x, y, cell.storeys, seed);
       else if (cell.type === 'park') sketchPlant(ctx, biome, culture, x, y, cell.trees > 1);
       ctx.filter = 'none';
       continue;

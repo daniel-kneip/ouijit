@@ -14,3 +14,10 @@ and one per city culture, on flat `#FF00FF` for keying out.
   Town grass (`dry` from the Sketch Desert sand).
 - City sheets hold each tile twice: the day tiles above, the same tiles toned
   for night below the second rule.
+
+## Redrawn
+
+`redrawn/` holds the sheets as they came back, with their manifests; the
+adobe sheet follows the oldtown layout. `scripts/cut-tilesheets.py` cuts them
+into `assets/tiles/<sheet>/`, night tiles suffixed `@night`, which is what the
+map loads.
