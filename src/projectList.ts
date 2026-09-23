@@ -35,6 +35,7 @@ export async function getProjectList(): Promise<Project[]> {
         name: path.basename(row.path),
         path: row.path,
         iconColor: row.icon_color ?? undefined,
+        harnessId: row.harness_id ?? undefined,
       });
     }
   }

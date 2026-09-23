@@ -12,6 +12,8 @@ import {
   buildVmCodexTrustState,
   buildVmPiExtension,
   buildVmOpencodePlugin,
+  buildVmKiroAgentConfig,
+  buildVmKiroHooksFile,
 } from '../hookServer';
 import { issueToken, revokeToken } from '../apiAuth';
 import { getTaskByNumber } from '../db';
@@ -75,6 +77,8 @@ function buildVmHookSetup(): string {
   const codexConfig = buildVmCodexConfig();
   const piExtension = buildVmPiExtension();
   const opencodePlugin = buildVmOpencodePlugin();
+  const kiroAgentConfig = buildVmKiroAgentConfig();
+  const kiroHooksFile = buildVmKiroHooksFile();
   return [
     // Write hook script using quoted heredoc (prevents $VAR expansion at write time)
     `cat > ~/ouijit-hook <<'OUIJIT_HOOK_EOF'`,
@@ -108,6 +112,19 @@ function buildVmHookSetup(): string {
     `cat > ~/.config/opencode/plugins/ouijit.ts <<'OUIJIT_OPENCODE_PLUGIN_EOF'`,
     opencodePlugin,
     'OUIJIT_OPENCODE_PLUGIN_EOF',
+    // Kiro CLI: the v2 agent config plus the v3 global hooks file, both with
+    // literal $HOME hook commands (quoted heredocs; expanded by the shell
+    // Kiro runs hooks with). v3 sessions load the global hooks file
+    // automatically; there is no kiro-cli wrapper in the VM, so a v2 session
+    // opts in via `kiro-cli chat --agent ouijit`. The CLI reference is
+    // deliberately omitted.
+    'mkdir -p ~/.kiro/agents ~/.kiro/hooks',
+    `cat > ~/.kiro/agents/ouijit.json <<'OUIJIT_KIRO_AGENT_EOF'`,
+    kiroAgentConfig,
+    'OUIJIT_KIRO_AGENT_EOF',
+    `cat > ~/.kiro/hooks/ouijit.json <<'OUIJIT_KIRO_HOOKS_EOF'`,
+    kiroHooksFile,
+    'OUIJIT_KIRO_HOOKS_EOF',
     '',
   ].join('\n');
 }

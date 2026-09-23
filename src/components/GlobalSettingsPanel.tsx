@@ -6,6 +6,7 @@ import { setReadyAudioDisabled } from '../utils/notifications';
 import { FontPickerRow } from './FontPickerRow';
 import { ThemeSettingsSection } from './ThemeSettingsSection';
 import { MoveProjectsDialog } from './dialogs/MoveProjectsDialog';
+import { HarnessSection } from './scripts/HarnessSection';
 import type { AffectedProject, ProjectsFolderChangeAction } from '../types';
 import log from 'electron-log/renderer';
 
@@ -163,11 +164,12 @@ export function GlobalSettingsPanel() {
           <div>
             <h1 className="text-base font-semibold text-text-primary">App Settings</h1>
             <p className="text-xs text-text-tertiary mt-1">
-              Settings that apply to every project. Scripts, hooks, sandbox, and worktree options are set in each
-              project's settings.
+              Settings that apply to every project. Scripts, sandbox, and worktree options are set in each project's
+              settings; harnesses are defined here and picked there.
             </p>
           </div>
           <ThemeSettingsSection />
+          <HarnessSection />
           <section>
             <h2 className="text-sm font-semibold text-text-primary mb-4">Projects</h2>
             <div className="glass-bevel relative border border-bezel-panel rounded-[14px] overflow-hidden divide-y divide-separator bg-terminal-bg">

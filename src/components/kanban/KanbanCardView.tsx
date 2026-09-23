@@ -32,6 +32,10 @@ export interface KanbanCardViewProps {
   badge?: ReactNode;
   /** Linked pull request chip, rendered beside the task badge. */
   prBadge?: ReactNode;
+  /** Comment count chip, rendered beside the task badge. */
+  commentBadge?: ReactNode;
+  /** The comment list and composer, rendered when the card is expanded. */
+  comments?: ReactNode;
   formattedDate?: string;
   onSelect?: (taskNumber: number, event: MouseEvent) => void;
   onPlainClick?: () => void;
@@ -83,6 +87,8 @@ export const KanbanCardView = memo(function KanbanCardView({
   showBadge = false,
   badge,
   prBadge,
+  commentBadge,
+  comments,
   formattedDate,
   onSelect,
   onPlainClick,
@@ -332,10 +338,11 @@ export const KanbanCardView = memo(function KanbanCardView({
           <Icon name="caret-down" />
         </button>
       </div>
-      {((showBadge && badge) || prBadge) && (
+      {((showBadge && badge) || prBadge || commentBadge) && (
         <div className="mt-1 flex items-center gap-1 flex-wrap">
           {showBadge && badge}
           {prBadge}
+          {commentBadge}
         </div>
       )}
 
@@ -480,6 +487,7 @@ export const KanbanCardView = memo(function KanbanCardView({
             </div>
           )}
           {formattedDate && <div className="flex flex-col gap-1 text-sm">Created {formattedDate}</div>}
+          {comments}
         </div>
       )}
 

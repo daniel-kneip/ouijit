@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { DialogOverlay } from './DialogOverlay';
 import { Icon } from '../terminal/Icon';
 import type { HealthStatus } from '../../healthCheck';
+import { rendererMemory } from '../../utils/rendererMemory';
 
 interface HelpDialogProps {
   onClose: () => void;
@@ -48,6 +49,14 @@ export function HelpDialog({ onClose }: HelpDialogProps) {
     setTimeout(() => onClose(), 200);
   }, [onClose]);
 
+  const [copied, setCopied] = useState(false);
+  const copyMemoryReport = useCallback(async () => {
+    const report = { ...(await window.api.health.memory()), window: rendererMemory() };
+    await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, []);
+
   return (
     <DialogOverlay visible={visible} onDismiss={dismiss} maxWidth={520}>
       <div className="flex items-center gap-2 mb-1">
@@ -71,10 +80,17 @@ export function HelpDialog({ onClose }: HelpDialogProps) {
               <HealthRow ok={health.codex} label="codex" hint="not on PATH" />
               <HealthRow ok={health.pi} label="pi" hint="not on PATH" />
               <HealthRow ok={health.opencode} label="opencode" hint="not on PATH" />
+              <HealthRow ok={health.kiro} label="kiro-cli" hint="not on PATH" />
             </div>
           ) : (
             <div className="text-xs text-text-tertiary">Checking…</div>
           )}
+          <div className="mt-3 flex items-center gap-2 text-xs text-text-tertiary">
+            <button type="button" className="btn-secondary" onClick={() => void copyMemoryReport()}>
+              {copied ? 'Copied' : 'Copy memory report'}
+            </button>
+            <span>Every process's memory and what this window holds, as JSON.</span>
+          </div>
         </section>
 
         <section className="mt-5">

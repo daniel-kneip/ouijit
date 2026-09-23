@@ -7,6 +7,8 @@
 
 import type {
   Project,
+  Harness,
+  HarnessUsage,
   EditorOpenResult,
   PtySpawnOptions,
   PtySpawnResult,
@@ -31,6 +33,7 @@ import type {
   TaskWorktreeResult,
   CheckWorktreeResult,
   TaskWithWorkspace,
+  TaskComment,
   CliHookMode,
   TaskStatus,
   ScriptHook,
@@ -70,6 +73,7 @@ import type {
 } from '../github/types';
 import type { LensInput, LensSummary } from '../lens/config';
 import type { DiffNote, SaveDiffNoteInput } from '../diffNotes';
+import type { Review, ReviewWithComments, StartReviewInput } from '../reviews';
 import type { AnalysisOverview, DiffSignals } from '../analysis/types';
 import type { DiffLensTarget } from '../lens/worktreeSubject';
 import type { StoredLens } from '../lens/readLens';
@@ -77,6 +81,7 @@ import type { LensChangedPayload } from '../lens/subjectKeys';
 import type { SandboxProviderStatus, NonoConfig } from '../sandbox/types';
 import type { HookStatusEntry } from '../hookServer';
 import type { HealthStatus } from '../healthCheck';
+import type { MemoryReport } from '../memoryReport';
 import type { CaptureNavigatePayload } from '../capture/types';
 
 export type ProjectHooks = NonNullable<ProjectSettings['hooks']>;
@@ -160,10 +165,19 @@ export interface IpcInvokeContract {
     return: { success: boolean; error?: string; hookWarning?: string };
   };
   'task:delete': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
-  'task:trash': {
-    args: [projectPath: string, taskNumber: number];
-    return: { success: boolean; error?: string; trashed?: boolean };
+  'task:archive': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
+  'task:unarchive': { args: [projectPath: string, taskNumber: number]; return: { success: boolean; error?: string } };
+  'task:get-archived': { args: [projectPath: string]; return: TaskWithWorkspace[] };
+  'task:comments': { args: [projectPath: string]; return: TaskComment[] };
+  'task:comment-add': {
+    args: [projectPath: string, taskNumber: number, body: string];
+    return: { success: boolean; error?: string; comment?: TaskComment };
   };
+  'task:comment-update': {
+    args: [projectPath: string, id: number, body: string];
+    return: { success: boolean; error?: string };
+  };
+  'task:comment-delete': { args: [projectPath: string, id: number]; return: { success: boolean; error?: string } };
   'task:set-merge-target': {
     args: [projectPath: string, taskNumber: number, mergeTarget: string];
     return: { success: boolean; error?: string };
@@ -171,6 +185,10 @@ export interface IpcInvokeContract {
   'task:set-name': {
     args: [projectPath: string, taskNumber: number, name: string];
     return: { success: boolean; error?: string };
+  };
+  'task:workspace-file': {
+    args: [projectPath: string, taskNumber: number, worktreePath?: string];
+    return: string | null;
   };
   'task:set-description': {
     args: [projectPath: string, taskNumber: number, description: string];
@@ -224,6 +242,15 @@ export interface IpcInvokeContract {
   'hooks:get-status': { args: [ptyId: string]; return: HookStatusEntry | null };
   'hooks:save': { args: [projectPath: string, hook: ScriptHook]; return: { success: boolean } };
   'hooks:delete': { args: [projectPath: string, hookType: HookType]; return: { success: boolean } };
+  'harness:list': { args: []; return: Harness[] };
+  'harness:create': { args: [name: string]; return: Harness };
+  'harness:rename': { args: [id: string, name: string]; return: { success: boolean } };
+  'harness:delete': { args: [id: string]; return: { success: boolean } };
+  'harness:save-hook': { args: [id: string, hook: ScriptHook]; return: { success: boolean } };
+  'harness:delete-hook': { args: [id: string, hookType: HookType]; return: { success: boolean } };
+  'harness:set-for-project': { args: [projectPath: string, harnessId: string | null]; return: { success: boolean } };
+  'harness:set-usage-command': { args: [id: string, command: string | null]; return: { success: boolean } };
+  'harness:usage': { args: []; return: HarnessUsage[] };
 
   // ── Plan ─────────────────────────────────────────────────────────────
   'plan:read': { args: [planPath: string]; return: string | null };
@@ -257,6 +284,7 @@ export interface IpcInvokeContract {
 
   // ── Health ───────────────────────────────────────────────────────────
   'health:check': { args: []; return: HealthStatus };
+  'health:memory': { args: []; return: MemoryReport };
 
   // ── Sandbox (cross-provider) ─────────────────────────────────────────
   'sandbox:status': { args: [projectPath: string]; return: SandboxProviderStatus[] };
@@ -331,6 +359,22 @@ export interface IpcInvokeContract {
   'diff-notes:save': { args: [input: SaveDiffNoteInput]; return: { success: boolean } };
   'diff-notes:discard': { args: [id: string]; return: { success: boolean } };
   'diff-notes:clear': { args: [worktreePath: string]; return: { success: boolean } };
+
+  // ── Reviews ────────────────────────────────────────────────────────
+  // A pass over a worktree's diff: what was viewed, the notes written on it and
+  // the verdict it was handed over with.
+  'review:current': { args: [worktreePath: string]; return: ReviewWithComments | null };
+  'review:list': { args: [worktreePath: string]; return: Review[] };
+  'review:get': { args: [id: string]; return: ReviewWithComments | null };
+  'review:start': { args: [input: StartReviewInput]; return: Review };
+  'review:retarget': { args: [id: string, base: string | null]; return: void };
+  'review:viewed': { args: [id: string]; return: string[] };
+  'review:mark-viewed': { args: [id: string, path: string, viewed: boolean]; return: void };
+  'review:hand-over': {
+    args: [id: string, state: 'accepted' | 'changes_requested', summary: string | null];
+    return: ReviewWithComments | null;
+  };
+  'review:abandon': { args: [id: string]; return: { success: boolean } };
 
   // ── Analysis ───────────────────────────────────────────────────────
   'analysis:refresh': { args: [projectPath: string, force?: boolean]; return: void };
@@ -437,6 +481,8 @@ export interface IpcPushContract {
   };
   /** A CLI theme mutation wrote global settings — re-read and re-apply. */
   'cli:theme-changed': { args: [] };
+  /** A terminal was renamed from outside the renderer (the CLI, an agent). */
+  'pty:label-changed': { args: [payload: { ptyId: string; label: string }] };
   'cli:task-started': {
     args: [
       payload: {

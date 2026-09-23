@@ -3,10 +3,11 @@ import type Database from 'better-sqlite3';
 /**
  * Global-settings keys of the form `<prefix><projectPath>`. Must stay in sync
  * with the renderer stores that write them: canvasStore ('canvas:'),
- * worktreeSettingsStore ('worktree:'), experimentalStore ('experimental:').
+ * cityMapStore ('citymap:'), worktreeSettingsStore ('worktree:'),
+ * experimentalStore ('experimental:').
  * Any new path-keyed setting prefix must be added here so updatePath migrates it.
  */
-const PATH_KEYED_SETTING_PREFIXES = ['canvas:', 'worktree:', 'experimental:'];
+const PATH_KEYED_SETTING_PREFIXES = ['canvas:', 'citymap:', 'worktree:', 'experimental:'];
 
 export interface ProjectRow {
   path: string;
@@ -14,6 +15,7 @@ export interface ProjectRow {
   added_at: string;
   icon_color: string | null;
   sort_order: number;
+  harness_id: string | null;
 }
 
 export class ProjectRepo {
@@ -66,6 +68,10 @@ export class ProjectRepo {
   /** Set a custom icon color, or pass null to fall back to the generated color. */
   setIconColor(path: string, color: string | null): void {
     this.db.prepare('UPDATE projects SET icon_color = ? WHERE path = ?').run(color, path);
+  }
+
+  setHarness(path: string, harnessId: string | null): void {
+    this.db.prepare('UPDATE projects SET harness_id = ? WHERE path = ?').run(harnessId, path);
   }
 
   reorder(paths: string[]): void {

@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { TaskWithWorkspace, SandboxProviderId } from '../../types';
 import { openInEntry, moveToEntry, githubEntries, STATUS_LABELS, type TaskMenuActions } from './taskMenu';
 import { completeTask } from '../../services/taskCompletion';
+import { archiveTasks, deleteTasks } from '../../services/taskArchive';
 import { useTerminalStore, type TerminalDisplayState } from '../../stores/terminalStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { terminalInstances } from '../terminal/terminalReact';
@@ -19,6 +20,8 @@ import { openTaskInEditor } from '../../services/openInEditor';
 import { KanbanCardView } from './KanbanCardView';
 import { KanbanBadgeView } from './KanbanBadgeView';
 import { KanbanPrBadgeView } from './KanbanPrBadgeView';
+import { TaskComments } from './TaskComments';
+import { latestComment, selectTaskComments, useTaskCommentStore } from '../../stores/taskCommentStore';
 import { useExperimentalStore } from '../../stores/experimentalStore';
 import { openPullRequestInPanel, createPullRequestForTask } from '../../services/githubTaskActions';
 
@@ -59,13 +62,13 @@ export const KanbanCard = memo(function KanbanCard({
   const [initialRenamingLabel, setInitialRenamingLabel] = useState<string>('');
   const [isRenamingTask, setIsRenamingTask] = useState(false);
 
-  const isInChain = isChainMember(chainInfo);
   const githubEnabled = useExperimentalStore((s) => s.flagsByProject[projectPath]?.github ?? false);
+  const comments = useTaskCommentStore(selectTaskComments(task.taskNumber));
+  const newestComment = latestComment(comments);
 
   // Derived in selectors, so a badge drag re-renders only the cards involved.
   const activeBadgeDragSource = useProjectStore((s) => s.activeBadgeDrag);
   const isHoveredByBadgeDrag = useProjectStore((s) => s.badgeDragOverTask === task.taskNumber);
-  const optionKeyHeld = useProjectStore((s) => s.optionKeyHeld);
   const isBadgeDragActive = activeBadgeDragSource != null;
   const isValidBadgeTarget = useMemo(() => {
     if (activeBadgeDragSource == null || activeBadgeDragSource === task.taskNumber || !chainMap) return false;
@@ -73,7 +76,6 @@ export const KanbanCard = memo(function KanbanCard({
   }, [activeBadgeDragSource, task.taskNumber, chainMap]);
   const isHoveredBadgeTarget = isValidBadgeTarget && isHoveredByBadgeDrag;
   const isInvalidBadgeTarget = isBadgeDragActive && !isValidBadgeTarget;
-  const showBadge = isInChain || optionKeyHeld;
 
   // Shallow compare, so unrelated terminal updates don't re-render this card.
   const connectedDisplays = useTerminalStore(
@@ -143,7 +145,7 @@ export const KanbanCard = memo(function KanbanCard({
   const selectedCount = useProjectStore((s) => s.selectedTaskNumbers.size);
   const contextMenuItems = useMemo((): ContextMenuEntry[] => {
     if (isSelected && selectedCount > 1) {
-      const bulkActions: Pick<TaskMenuActions, 'setStatus' | 'trash'> = {
+      const bulkActions: Pick<TaskMenuActions, 'setStatus' | 'archive' | 'remove'> = {
         setStatus: async (status) => {
           const selected = [...useProjectStore.getState().selectedTaskNumbers];
           await Promise.allSettled(selected.map((n) => window.api.task.setStatus(projectPath, n, status)));
@@ -151,13 +153,8 @@ export const KanbanCard = memo(function KanbanCard({
           useProjectStore.getState().clearSelection();
           useProjectStore.getState().addToast(`Moved ${selected.length} tasks to ${STATUS_LABELS[status]}`, 'success');
         },
-        trash: async () => {
-          const selected = [...useProjectStore.getState().selectedTaskNumbers];
-          await Promise.allSettled(selected.map((n) => window.api.task.trash(projectPath, n)));
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().clearSelection();
-          useProjectStore.getState().addToast(`Moved ${selected.length} tasks to trash`, 'success');
-        },
+        archive: () => void archiveTasks(projectPath, [...useProjectStore.getState().selectedTaskNumbers]),
+        remove: () => deleteTasks(projectPath, [...useProjectStore.getState().selectedTaskNumbers]),
       };
       const items: ContextMenuEntry[] = [
         moveToEntry(bulkActions),
@@ -198,11 +195,8 @@ export const KanbanCard = memo(function KanbanCard({
         useProjectStore.getState().loadTasks(projectPath);
       },
       completeToDone: () => void completeTask({ projectPath, task }),
-      trash: async () => {
-        await window.api.task.trash(projectPath, task.taskNumber);
-        useProjectStore.getState().loadTasks(projectPath);
-        useProjectStore.getState().addToast('Task moved to trash', 'success');
-      },
+      archive: () => void archiveTasks(projectPath, [task.taskNumber]),
+      remove: () => deleteTasks(projectPath, [task.taskNumber]),
     };
     items.push(openInEntry(availableSandboxProviders, !!(task.worktreePath && task.branch), actions));
 
@@ -273,12 +267,8 @@ export const KanbanCard = memo(function KanbanCard({
         isHoveredBadgeTarget={isHoveredBadgeTarget}
         isValidBadgeTarget={isValidBadgeTarget}
         isInvalidBadgeTarget={isInvalidBadgeTarget}
-        showBadge={showBadge}
-        badge={
-          showBadge ? (
-            <DraggableBadge task={task} projectPath={projectPath} chainInfo={chainInfo} chainMap={chainMap} />
-          ) : null
-        }
+        showBadge
+        badge={<DraggableBadge task={task} projectPath={projectPath} chainInfo={chainInfo} chainMap={chainMap} />}
         prBadge={
           githubEnabled && task.githubPrNumber != null ? (
             <KanbanPrBadgeView
@@ -287,6 +277,21 @@ export const KanbanCard = memo(function KanbanCard({
             />
           ) : null
         }
+        commentBadge={
+          newestComment ? (
+            <span
+              className="inline-flex items-center gap-1 max-w-[220px] font-mono text-[11px] leading-none px-2 py-1 rounded-full text-text-secondary"
+              style={{ background: 'var(--color-background-tertiary)' }}
+              title={newestComment.body}
+              data-testid={`comment-badge-${task.taskNumber}`}
+            >
+              <Icon name="chat-circle" className="w-3 h-3 shrink-0" />
+              {comments.length}
+              <span className="truncate font-sans">{newestComment.body}</span>
+            </span>
+          ) : null
+        }
+        comments={<TaskComments projectPath={projectPath} taskNumber={task.taskNumber} />}
         formattedDate={formattedDate}
         onSelect={onSelect}
         onPlainClick={handlePlainClick}

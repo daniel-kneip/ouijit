@@ -95,6 +95,7 @@ interface ListenerStubs {
   cliTaskTransitionedCb: CliTaskTransitionedCb | null;
   cliTaskCompletedCb: CliTaskCompletedCb | null;
   cliChangeCb: CliChangeCb | null;
+  labelCb: ((payload: { ptyId: string; label: string }) => void) | null;
 }
 
 /**
@@ -109,6 +110,7 @@ function installListenerStubs(): ListenerStubs {
     cliTaskTransitionedCb: null,
     cliTaskCompletedCb: null,
     cliChangeCb: null,
+    labelCb: null,
   };
   const api = window.api as unknown as Record<string, unknown>;
   api['onUpdateAvailable'] = vi.fn(() => () => {});
@@ -119,6 +121,10 @@ function installListenerStubs(): ListenerStubs {
     return () => {};
   });
   api['onCliThemeChanged'] = vi.fn(() => () => {});
+  api['onPtyLabelChanged'] = vi.fn((cb: (payload: { ptyId: string; label: string }) => void) => {
+    stubs.labelCb = cb;
+    return () => {};
+  });
   api['health'] = { onUpdate: vi.fn(() => () => {}) };
   api['onCliTaskStarted'] = vi.fn((cb: CliTaskStartedCb) => {
     stubs.cliTaskStartedCb = cb;
@@ -395,5 +401,18 @@ describe('useIPCListeners — cli-change refreshes the resource that changed', (
     fire('scripts', '/proj/other');
     await flush();
     expect(window.api.scripts.getAll).not.toHaveBeenCalled();
+  });
+});
+
+describe('useIPCListeners — pty:label-changed', () => {
+  test('a terminal renamed through the api takes the name in the store', () => {
+    const stubs = installListenerStubs();
+    useTerminalStore.setState({ terminalsByProject: {}, displayStates: {}, activeIndices: {} });
+    useTerminalStore.getState().addTerminal(PROJECT, 'pty-9', { taskId: 9, label: 'Shell' });
+    renderHook(() => useIPCListeners());
+
+    stubs.labelCb!({ ptyId: 'pty-9', label: 'Auth middleware' });
+
+    expect(useTerminalStore.getState().displayStates['pty-9'].label).toBe('Auth middleware');
   });
 });

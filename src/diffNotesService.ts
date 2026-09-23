@@ -15,13 +15,15 @@ import {
   deleteDiffNote,
   deleteDiffNotes,
   moveDiffNote,
-  clearDiffNotes,
+  clearOutstandingDiffNotes,
+  getOpenReview,
   type DiffNoteRow,
 } from './db';
 import type { DiffNote, SaveDiffNoteInput } from './diffNotes';
 import { judgeAnchor } from './snippetAnchor';
 
-function toNote(row: DiffNoteRow): DiffNote {
+/** Exported for the reviews, which read the same rows through their own query. */
+export function toDiffNote(row: DiffNoteRow): DiffNote {
   return {
     id: row.id,
     worktreePath: row.worktree_path,
@@ -71,7 +73,7 @@ export async function liveNotes(worktreePath: string, keep: readonly string[] = 
 
   await deleteDiffNotes(dropped);
   const gone = new Set(dropped);
-  return rows.filter((row) => !gone.has(row.id)).map(toNote);
+  return rows.filter((row) => !gone.has(row.id)).map(toDiffNote);
 }
 
 async function readLines(worktreePath: string, filePath: string): Promise<string[] | null> {
@@ -83,10 +85,13 @@ async function readLines(worktreePath: string, filePath: string): Promise<string
 }
 
 export async function saveNote(input: SaveDiffNoteInput): Promise<{ success: boolean }> {
-  // `snippet` and `created_at` land on the insert alone — the repo's upsert
-  // rewrites the body and nothing else. Editing a note therefore keeps both the
-  // time it was written and the code it was written about, and does not become
-  // a note about whatever has since replaced it.
+  // A note written while a review is open belongs to it, so the hand-over
+  // carries it and the sweep leaves it alone once that review is submitted.
+  const review = await getOpenReview(input.worktreePath);
+  // `snippet`, `created_at` and `review_id` land on the insert alone — the
+  // repo's upsert rewrites the body and nothing else. Editing a note therefore
+  // keeps both the time it was written and the code it was written about, and
+  // does not become a note about whatever has since replaced it.
   await saveDiffNote({
     id: input.id ?? randomUUID(),
     worktree_path: input.worktreePath,
@@ -97,6 +102,7 @@ export async function saveNote(input: SaveDiffNoteInput): Promise<{ success: boo
     snippet: input.snippet ?? null,
     body: input.body,
     created_at: new Date().toISOString(),
+    review_id: review?.id ?? null,
   });
   return { success: true };
 }
@@ -107,6 +113,6 @@ export async function discardNote(id: string): Promise<{ success: boolean }> {
 }
 
 export async function clearNotes(worktreePath: string): Promise<{ success: boolean }> {
-  await clearDiffNotes(worktreePath);
+  await clearOutstandingDiffNotes(worktreePath);
   return { success: true };
 }

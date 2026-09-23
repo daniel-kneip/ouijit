@@ -102,6 +102,11 @@ export function getWrapperBinDir(): string {
   return path.join(os.homedir(), '.config', 'Ouijit', 'bin');
 }
 
+/** The agent guide as a file, for harnesses that take a system prompt from one. */
+export function getCliReferencePath(): string {
+  return path.join(os.homedir(), '.config', 'Ouijit', 'ouijit-cli-reference.md');
+}
+
 export function setUserDataPath(p: string): void {
   _userDataPath = p;
 }

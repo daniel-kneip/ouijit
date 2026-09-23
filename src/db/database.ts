@@ -14,6 +14,11 @@ import { up as migration012 } from './migrations/012-per-runnable-restart';
 import { up as migration013 } from './migrations/013-drop-task-sandboxed';
 import { up as migration014 } from './migrations/014-github-diff-and-notes';
 import { up as migration015 } from './migrations/015-diff-lenses';
+import { up as migration016 } from './migrations/016-harnesses';
+import { up as migration017 } from './migrations/017-task-archive';
+import { up as migration018 } from './migrations/018-task-comments';
+import { up as migration019 } from './migrations/019-harness-usage';
+import { up as migration020 } from './migrations/020-code-reviews';
 
 const migrations = [
   { version: 1, up: migration001 },
@@ -31,6 +36,11 @@ const migrations = [
   { version: 13, up: migration013 },
   { version: 14, up: migration014 },
   { version: 15, up: migration015 },
+  { version: 16, up: migration016 },
+  { version: 17, up: migration017 },
+  { version: 18, up: migration018 },
+  { version: 19, up: migration019 },
+  { version: 20, up: migration020 },
 ];
 
 let db: Database.Database | null = null;

@@ -1,6 +1,17 @@
 import type { BrowserWindow } from 'electron';
 import { typedHandle, typedPush } from '../helpers';
 import { liveNotes, saveNote, discardNote, clearNotes } from '../../diffNotesService';
+import {
+  abandonReview,
+  currentReview,
+  handOverReview,
+  listReviews,
+  markFileViewed,
+  retargetReview,
+  reviewWithComments,
+  startReview,
+  viewedFiles,
+} from '../../reviewService';
 import { readDiffLens, writeDiffLens } from '../../lens/worktreeSubject';
 import { listLenses, saveLens, deleteLens, getLensAgentChoice, setLensAgentChoice } from '../../lens/config';
 
@@ -9,6 +20,16 @@ export function registerDiffPanelHandlers(mainWindow: BrowserWindow): void {
   typedHandle('diff-notes:save', (input) => saveNote(input));
   typedHandle('diff-notes:discard', (id) => discardNote(id));
   typedHandle('diff-notes:clear', (worktreePath) => clearNotes(worktreePath));
+
+  typedHandle('review:current', (worktreePath) => currentReview(worktreePath));
+  typedHandle('review:list', (worktreePath) => listReviews(worktreePath));
+  typedHandle('review:get', (id) => reviewWithComments(id));
+  typedHandle('review:start', (input) => startReview(input));
+  typedHandle('review:retarget', (id, base) => retargetReview(id, base));
+  typedHandle('review:viewed', (id) => viewedFiles(id));
+  typedHandle('review:mark-viewed', (id, path, viewed) => markFileViewed(id, path, viewed));
+  typedHandle('review:hand-over', (id, state, summary) => handOverReview(id, state, summary));
+  typedHandle('review:abandon', (id) => abandonReview(id));
 
   typedHandle('diff-lens:get', (target) => readDiffLens(target));
   typedHandle('diff-lens:run', (target, lensId) => writeDiffLens(target, lensId));

@@ -18,10 +18,12 @@ import { useProjectStore } from '../../stores/projectStore';
 import type { TaskWithWorkspace, TaskStatus, HookType, SandboxProviderId } from '../../types';
 import { beginTransition, bulkTransitionTasks } from '../../services/taskStartService';
 import { completeTask } from '../../services/taskCompletion';
+import { archiveTasks } from '../../services/taskArchive';
 import { KanbanColumn } from './KanbanColumn';
 import { BulkActionBar } from './BulkActionBar';
 import { OnboardingPanel } from './OnboardingPanel';
 import { KanbanShellBar } from './KanbanShellBar';
+import { KanbanArchive } from './ArchivedTasks';
 import { focusKanbanAddInput } from './KanbanAddInput';
 import { STATUS_LABELS } from './taskMenu';
 import { useAppStore } from '../../stores/appStore';
@@ -40,7 +42,7 @@ const COLUMNS: { status: TaskStatus; label: string }[] = COLUMN_ORDER.map((statu
 }));
 
 const COLUMN_IDS: Set<string> = new Set(COLUMNS.map((c) => c.status));
-const TRASH_ID = 'trash-zone';
+const ARCHIVE_ID = 'archive-zone';
 
 const isMac = navigator.platform.toLowerCase().includes('mac');
 
@@ -51,9 +53,9 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 const customCollision: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
   if (pointerCollisions.length > 0) {
-    // Prioritise trash zone so it always wins when the pointer is inside it
-    const trash = pointerCollisions.find((c) => c.id === TRASH_ID);
-    if (trash) return [trash];
+    // Prioritise archive zone so it always wins when the pointer is inside it
+    const archive = pointerCollisions.find((c) => c.id === ARCHIVE_ID);
+    if (archive) return [archive];
     return pointerCollisions;
   }
   return rectIntersection(args);
@@ -193,17 +195,17 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
     [taskStatusByNumber],
   );
 
-  const [showTrash, setShowTrash] = useState(false);
-  const [overTrash, setOverTrash] = useState(false);
-  const overTrashRef = useRef(false);
-  const trashRef = useRef<HTMLDivElement>(null);
+  const [showArchive, setShowArchive] = useState(false);
+  const [overArchive, setOverArchive] = useState(false);
+  const overArchiveRef = useRef(false);
+  const archiveRef = useRef<HTMLDivElement>(null);
 
-  // Tracks pointer proximity to the right edge and the trash zone during a
+  // Tracks pointer proximity to the right edge and the archive zone during a
   // drag, coalesced to one tick per frame since pointermove fires per pixel.
   useEffect(() => {
     if (!activeTask || activeBadgeDrag) {
-      setShowTrash(false);
-      setOverTrash(false);
+      setShowArchive(false);
+      setOverArchive(false);
       return;
     }
     const threshold = 200;
@@ -213,17 +215,17 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
     const flush = () => {
       rafId = null;
       const distFromRight = window.innerWidth - lastX;
-      setShowTrash(distFromRight < threshold);
+      setShowArchive(distFromRight < threshold);
 
-      const el = trashRef.current;
+      const el = archiveRef.current;
       if (el) {
         const rect = el.getBoundingClientRect();
         const isOver = lastX >= rect.left && lastX <= rect.right && lastY >= rect.top && lastY <= rect.bottom;
-        overTrashRef.current = isOver;
-        setOverTrash(isOver);
+        overArchiveRef.current = isOver;
+        setOverArchive(isOver);
       } else {
-        overTrashRef.current = false;
-        setOverTrash(false);
+        overArchiveRef.current = false;
+        setOverArchive(false);
       }
     };
     const onMove = (e: PointerEvent) => {
@@ -340,10 +342,10 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
         return;
       }
 
-      // ── Card drop: reorder / trash ──────────────────────────────────
+      // ── Card drop: reorder / archive ────────────────────────────────
       let draggedTask = activeTask;
       const origStatus = originalStatusRef.current;
-      const droppedOnTrash = overTrashRef.current;
+      const droppedOnArchive = overArchiveRef.current;
       const multiDragTasks = multiDragRef.current;
       originalStatusRef.current = null;
       multiDragRef.current = null;
@@ -355,20 +357,10 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
 
       const activeId = active.id as string;
 
-      // Handle trash drop — use pointer-based hit test for consistency with visual state
-      if (droppedOnTrash) {
+      // Handle archive drop — use pointer-based hit test for consistency with visual state
+      if (droppedOnArchive) {
         setActiveTask(null);
-        if (multiDragTasks) {
-          await Promise.allSettled(multiDragTasks.map((n) => window.api.task.trash(projectPath, n)));
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().clearSelection();
-          useProjectStore.getState().addToast(`Moved ${multiDragTasks.length} tasks to trash`, 'success');
-        } else {
-          const taskNum = parseInt(activeId.replace('task-', ''), 10);
-          await window.api.task.trash(projectPath, taskNum);
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().addToast('Task moved to trash', 'success');
-        }
+        await archiveTasks(projectPath, multiDragTasks ?? [parseInt(activeId.replace('task-', ''), 10)]);
         return;
       }
 
@@ -572,7 +564,7 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
         className="kanban-board glass-bevel fixed top-[82px] bottom-4 z-[140] flex flex-col opacity-100 rounded-[14px] overflow-hidden border border-bezel-panel"
         style={{
           left: 'calc(var(--sidebar-offset, 0px) + 16px)',
-          right: showTrash ? 144 : 16,
+          right: showArchive ? 144 : 16,
           transition: 'left 0.2s ease-out, right 0.2s ease-out',
           background: 'var(--color-terminal-bg)',
           boxShadow: 'var(--shadow-panel)',
@@ -628,12 +620,13 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
             );
           })}
         </div>
+        <KanbanArchive projectPath={projectPath} />
         <KanbanShellBar projectPath={projectPath} onSwitchToTerminal={handleSwitchToTerminal} />
       </div>
 
       {selectedTaskCount > 0 && <BulkActionBar projectPath={projectPath} onOpenTerminal={handleOpenTerminal} />}
 
-      <KanbanTrashZone ref={trashRef} visible={showTrash} isOver={overTrash} />
+      <KanbanArchiveZone ref={archiveRef} visible={showArchive} isOver={overArchive} />
 
       <DragOverlay dropAnimation={null}>
         {activeTask && (
@@ -677,13 +670,13 @@ export function KanbanBoard({ projectPath, onHide }: KanbanBoardProps) {
   );
 }
 
-// ── Trash drop zone ──────────────────────────────────────────────────
+// ── Archive drop zone ──────────────────────────────────────────────────
 
-const KanbanTrashZone = forwardRef<HTMLDivElement, { visible: boolean; isOver: boolean }>(function KanbanTrashZone(
+const KanbanArchiveZone = forwardRef<HTMLDivElement, { visible: boolean; isOver: boolean }>(function KanbanArchiveZone(
   { visible, isOver },
   ref,
 ) {
-  const { setNodeRef } = useDroppable({ id: TRASH_ID });
+  const { setNodeRef } = useDroppable({ id: ARCHIVE_ID });
 
   return (
     <div
@@ -698,14 +691,14 @@ const KanbanTrashZone = forwardRef<HTMLDivElement, { visible: boolean; isOver: b
         opacity: visible ? 1 : 0,
         transition: 'width 0.2s ease-out, opacity 0.2s ease-out, background 150ms ease, color 150ms ease',
 
-        background: isOver ? 'color-mix(in srgb, var(--color-error) 12%, transparent)' : 'var(--color-background)',
-        color: isOver ? 'var(--color-error)' : 'var(--color-text-tertiary)',
+        background: isOver ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : 'var(--color-background)',
+        color: isOver ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
       }}
     >
       <div className="[&>svg]:w-6 [&>svg]:h-6">
-        <Icon name="trash" />
+        <Icon name="archive" />
       </div>
-      <span className="text-xs font-medium whitespace-nowrap">Move to Trash</span>
+      <span className="text-xs font-medium whitespace-nowrap">Archive</span>
     </div>
   );
 });

@@ -10,6 +10,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import { isPtyActive } from './ptyManager';
@@ -17,7 +18,10 @@ import { getShellIntegrationDir, installShellIntegration } from './shellIntegrat
 import { getLogger } from './logger';
 import { handleApiRequest } from './api/router';
 import { authenticateRequest, type AuthContext } from './apiAuth';
-import { getWrapperBinDir } from './paths';
+import { getCliReferencePath, getWrapperBinDir } from './paths';
+import { CLI_REFERENCE } from './agentGuide';
+
+export { CLI_REFERENCE, getCliReferencePath };
 
 const hookServerLog = getLogger().scope('hookServer');
 
@@ -197,11 +201,6 @@ export function stopHookServer(): Promise<void> {
 
 // ── Hook definitions ─────────────────────────────────────────────────
 
-/** Path to the CLI reference file loaded by Claude via --append-system-prompt-file. */
-export function getCliReferencePath(): string {
-  return path.join(os.homedir(), '.config', 'Ouijit', 'ouijit-cli-reference.md');
-}
-
 interface HookEntry {
   type: 'command';
   command: string;
@@ -258,162 +257,6 @@ export const HELPER_SCRIPT = [
   '  -d "{$json}" 2>/dev/null &',
   '',
 ].join('\n');
-
-/** CLI reference loaded by Claude Code via --append-system-prompt-file. */
-export const CLI_REFERENCE = `# Ouijit CLI Reference
-
-You are running inside an Ouijit terminal. The \`ouijit\` CLI manages tasks, tags, hooks, scripts, and plans for this project. All commands output JSON to stdout. The CLI is pre-configured via environment variables — no setup needed.
-
-## Environment (pre-set, do not modify)
-- OUIJIT_API_URL — REST API endpoint (already configured)
-- OUIJIT_PTY_ID — this terminal session's ID (used by markdown and preview commands)
-
-## Task Commands (most common)
-ouijit task list                              # → [{taskNumber, name, status, branch, worktreePath, prompt, ...}]
-ouijit task get <number>                      # → single task object
-ouijit task current                           # → task owning this terminal (resolves via OUIJIT_PTY_ID)
-ouijit task create "<name>"                   # → {success, task: {taskNumber, ...}}
-ouijit task create "<name>" --prompt "<text>" # set description at creation
-ouijit task start <number>                    # creates git worktree, sets in_progress; default opens the start-hook dialog in the GUI
-ouijit task start <number> --branch <name>    # use a custom branch name for the worktree
-ouijit task start <number> --run-hook         # run the configured start hook immediately, no dialog
-ouijit task start <number> --skip-hook        # spawn the terminal but run no hook
-ouijit task start <number> --hook-command "<cmd>"  # spawn the terminal running a one-off command instead of the configured hook
-ouijit task create-and-start "<name>"         # create + start in one step (accepts --prompt, --branch, and the same --run-hook / --skip-hook / --hook-command flags); aliased as "task spawn"
-ouijit task set-status <number> <status>      # status: todo | in_progress | in_review | done
-ouijit task set-status <number> in_review                    # default: opens the review-hook dialog (like a kanban drop)
-ouijit task set-status <number> in_review --run-hook         # run the configured review hook immediately, no dialog
-ouijit task set-status <number> in_review --skip-hook        # change status, run no hook
-ouijit task set-status <number> in_review --hook-command "<cmd>" # run a one-off command instead of the review hook
-ouijit task set-status <number> done                         # default: opens the done-hook dialog (like a kanban drop)
-ouijit task set-status <number> done --run-hook              # run the configured done hook immediately, no dialog
-ouijit task set-status <number> done --skip-hook            # change status, run no hook
-ouijit task set-status <number> done --hook-command "<cmd>" # run a one-off command instead of the done hook
-ouijit task bulk-set-status <status> <n1> <n2>...           # set status on many tasks in parallel (in_progress/in_review/done all take --run-hook/--skip-hook/--hook-command)
-ouijit task set-name <number> <new name>
-ouijit task set-description <number> <text>
-ouijit task set-merge-target <number> <branch>
-ouijit task delete <number>                   # removes task and its worktree
-
-## Tag Commands
-ouijit tag list                               # → all tags across projects
-ouijit tag list --task <number>               # → tags for one task
-ouijit tag add <task-number> <tag-name>
-ouijit tag remove <task-number> <tag-name>
-ouijit tag set <task-number> <tag1> <tag2>... # replace all tags
-
-## Hook Commands (project lifecycle scripts)
-Hook types: start, continue, run, review, done, editor
-
-ouijit hook list                              # → {start?: {name, command}, ...}
-ouijit hook get <type>
-ouijit hook set <type> --name "<name>" --command "<cmd>" [--description "<desc>"]
-ouijit hook delete <type>
-
-## Script Commands (ad-hoc project scripts)
-ouijit script list                            # → [{id, name, command, sortOrder}]
-ouijit script set --name "<name>" --command "<cmd>"
-ouijit script delete <id>
-ouijit script run <id-or-name>                # executes and streams output
-ouijit script run <id-or-name> --task <number> # run in task's worktree dir
-
-## Pull Requests
-A task made from a pull request carries its number:
-ouijit task current | jq .githubPrNumber
-
-ouijit pr list                                # → open PRs, grouped review/yours/others
-ouijit pr view <number>                       # → one PR with threads, timeline, checks
-ouijit pr link <number> --task <n>            # link a PR to a task
-
-### Review comments (staged locally, sent by the user)
-ouijit pr draft list <number>
-ouijit pr draft add <number> --file <path> --line <n> --body "<text>" [--origin <name>]
-ouijit pr draft add <number> --file <path> --line <n> --body -    # body on stdin
-ouijit pr draft discard <number> <draft-id>
-
---body - is the one to use for anything multi-line. --origin names who wrote it,
-so the user can see which comments came from an agent before sending.
-Anchor to a line that appears as an ADDED line in the diff, by its new-file line
-number: GitHub rejects the whole review at submit time if any comment points at
-a line outside the diff, so a bad anchor loses every comment with it.
-
-### Lenses (how the Code pane groups the diff)
-ouijit pr lens get <number> --head-sha <sha>
-ouijit pr lens set <number> --body -          # JSON on stdin
-ouijit pr lens clear <number>
-
-The body names the parts of the change and points each at the hunks that make
-it up. One file can appear in several parts — that is the point of it:
-{"headSha": "<sha>", "groups": [
-  {"title": "Draft storage", "summary": "Where an unsent comment lives",
-   "slices": [{"path": "src/github/service.ts", "ranges": [[329, 388]]},
-              {"path": "src/db/repos/reviewDraftRepo.ts"}]}
-]}
-Ranges are new-file line numbers and select whole hunks; omit "ranges" to claim
-the whole file. headSha must be the PR's current head, or the lens is ignored.
-Hunks no group claims are still shown, in a trailing group — a lens can reorder
-and split a diff but never hides part of it, so covering everything is not
-required.
-
-## Markdown Panel Commands (open .md files as tabs in this terminal)
-ouijit markdown add <path.md>                 # open a markdown file panel on this terminal
-ouijit markdown list                          # → {ptyId, kind, panels: [{label, path, active}, ...]}
-ouijit markdown remove <path.md>              # close that markdown panel
-
-## Web Preview Commands (open a URL as a tab in this terminal)
-ouijit preview add <url>                      # open a web preview panel (http/https) on this terminal
-ouijit preview list                           # → {ptyId, kind, panels: [{label, url, active}, ...]}
-ouijit preview remove <url>                   # close that preview panel
-
-## Project Commands
-ouijit project list                           # → all registered projects
-
-## Theme Commands (global appearance, not project-scoped)
-ouijit theme list                             # → {preference, presets: [...], customThemes: [...]}
-ouijit theme use <theme>                      # system | light | dark | a preset/custom id (e.g. dracula)
-ouijit theme save '<json>'                    # create or update a custom theme (also: --file <path.json>)
-ouijit theme delete <id>                      # remove a custom theme
-
-# A theme is design-token overrides on a "dark" or "light" base:
-# {"id":"my-theme","name":"My Theme","base":"dark","tokens":{"--color-accent":"#ff2d55"}}
-# The presets in \`ouijit theme list\` show the full token vocabulary (colors,
-# ANSI palette, shadows). Saving an id that matches a preset overrides it.
-
-## Key Behaviors
-- All mutating commands notify the Ouijit app UI in real-time.
-- Task statuses: todo → in_progress → in_review → done (set any directly).
-- "start" creates a git worktree branch — the task gets its own isolated directory.
-- Project is auto-detected from the current git repo. Override with --project <path>.
-- Errors return JSON to stderr: {"error": "message"} with non-zero exit code.
-- Always prefer ouijit over editing task files directly.
-
-## Common Workflows
-# Update the task owning this terminal:
-ouijit task current
-ouijit task set-status $(ouijit task current | jq .taskNumber) in_review
-
-# Create a task and immediately start working:
-ouijit task create-and-start "Fix auth timeout" --prompt "Session expires too early"
-
-# Headless start — no GUI dialog needed. Use these when a human isn't at the keyboard
-# to dismiss the start-hook dialog. The flags are mutually exclusive.
-ouijit task start 5 --skip-hook
-ouijit task start 5 --run-hook
-ouijit task start 5 --hook-command "claude"
-
-# Tag and describe a task:
-ouijit task set-description 3 "Refactor the auth middleware to use JWT refresh tokens"
-ouijit tag add 3 refactor
-ouijit tag add 3 auth
-
-# Set up a project run hook:
-ouijit hook set run --name "Dev server" --command "npm run dev"
-
-# Stage a review comment on the task's pull request:
-PR=$(ouijit task current | jq .githubPrNumber)
-ouijit pr draft add $PR --file src/api.ts --line 88 \\
-  --origin claude --body "this can throw when the token is missing"
-`;
 
 /**
  * Bash snippet that resolves the real `${binaryName}` binary on PATH while
@@ -825,6 +668,168 @@ export const OPENCODE_WRAPPER = [
   '',
 ].join('\n');
 
+// ── Kiro CLI agent config + hooks + wrapper ──────────────────────────
+// Kiro CLI (`kiro-cli`, formerly Amazon Q Developer CLI) ships two engines:
+//   • v2 (default): lifecycle hooks and the system prompt both live in an
+//     agent config JSON (~/.kiro/agents/<name>.json). There is no CLI flag
+//     to inject either directly, so Ouijit maintains an `ouijit` agent that
+//     mirrors the default agent (all tools, global MCP config) plus the
+//     status hooks and the CLI reference, and the wrapper selects it via
+//     `--agent ouijit` unless the user picked their own agent.
+//   • v3 (early access, `kiro-cli --v3`): agent configs move to a Markdown
+//     format and hooks move to standalone files. Global hook files in
+//     ~/.kiro/hooks/*.json fire in every workspace, so Ouijit installs its
+//     status hooks there. They are harmless outside Ouijit terminals:
+//     ouijit-hook exits immediately when OUIJIT_API_URL is unset.
+
+/** Kiro CLI's global agent directory (v2 agent configs). */
+export function getKiroAgentDir(): string {
+  return path.join(os.homedir(), '.kiro', 'agents');
+}
+
+/** Path to the ouijit Kiro v2 agent config. */
+export function getKiroAgentPath(): string {
+  return path.join(getKiroAgentDir(), 'ouijit.json');
+}
+
+/** Kiro CLI's global hooks directory (v3 standalone hook files). */
+export function getKiroHooksDir(): string {
+  return path.join(os.homedir(), '.kiro', 'hooks');
+}
+
+/** Path to the ouijit Kiro v3 global hooks file. */
+export function getKiroHooksPath(): string {
+  return path.join(getKiroHooksDir(), 'ouijit.json');
+}
+
+/**
+ * Status mapping for Kiro's lifecycle events, shared by the v2 agent config
+ * (camelCase event keys) and the v3 hooks file (PascalCase triggers).
+ * userPromptSubmit / postToolUse → thinking, stop → ready — the same mapping
+ * the claude and codex wrappers use.
+ */
+const KIRO_STATUS_HOOKS: ReadonlyArray<readonly [v2Event: string, v3Trigger: string, status: 'thinking' | 'ready']> = [
+  ['userPromptSubmit', 'UserPromptSubmit', 'thinking'],
+  ['postToolUse', 'PostToolUse', 'thinking'],
+  ['stop', 'Stop', 'ready'],
+];
+
+/**
+ * Build the ouijit Kiro v2 agent config. The agent mirrors the built-in
+ * default (`tools: ["*"]`, global MCP servers included) so selecting it does
+ * not narrow what the user can do, and layers on the Ouijit status hooks.
+ * `promptFileUri` (a file:// URI, resolved by Kiro itself — no shell
+ * expansion) points the agent's prompt at the Ouijit CLI reference; the
+ * sandbox VM omits it because the ouijit CLI is not installed there.
+ */
+export function buildKiroAgentConfig(hookCmd: string, promptFileUri?: string): string {
+  const hooks: Record<string, Array<{ command: string }>> = {};
+  for (const [v2Event, , status] of KIRO_STATUS_HOOKS) {
+    hooks[v2Event] = [{ command: `${hookCmd} status status=${status}` }];
+  }
+  const agent: Record<string, unknown> = {
+    name: 'ouijit',
+    description:
+      'Default Kiro agent plus Ouijit status hooks and CLI awareness. Auto-installed by Ouijit; safe to delete (Ouijit recreates it).',
+    ...(promptFileUri ? { prompt: promptFileUri } : {}),
+    tools: ['*'],
+    includeMcpJson: true,
+    hooks,
+  };
+  return JSON.stringify(agent, null, 2) + '\n';
+}
+
+/**
+ * Build the ouijit Kiro v3 global hooks file (~/.kiro/hooks/ouijit.json).
+ * v3 loads every global hook file automatically, so no wrapper flag is
+ * needed; the hooks no-op outside Ouijit terminals via ouijit-hook's env
+ * guard. The short timeout keeps a wedged curl from stalling the agent.
+ */
+export function buildKiroHooksFile(hookCmd: string): string {
+  return (
+    JSON.stringify(
+      {
+        version: 'v1',
+        hooks: KIRO_STATUS_HOOKS.map(([, v3Trigger, status]) => ({
+          name: `ouijit-status-${v3Trigger.toLowerCase()}`,
+          description: 'Reports agent status to the Ouijit terminal card. Auto-installed by Ouijit; safe to delete.',
+          trigger: v3Trigger,
+          action: { type: 'command', command: `${hookCmd} status status=${status}` },
+          timeout: 5,
+        })),
+      },
+      null,
+      2,
+    ) + '\n'
+  );
+}
+
+/**
+ * Bash wrapper that shadows `kiro-cli`. For v2 sessions it appends
+ * `--agent ouijit` so the auto-installed agent (status hooks + CLI
+ * reference) is active; for v3 sessions (`--v3`, or OUIJIT_KIRO_V3=1 to opt
+ * a terminal in without editing hook commands) it passes through untouched —
+ * the v3 global hooks file is loaded automatically and the v2 agent format
+ * does not apply.
+ */
+export const KIRO_WRAPPER = [
+  '#!/bin/bash',
+  '# Ouijit kiro-cli wrapper — selects the auto-installed `ouijit` agent so',
+  '# Kiro CLI picks up the Ouijit status hooks and CLI reference. Kiro has no',
+  '# flag to inject hooks or extra system prompt directly; both live in the',
+  '# agent config (~/.kiro/agents/ouijit.json) written by Ouijit.',
+  buildWrapperResolver('kiro-cli'),
+  '',
+  '# v3 opt-in: `kiro-cli --v3` runs the CLI 3.0 early-access engine. Honor',
+  '# an explicit --v3 anywhere in the args, and let OUIJIT_KIRO_V3=1 opt a',
+  '# whole terminal in without editing every hook command.',
+  'KIRO_V3=""',
+  'for arg in "$@"; do',
+  '  case "$arg" in',
+  '    --v3) KIRO_V3=1; break ;;',
+  '  esac',
+  'done',
+  'if [ -z "$KIRO_V3" ] && [ -n "$OUIJIT_KIRO_V3" ]; then',
+  '  set -- --v3 "$@"',
+  '  KIRO_V3=1',
+  'fi',
+  '',
+  '# Utility subcommands do not start an agent session; injecting --agent',
+  '# would error or change their behavior. Run them untouched (mirrors the',
+  '# claude / pi / opencode subcommand guards).',
+  'for arg in "$@"; do',
+  '  case "$arg" in',
+  '    -*) continue ;;',
+  '    login|logout|whoami|profile|user|settings|agent|mcp|translate|doctor|update|diagnostic|issue|version|help)',
+  '      exec "$REAL_BIN" "$@"',
+  '      ;;',
+  '    *) break ;;',
+  '  esac',
+  'done',
+  '',
+  'if [ -n "$KIRO_V3" ]; then',
+  '  # v3 sessions load the Ouijit global hooks file (~/.kiro/hooks/*.json)',
+  '  # automatically; the v2 ouijit agent (and its CLI-reference prompt) does',
+  '  # not apply to the v3 Markdown agent format.',
+  '  exec "$REAL_BIN" "$@"',
+  'fi',
+  '',
+  '# If the user picked their own agent, respect it — swapping in the ouijit',
+  '# agent would replace their tools and prompt.',
+  'for arg in "$@"; do',
+  '  case "$arg" in',
+  '    --agent|--agent=*) exec "$REAL_BIN" "$@" ;;',
+  '  esac',
+  'done',
+  '',
+  '# Appended (not prepended): --agent is accepted after the subcommand and',
+  '# after positionals, so a bare `kiro-cli "prompt"` stays intact. When',
+  '# Ouijit is not running the hooks no-op (ouijit-hook exits without',
+  '# OUIJIT_API_URL) and the agent still carries the CLI reference.',
+  'exec "$REAL_BIN" "$@" --agent ouijit',
+  '',
+].join('\n');
+
 // ── nono shim ────────────────────────────────────────────────────────
 
 /**
@@ -901,6 +906,25 @@ export function installWrapper(): void {
     const opencodePluginPath = getOpencodePluginPath();
     fs.mkdirSync(path.dirname(opencodePluginPath), { recursive: true });
     fs.writeFileSync(opencodePluginPath, OPENCODE_PLUGIN, { mode: 0o644 });
+
+    // Write kiro-cli wrapper (shadows `kiro-cli` to select the ouijit agent),
+    // the ouijit v2 agent config, and the v3 global hooks file. Hook command
+    // and prompt paths are resolved absolute at install time — Kiro reads the
+    // prompt's file:// URI itself (no shell expansion), so $HOME is not safe
+    // there, and using absolute paths for the hook commands keeps both files
+    // shell-independent.
+    fs.writeFileSync(path.join(binDir, 'kiro-cli'), KIRO_WRAPPER, { mode: 0o755 });
+    const kiroHookCmd = path.join(binDir, 'ouijit-hook');
+    const kiroAgentPath = getKiroAgentPath();
+    fs.mkdirSync(path.dirname(kiroAgentPath), { recursive: true });
+    // pathToFileURL percent-encodes spaces/unicode so the prompt URI stays
+    // valid on any homedir path.
+    fs.writeFileSync(kiroAgentPath, buildKiroAgentConfig(kiroHookCmd, pathToFileURL(getCliReferencePath()).href), {
+      mode: 0o644,
+    });
+    const kiroHooksPath = getKiroHooksPath();
+    fs.mkdirSync(path.dirname(kiroHooksPath), { recursive: true });
+    fs.writeFileSync(kiroHooksPath, buildKiroHooksFile(kiroHookCmd), { mode: 0o644 });
 
     // Write ouijit CLI wrapper (delegates to the bundled CLI JS via env vars set by PTY manager)
     fs.writeFileSync(
@@ -1048,4 +1072,20 @@ export function buildVmPiExtension(): string {
 /** opencode status plugin for the sandbox VM. Identical to the host-side source. */
 export function buildVmOpencodePlugin(): string {
   return OPENCODE_PLUGIN;
+}
+
+/**
+ * Kiro v2 agent config for the sandbox VM. Hook commands keep `$HOME` literal
+ * (expanded by the shell Kiro runs them with); the CLI-reference prompt is
+ * deliberately omitted — the ouijit CLI is not installed in the sandbox.
+ * There is no `kiro-cli` wrapper inside the VM, so a v2 session picks the
+ * agent up via `kiro-cli chat --agent ouijit`.
+ */
+export function buildVmKiroAgentConfig(): string {
+  return buildKiroAgentConfig('$HOME/ouijit-hook');
+}
+
+/** Kiro v3 global hooks file for the sandbox VM (auto-loaded, no wrapper needed). */
+export function buildVmKiroHooksFile(): string {
+  return buildKiroHooksFile('$HOME/ouijit-hook');
 }

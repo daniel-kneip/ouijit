@@ -1,14 +1,25 @@
 import { typedHandle } from '../helpers';
 import { saveAttachment } from '../../attachments';
 import { createTaskWorktree, createTodoTask, checkTaskWorktree, recoverTaskWorktree } from '../../worktree';
-import { setTaskMergeTarget, setTaskName, setTaskParent } from '../../db';
+import {
+  addTaskComment,
+  deleteTaskComment,
+  getTaskComments,
+  setTaskMergeTarget,
+  setTaskName,
+  setTaskParent,
+  updateTaskComment,
+} from '../../db';
+import { writeTaskWorkspace } from '../../taskWorkspace';
 import {
   beginTask,
   setTaskStatusWithHooks,
   reorderTaskWithHooks,
   deleteTaskWithWorktree,
-  trashTaskWithWorktree,
+  archiveTask,
+  unarchiveTask,
   getTasksWithWorkspaces,
+  getArchivedTasksWithWorkspaces,
   getTaskWithWorkspace,
   createBranchFromTask,
   updateTaskDescription,
@@ -32,13 +43,29 @@ export function registerTaskHandlers(): void {
 
   typedHandle('task:delete', (projectPath, taskNumber) => deleteTaskWithWorktree(projectPath, taskNumber));
 
-  typedHandle('task:trash', (projectPath, taskNumber) => trashTaskWithWorktree(projectPath, taskNumber));
+  typedHandle('task:archive', (projectPath, taskNumber) => archiveTask(projectPath, taskNumber));
+
+  typedHandle('task:unarchive', (projectPath, taskNumber) => unarchiveTask(projectPath, taskNumber));
+
+  typedHandle('task:get-archived', (projectPath) => getArchivedTasksWithWorkspaces(projectPath));
+
+  typedHandle('task:comments', (projectPath) => getTaskComments(projectPath));
+
+  typedHandle('task:comment-add', (projectPath, taskNumber, body) => addTaskComment(projectPath, taskNumber, body));
+
+  typedHandle('task:comment-update', (projectPath, id, body) => updateTaskComment(projectPath, id, body));
+
+  typedHandle('task:comment-delete', (projectPath, id) => deleteTaskComment(projectPath, id));
 
   typedHandle('task:set-merge-target', (projectPath, taskNumber, mergeTarget) =>
     setTaskMergeTarget(projectPath, taskNumber, mergeTarget),
   );
 
   typedHandle('task:set-name', (projectPath, taskNumber, name) => setTaskName(projectPath, taskNumber, name));
+
+  typedHandle('task:workspace-file', (projectPath, taskNumber, worktreePath) =>
+    writeTaskWorkspace(projectPath, taskNumber, worktreePath),
+  );
 
   typedHandle('task:set-description', (projectPath, taskNumber, description) =>
     updateTaskDescription(projectPath, taskNumber, description),

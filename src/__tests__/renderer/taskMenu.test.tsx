@@ -14,7 +14,8 @@ function actions(): TaskMenuActions {
     openEditor: vi.fn(),
     openFolder: vi.fn(),
     setStatus: vi.fn(),
-    trash: vi.fn(),
+    archive: vi.fn(),
+    remove: vi.fn(),
   };
 }
 

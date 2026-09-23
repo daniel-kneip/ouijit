@@ -32,11 +32,12 @@ import type {
   PrFileVersions,
 } from './github/types';
 import type { DiffNote, SaveDiffNoteInput } from './diffNotes';
+import type { Review, ReviewWithComments, StartReviewInput } from './reviews';
 import type { DiffLensTarget } from './lens/worktreeSubject';
 import type { LensChangedPayload } from './lens/subjectKeys';
 import type { LensInput, LensSummary } from './lens/config';
 import type { StoredLens } from './lens/readLens';
-import type { TaskStatus, TagRow } from './db';
+import type { TaskStatus, TagRow, TaskComment } from './db';
 import type { ActiveSession } from './ptyManager';
 import type { LimaStatus } from './lima/types';
 import type { SandboxProviderId, SandboxProviderStatus, NonoConfig } from './sandbox/types';
@@ -60,7 +61,7 @@ export type {
   DiffBases,
 } from './git';
 export type { TaskWorktreeResult, WorktreeInfo, WorktreeRemoveResult, CheckWorktreeResult } from './worktree';
-export type { TaskStatus, TaskMetadata } from './db';
+export type { TaskStatus, TaskMetadata, TaskComment } from './db';
 export type { TagRow } from './db';
 export type { ActiveSession } from './ptyManager';
 export type { LimaStatus } from './lima/types';
@@ -230,6 +231,56 @@ export interface ScriptHook {
   description?: string;
   /** Restart the command if an instance is already running in the same task (run hook only). */
   restartIfRunning?: boolean;
+  /** Where a resolved hook came from: the project's own row, or the harness the project uses. */
+  source?: 'project' | 'harness';
+}
+
+/** A named set of hooks kept outside any project; a project picks one and can override single hooks. */
+export interface Harness {
+  id: string;
+  name: string;
+  /** A shell command printing the harness's token usage; the city map shows what it reports. */
+  usageCommand?: string;
+  hooks: {
+    start?: ScriptHook;
+    continue?: ScriptHook;
+    run?: ScriptHook;
+    review?: ScriptHook;
+    done?: ScriptHook;
+    editor?: ScriptHook;
+  };
+}
+
+export interface HarnessAPI {
+  list(): Promise<Harness[]>;
+  create(name: string): Promise<Harness>;
+  rename(id: string, name: string): Promise<{ success: boolean }>;
+  delete(id: string): Promise<{ success: boolean }>;
+  saveHook(id: string, hook: ScriptHook): Promise<{ success: boolean }>;
+  deleteHook(id: string, hookType: HookType): Promise<{ success: boolean }>;
+  setForProject(projectPath: string, harnessId: string | null): Promise<{ success: boolean }>;
+  setUsageCommand(id: string, command: string | null): Promise<{ success: boolean }>;
+  usage(): Promise<HarnessUsage[]>;
+}
+
+/** What one harness's usage command reported, or why it could not. */
+export interface HarnessUsage {
+  harnessId: string;
+  name: string;
+  reading?: UsageReading;
+  error?: string;
+  /** When the command ran, ISO. */
+  at: string;
+}
+
+export interface UsageReading {
+  /** Tokens used, or the share used when the unit is percent. */
+  used: number;
+  /** Tokens available in total; absent when the command reports only what was used or a share. */
+  limit?: number;
+  unit: 'tokens' | 'percent';
+  /** Free text the command adds, such as when the window resets. */
+  label?: string;
 }
 
 export interface Script {
@@ -345,6 +396,8 @@ export interface TaskWithWorkspace {
   githubPrNumber?: number;
   /** Linked GitHub issue, if the task was created from one. */
   githubIssueNumber?: number;
+  /** Set while the task is off the board and the map; everything else about it stays. */
+  archivedAt?: string;
 }
 
 export interface HooksAPI {
@@ -382,6 +435,7 @@ export interface TaskAPI {
   create(projectPath: string, name?: string, prompt?: string): Promise<TaskWorktreeResult>;
   createAndStart(projectPath: string, name?: string, prompt?: string, branchName?: string): Promise<TaskWorktreeResult>;
   start(projectPath: string, taskNumber: number, branchName?: string): Promise<TaskWorktreeResult>;
+  /** Live tasks only; archived ones come from `getArchived`. */
   getAll(projectPath: string): Promise<TaskWithWorkspace[]>;
   getByNumber(projectPath: string, taskNumber: number): Promise<TaskWithWorkspace | null>;
   setStatus(
@@ -390,13 +444,26 @@ export interface TaskAPI {
     status: TaskStatus,
   ): Promise<{ success: boolean; error?: string; hookWarning?: string }>;
   delete(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
-  trash(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string; trashed?: boolean }>;
+  archive(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
+  unarchive(projectPath: string, taskNumber: number): Promise<{ success: boolean; error?: string }>;
+  getArchived(projectPath: string): Promise<TaskWithWorkspace[]>;
+  /** Every comment in the project, oldest first; the renderer groups them by task. */
+  comments(projectPath: string): Promise<TaskComment[]>;
+  addComment(
+    projectPath: string,
+    taskNumber: number,
+    body: string,
+  ): Promise<{ success: boolean; error?: string; comment?: TaskComment }>;
+  updateComment(projectPath: string, id: number, body: string): Promise<{ success: boolean; error?: string }>;
+  deleteComment(projectPath: string, id: number): Promise<{ success: boolean; error?: string }>;
   setMergeTarget(
     projectPath: string,
     taskNumber: number,
     mergeTarget: string,
   ): Promise<{ success: boolean; error?: string }>;
   setName(projectPath: string, taskNumber: number, name: string): Promise<{ success: boolean; error?: string }>;
+  /** Writes the task's VS Code workspace file and returns its path; null until the task has a worktree. */
+  workspaceFile(projectPath: string, taskNumber: number, worktreePath?: string): Promise<string | null>;
   setDescription(
     projectPath: string,
     taskNumber: number,
@@ -450,6 +517,8 @@ export interface Project {
   path: string;
   /** Custom icon color override; when unset the color is generated from the name. */
   iconColor?: string;
+  /** The harness whose hooks fill in what the project's own hooks leave unset. */
+  harnessId?: string;
 }
 
 /**
@@ -547,6 +616,8 @@ export interface ElectronAPI {
   ): () => void;
   /** Listen for a CLI theme mutation — re-read and re-apply theme settings */
   onCliThemeChanged(callback: () => void): () => void;
+  /** A terminal renamed through the API; the header shows the new name. */
+  onPtyLabelChanged(callback: (payload: { ptyId: string; label: string }) => void): () => void;
   /** Listen for a CLI-initiated task start that requires spawning a terminal */
   onCliTaskStarted(
     callback: (payload: {
@@ -582,9 +653,10 @@ export interface ElectronAPI {
     }) => void,
   ): () => void;
   hooks: HooksAPI;
+  harness: HarnessAPI;
   tags: TagsAPI;
   scripts: ScriptsAPI;
-  /** CLI agent hook events (claude/codex/pi/opencode) */
+  /** CLI agent hook events (claude/codex/pi/opencode/kiro) */
   agentHooks: AgentHooksAPI;
   plan: PlanAPI;
   /** CLI-driven terminal panel ops (markdown / web preview) */
@@ -604,6 +676,7 @@ export interface ElectronAPI {
   github: GithubAPI;
   /** Notes written on a worktree's own diff */
   diffNotes: DiffNotesAPI;
+  reviews: ReviewsAPI;
   /** Hotspot, coupling, and ownership signals mined from git history */
   analysis: AnalysisAPI;
   /** Agent-written grouping over a worktree's own diff */
@@ -658,6 +731,30 @@ export interface DiffNotesAPI {
   save(input: SaveDiffNoteInput): Promise<{ success: boolean }>;
   discard(id: string): Promise<{ success: boolean }>;
   clear(worktreePath: string): Promise<{ success: boolean }>;
+}
+
+/**
+ * A review of a worktree's diff. Starting one gives the notes written on it a
+ * home and the reader a record of which files they have been through; handing
+ * it over closes it and leaves the agent something to fetch.
+ */
+export interface ReviewsAPI {
+  current(worktreePath: string): Promise<ReviewWithComments | null>;
+  list(worktreePath: string): Promise<Review[]>;
+  /** One review with its comments, for handing it to the agent again. */
+  get(id: string): Promise<ReviewWithComments | null>;
+  /** Answers with the open review where there already is one. */
+  start(input: StartReviewInput): Promise<Review>;
+  /** Records the comparison being read, which the hand-over quotes. */
+  retarget(id: string, base: string | null): Promise<void>;
+  viewed(id: string): Promise<string[]>;
+  markViewed(id: string, path: string, viewed: boolean): Promise<void>;
+  handOver(
+    id: string,
+    state: 'accepted' | 'changes_requested',
+    summary: string | null,
+  ): Promise<ReviewWithComments | null>;
+  abandon(id: string): Promise<{ success: boolean }>;
 }
 
 /**
@@ -779,6 +876,7 @@ export interface OnboardingState {
 
 export interface HealthAPI {
   check(): Promise<import('./healthCheck').HealthStatus>;
+  memory(): Promise<import('./memoryReport').MemoryReport>;
   onUpdate(callback: (status: import('./healthCheck').HealthStatus) => void): () => void;
 }
 
@@ -786,7 +884,7 @@ export interface CaptureAPI {
   onNavigate(callback: (payload: import('./capture/types').CaptureNavigatePayload) => void): () => void;
 }
 
-/** CLI agent hook events, covering claude, codex, pi and opencode alike. */
+/** CLI agent hook events, covering claude, codex, pi, opencode and kiro alike. */
 export interface AgentHooksAPI {
   onStatus(callback: (ptyId: PtyId, status: HookStatus) => void): () => void;
   getStatus(ptyId: PtyId): Promise<HookStatusEntry | null>;

@@ -13,6 +13,10 @@ describe('keys the renderer persists through the settings channel', () => {
     expect(isAllowedKey(diffBaseSettingKey('/Users/x/worktrees/T-7'))).toBe(true);
   });
 
+  test('the city map of a project', () => {
+    expect(isAllowedKey('citymap:/Users/x/projects/alpha')).toBe(true);
+  });
+
   test('and a key of some other shape is refused, which is the trap', () => {
     expect(isAllowedKey('diff:base:/Users/x/worktrees/T-7')).toBe(false);
   });

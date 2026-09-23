@@ -10,15 +10,18 @@ import * as path from 'node:path';
 import { getDatabase, _initTestDatabase } from './database';
 import { ProjectRepo } from './repos/projectRepo';
 import { TaskRepo, type TaskStatus, type TaskRow } from './repos/taskRepo';
-import { HookRepo, type HookType } from './repos/hookRepo';
+import { HookRepo, type HookType, type HookRow } from './repos/hookRepo';
+import { HarnessRepo, type HarnessHookRow } from './repos/harnessRepo';
 import { TagRepo, type TagRow } from './repos/tagRepo';
+import { TaskCommentRepo, type TaskCommentRow } from './repos/taskCommentRepo';
 import { GlobalSettingsRepo } from './repos/globalSettingsRepo';
 import { ScriptRepo, type ScriptRow } from './repos/scriptRepo';
 import { ReviewDraftRepo, type ReviewDraftRow } from './repos/reviewDraftRepo';
 import { DiffLensRepo, type DiffLensRow } from './repos/diffLensRepo';
 import { worktreeKeyPrefix } from '../lens/subjectKeys';
 import { DiffNoteRepo, type DiffNoteRow } from './repos/diffNoteRepo';
-import type { ProjectSettings, ScriptHook } from '../types';
+import { ReviewRepo, type ReviewRow } from './repos/reviewRepo';
+import type { Harness, ProjectSettings, ScriptHook } from '../types';
 import { getLogger } from '../logger';
 
 const dbLog = getLogger().scope('db');
@@ -42,6 +45,17 @@ export interface TaskMetadata {
   parentTaskNumber?: number;
   githubPrNumber?: number;
   githubIssueNumber?: number;
+  archivedAt?: string;
+}
+
+export interface TaskComment {
+  id: number;
+  taskNumber: number;
+  body: string;
+  /** Who wrote it when it was not the user: an agent or the CLI naming itself. */
+  author?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 // ── Lazy singleton repos ─────────────────────────────────────────────
@@ -55,6 +69,9 @@ let scriptRepo: ScriptRepo | null = null;
 let reviewDraftRepo: ReviewDraftRepo | null = null;
 let diffLensRepo: DiffLensRepo | null = null;
 let diffNoteRepo: DiffNoteRepo | null = null;
+let harnessRepo: HarnessRepo | null = null;
+let taskCommentRepo: TaskCommentRepo | null = null;
+let reviewRepo: ReviewRepo | null = null;
 
 function repos() {
   if (!taskRepo) {
@@ -68,6 +85,9 @@ function repos() {
     reviewDraftRepo = new ReviewDraftRepo(db);
     diffLensRepo = new DiffLensRepo(db);
     diffNoteRepo = new DiffNoteRepo(db);
+    harnessRepo = new HarnessRepo(db);
+    taskCommentRepo = new TaskCommentRepo(db);
+    reviewRepo = new ReviewRepo(db);
   }
   return {
     projectRepo: projectRepo!,
@@ -79,6 +99,9 @@ function repos() {
     reviewDraftRepo: reviewDraftRepo!,
     diffLensRepo: diffLensRepo!,
     diffNoteRepo: diffNoteRepo!,
+    harnessRepo: harnessRepo!,
+    taskCommentRepo: taskCommentRepo!,
+    reviewRepo: reviewRepo!,
   };
 }
 
@@ -95,6 +118,9 @@ export function _resetCacheForTesting(): void {
   reviewDraftRepo = new ReviewDraftRepo(db);
   diffLensRepo = new DiffLensRepo(db);
   diffNoteRepo = new DiffNoteRepo(db);
+  harnessRepo = new HarnessRepo(db);
+  taskCommentRepo = new TaskCommentRepo(db);
+  reviewRepo = new ReviewRepo(db);
 }
 
 // ── Row → TaskMetadata conversion ────────────────────────────────────
@@ -123,6 +149,7 @@ function rowToTask(row: TaskRow): TaskMetadata {
     // drops a 0, and nothing guarantees these numbers stay 1-based.
     ...(row.github_pr_number != null && { githubPrNumber: row.github_pr_number }),
     ...(row.github_issue_number != null && { githubIssueNumber: row.github_issue_number }),
+    ...(row.archived_at && { archivedAt: row.archived_at }),
   };
 }
 
@@ -448,6 +475,90 @@ export async function clearDiffNotes(worktreePath: string): Promise<void> {
   dr.deleteForWorktree(worktreePath);
 }
 
+export async function clearOutstandingDiffNotes(worktreePath: string): Promise<void> {
+  const { diffNoteRepo: dr } = repos();
+  dr.deleteOutstanding(worktreePath);
+}
+
+export async function getReviewNotes(reviewId: string): Promise<DiffNoteRow[]> {
+  const { diffNoteRepo: dr } = repos();
+  return dr.getForReview(reviewId);
+}
+
+export async function adoptLooseDiffNotes(worktreePath: string, reviewId: string): Promise<void> {
+  const { diffNoteRepo: dr } = repos();
+  dr.adoptLoose(worktreePath, reviewId);
+}
+
+// ── Reviews ──────────────────────────────────────────────────────────
+
+export type { ReviewRow } from './repos/reviewRepo';
+
+export async function getReviews(worktreePath: string): Promise<ReviewRow[]> {
+  const { reviewRepo: rr } = repos();
+  return rr.getForWorktree(worktreePath);
+}
+
+export async function getReview(id: string): Promise<ReviewRow | undefined> {
+  const { reviewRepo: rr } = repos();
+  return rr.get(id);
+}
+
+export async function getOpenReview(worktreePath: string): Promise<ReviewRow | undefined> {
+  const { reviewRepo: rr } = repos();
+  return rr.open(worktreePath);
+}
+
+export async function nextReviewSeq(worktreePath: string): Promise<number> {
+  const { reviewRepo: rr } = repos();
+  return rr.nextSeq(worktreePath);
+}
+
+export async function insertReview(row: ReviewRow): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.insert(row);
+}
+
+export async function submitReview(
+  id: string,
+  state: 'accepted' | 'changes_requested',
+  summary: string | null,
+  at: string,
+): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.submit(id, state, summary, at);
+}
+
+export async function setReviewBase(id: string, base: string | null): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.setBase(id, base);
+}
+
+export async function deleteReview(id: string): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.delete(id);
+}
+
+export async function deleteReviewsForWorktree(worktreePath: string): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.deleteForWorktree(worktreePath);
+}
+
+export async function getReviewViewedFiles(reviewId: string): Promise<string[]> {
+  const { reviewRepo: rr } = repos();
+  return rr.viewedFiles(reviewId);
+}
+
+export async function setReviewFileViewed(
+  reviewId: string,
+  filePath: string,
+  viewed: boolean,
+  at: string,
+): Promise<void> {
+  const { reviewRepo: rr } = repos();
+  rr.setViewed(reviewId, filePath, viewed, at);
+}
+
 // ── Lenses ───────────────────────────────────────────────────────────
 
 export type { DiffLensRow } from './repos/diffLensRepo';
@@ -490,6 +601,72 @@ export async function deleteDiffLens(projectPath: string, subjectKey: string): P
   return { success: true };
 }
 
+// ── Task comments ────────────────────────────────────────────────────
+
+function rowToComment(row: TaskCommentRow): TaskComment {
+  return {
+    id: row.id,
+    taskNumber: row.task_number,
+    body: row.body,
+    createdAt: row.created_at,
+    ...(row.author && { author: row.author }),
+    ...(row.updated_at && { updatedAt: row.updated_at }),
+  };
+}
+
+export async function getTaskComments(projectPath: string): Promise<TaskComment[]> {
+  return repos().taskCommentRepo.getAllForProject(projectPath).map(rowToComment);
+}
+
+export async function addTaskComment(
+  projectPath: string,
+  taskNumber: number,
+  body: string,
+  author?: string,
+): Promise<{ success: boolean; error?: string; comment?: TaskComment }> {
+  const trimmed = body.trim();
+  if (!trimmed) return { success: false, error: 'A comment needs a body' };
+  const { taskRepo: tr, taskCommentRepo: cr } = repos();
+  if (!tr.getByTaskNumber(projectPath, taskNumber)) return { success: false, error: 'Task not found' };
+  return { success: true, comment: rowToComment(cr.add(projectPath, taskNumber, trimmed, author?.trim() || null)) };
+}
+
+export async function updateTaskComment(
+  projectPath: string,
+  id: number,
+  body: string,
+): Promise<{ success: boolean; error?: string }> {
+  const trimmed = body.trim();
+  if (!trimmed) return { success: false, error: 'A comment needs a body' };
+  return repos().taskCommentRepo.update(projectPath, id, trimmed)
+    ? { success: true }
+    : { success: false, error: 'Comment not found' };
+}
+
+export async function deleteTaskComment(
+  projectPath: string,
+  id: number,
+): Promise<{ success: boolean; error?: string }> {
+  return repos().taskCommentRepo.remove(projectPath, id)
+    ? { success: true }
+    : { success: false, error: 'Comment not found' };
+}
+
+export async function setTaskArchived(
+  projectPath: string,
+  taskNumber: number,
+  archived: boolean,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { taskRepo: tr } = repos();
+    if (!tr.getByTaskNumber(projectPath, taskNumber)) return { success: false, error: 'Task not found' };
+    tr.setArchived(projectPath, taskNumber, archived);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
 export async function deleteTaskByNumber(
   projectPath: string,
   taskNumber: number,
@@ -523,26 +700,93 @@ export async function reorderTask(
 
 // ── Project settings functions (match projectSettings.ts signatures) ─
 
-export async function getProjectSettings(projectPath: string): Promise<ProjectSettings> {
-  const { hookRepo: hr } = repos();
-  const hookRows = hr.getForProject(projectPath);
+function rowToHook(row: HookRow | HarnessHookRow, source: 'project' | 'harness'): ScriptHook {
+  return {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    command: row.command,
+    restartIfRunning: row.restart_if_running === 1,
+    source,
+    ...(row.description && { description: row.description }),
+  };
+}
 
-  const hooks: ProjectSettings['hooks'] = {};
-  for (const row of hookRows) {
-    hooks[row.type as keyof typeof hooks] = {
-      id: row.id,
-      type: row.type,
-      name: row.name,
-      command: row.command,
-      restartIfRunning: row.restart_if_running === 1,
-      ...(row.description && { description: row.description }),
-    } as ScriptHook;
+/** The project's hooks, with the harness filling every type the project left unset. */
+export async function getProjectSettings(projectPath: string): Promise<ProjectSettings> {
+  const { hookRepo: hr, projectRepo: pr, harnessRepo: har } = repos();
+
+  const hooks: NonNullable<ProjectSettings['hooks']> = {};
+  const harnessId = pr.getByPath(projectPath)?.harness_id;
+  if (harnessId) {
+    for (const row of har.getHooks(harnessId)) hooks[row.type] = rowToHook(row, 'harness');
   }
+  for (const row of hr.getForProject(projectPath)) hooks[row.type] = rowToHook(row, 'project');
 
   return {
     customCommands: [],
     hooks,
   };
+}
+
+// ── Harnesses ────────────────────────────────────────────────────────
+
+function harnessWithHooks(row: { id: string; name: string; usage_command: string | null }): Harness {
+  const { harnessRepo: har } = repos();
+  const hooks: Harness['hooks'] = {};
+  for (const hook of har.getHooks(row.id)) hooks[hook.type] = rowToHook(hook, 'harness');
+  return { id: row.id, name: row.name, hooks, usageCommand: row.usage_command ?? undefined };
+}
+
+export async function getHarnesses(): Promise<Harness[]> {
+  const { harnessRepo: har } = repos();
+  return har.getAll().map(harnessWithHooks);
+}
+
+export async function createHarness(name: string): Promise<Harness> {
+  const { harnessRepo: har } = repos();
+  return harnessWithHooks(har.create(name));
+}
+
+export async function renameHarness(id: string, name: string): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  har.rename(id, name);
+  return { success: true };
+}
+
+export async function setHarnessUsageCommand(id: string, command: string | null): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  if (!har.get(id)) return { success: false };
+  const trimmed = command?.trim();
+  har.setUsageCommand(id, trimmed ? trimmed : null);
+  return { success: true };
+}
+
+export async function deleteHarness(id: string): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  har.delete(id);
+  return { success: true };
+}
+
+export async function saveHarnessHook(harnessId: string, hook: ScriptHook): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  if (!har.get(harnessId)) return { success: false };
+  har.saveHook(harnessId, hook.type, hook.name, hook.command, hook.id, hook.description, hook.restartIfRunning);
+  return { success: true };
+}
+
+export async function deleteHarnessHook(harnessId: string, hookType: HookType): Promise<{ success: boolean }> {
+  const { harnessRepo: har } = repos();
+  har.deleteHook(harnessId, hookType);
+  return { success: true };
+}
+
+export async function setProjectHarness(projectPath: string, harnessId: string | null): Promise<{ success: boolean }> {
+  const { projectRepo: pr, harnessRepo: har } = repos();
+  if (harnessId && !har.get(harnessId)) return { success: false };
+  ensureProject(projectPath);
+  pr.setHarness(projectPath, harnessId);
+  return { success: true };
 }
 
 export async function getHooks(projectPath: string): Promise<{

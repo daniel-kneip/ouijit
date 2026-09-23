@@ -10,6 +10,8 @@ export interface DiffNoteRow {
   snippet: string | null;
   body: string;
   created_at: string;
+  /** The review that owns it, once one does. Null on a note written outside one. */
+  review_id: string | null;
 }
 
 /**
@@ -17,14 +19,36 @@ export interface DiffNoteRow {
  *
  * Ordered by file and line rather than by write time, so the list matches the
  * order the notes appear in the diff.
+ *
+ * A note handed over with a review leaves that queue for good: the review is a
+ * record of what was said, so its notes are neither listed as outstanding nor
+ * swept when the code they were written about changes.
  */
 export class DiffNoteRepo {
   constructor(private db: Database.Database) {}
 
   getForWorktree(worktreePath: string): DiffNoteRow[] {
     return this.db
-      .prepare('SELECT * FROM diff_notes WHERE worktree_path = ? ORDER BY path, line, created_at')
+      .prepare(
+        `SELECT n.* FROM diff_notes n
+           LEFT JOIN reviews r ON r.id = n.review_id
+          WHERE n.worktree_path = ? AND (r.id IS NULL OR r.state = 'open')
+          ORDER BY n.path, n.line, n.created_at`,
+      )
       .all(worktreePath) as DiffNoteRow[];
+  }
+
+  getForReview(reviewId: string): DiffNoteRow[] {
+    return this.db
+      .prepare('SELECT * FROM diff_notes WHERE review_id = ? ORDER BY path, line, created_at')
+      .all(reviewId) as DiffNoteRow[];
+  }
+
+  /** Takes every note not yet part of a review into one, as submitting it does. */
+  adoptLoose(worktreePath: string, reviewId: string): void {
+    this.db
+      .prepare('UPDATE diff_notes SET review_id = ? WHERE worktree_path = ? AND review_id IS NULL')
+      .run(reviewId, worktreePath);
   }
 
   /**
@@ -35,8 +59,8 @@ export class DiffNoteRepo {
   save(row: DiffNoteRow): void {
     this.db
       .prepare(
-        `INSERT INTO diff_notes (id, worktree_path, path, line, start_line, side, snippet, body, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO diff_notes (id, worktree_path, path, line, start_line, side, snippet, body, created_at, review_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET body = excluded.body`,
       )
       .run(
@@ -49,6 +73,7 @@ export class DiffNoteRepo {
         row.snippet,
         row.body,
         row.created_at,
+        row.review_id,
       );
   }
 
@@ -68,5 +93,16 @@ export class DiffNoteRepo {
 
   deleteForWorktree(worktreePath: string): void {
     this.db.prepare('DELETE FROM diff_notes WHERE worktree_path = ?').run(worktreePath);
+  }
+
+  /** "Discard all", which is about the outstanding notes and not about the record. */
+  deleteOutstanding(worktreePath: string): void {
+    this.db
+      .prepare(
+        `DELETE FROM diff_notes WHERE id IN (
+           SELECT n.id FROM diff_notes n LEFT JOIN reviews r ON r.id = n.review_id
+            WHERE n.worktree_path = ? AND (r.id IS NULL OR r.state = 'open'))`,
+      )
+      .run(worktreePath);
   }
 }

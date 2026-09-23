@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import type { ScriptHook } from './types';
 import { getLogger } from './logger';
 import { descriptionToHookPrompt } from './utils/descriptionAttachments';
+import { getCliReferencePath } from './paths';
 
 const hookLog = getLogger().scope('hookRunner');
 
@@ -48,6 +49,7 @@ export async function executeHook(
     const hookEnv: Record<string, string> = {
       ...process.env,
       OUIJIT_HOOK_TYPE: hook.type,
+      OUIJIT_CLI_REFERENCE: getCliReferencePath(),
     };
 
     if (env?.projectPath) {

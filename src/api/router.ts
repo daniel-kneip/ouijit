@@ -27,6 +27,9 @@ import {
   getTaskByNumber,
   getGlobalSetting,
   setGlobalSetting,
+  getTaskComments,
+  addTaskComment,
+  deleteTaskComment,
 } from '../db';
 import {
   THEME_PREFERENCE_KEY,
@@ -42,9 +45,16 @@ import {
   beginTask,
   setTaskStatusWithHooks,
   deleteTaskWithWorktree,
+  archiveTask,
+  unarchiveTask,
   getTasksWithWorkspaces,
   getTaskWithWorkspace,
 } from '../taskLifecycle';
+import { discardNote, liveNotes } from '../diffNotesService';
+import { formatNotesForAgent } from '../diffNotes';
+import { lastSubmittedReview, listReviews } from '../reviewService';
+import { formatReviewForAgent } from '../reviews';
+import { diffSubject } from '../diffSource';
 import {
   getAvailability as getGithubAvailability,
   getInbox as getGithubInbox,
@@ -59,7 +69,8 @@ import {
 } from '../github/service';
 import { getProjectList } from '../projectList';
 import { cliPanelRequest } from '../cliPanels';
-import { isPtyActive, getPtyTaskContext } from '../ptyManager';
+import { isPtyActive, getPtyTaskContext, setPtyLabel } from '../ptyManager';
+import { findSessionOwner } from '../sandbox/registry';
 import { typedPush } from '../ipc/helpers';
 import { getLogger } from '../logger';
 import { authenticateRequest, type AuthContext, type ApiScope } from '../apiAuth';
@@ -239,6 +250,32 @@ function route(
   return { method, pattern: pattern.split('/').filter(Boolean), handler, mutating, minScope };
 }
 
+/** A sandboxed session reaches its own task and no other. */
+function assertOwnTaskIfSandboxed(r: ParsedRequest, project: string, taskNumber: number): void {
+  if (r.auth.scope !== 'sandbox') return;
+  const ctx = getPtyTaskContext(r.auth.ptyId);
+  if (!ctx || ctx.projectPath !== project || ctx.taskId !== taskNumber) {
+    throw new HttpError(403, 'Sandboxed sessions may only reach their own task');
+  }
+}
+
+/** The task's last handed-over review, with its comments and as text for an agent. */
+async function taskReview(project: string, taskNumber: number) {
+  const task = await getTaskWithWorkspace(project, taskNumber);
+  if (!task) throw new HttpError(404, `Task ${taskNumber} not found`);
+  const review = task.worktreePath ? await lastSubmittedReview(task.worktreePath) : null;
+  if (!review) return { review: null, text: '' };
+  return { review, text: formatReviewForAgent(review, diffSubject(review.base, review.branch)) };
+}
+
+/** The task's diff notes, followed to where their code went, and the same as text for an agent. */
+async function taskNotes(project: string, taskNumber: number) {
+  const task = await getTaskWithWorkspace(project, taskNumber);
+  if (!task) throw new HttpError(404, `Task ${taskNumber} not found`);
+  const notes = task.worktreePath ? await liveNotes(task.worktreePath) : [];
+  return { notes, text: formatNotesForAgent(notes, diffSubject(task.mergeTarget ?? null, task.branch ?? null)) };
+}
+
 // ── Pull request helpers ─────────────────────────────────────────────
 
 function prNumber(r: ParsedRequest): number {
@@ -320,6 +357,26 @@ async function runPanelOp(
 }
 
 const routes: Route[] = [
+  // ── Sessions ─────────────────────────────────────────────────────
+  // A terminal's name, as its header and the map's site show it. An agent
+  // names its own session from what it is working on.
+  route(
+    'PATCH',
+    'sessions/:ptyId/label',
+    (r) => {
+      const ptyId = r.segments[1];
+      if (!ptyId || !isPtyActive(ptyId)) throw new HttpError(404, `PTY ${ptyId} not found or inactive`);
+      const label = typeof r.body.label === 'string' ? r.body.label.trim() : '';
+      if (!label) throw new HttpError(400, 'Missing label in body');
+      if (label.length > 80) throw new HttpError(400, 'Label must be 80 characters or fewer');
+      const owner = findSessionOwner(ptyId);
+      if (owner) owner.setPtyLabel(ptyId, label);
+      else setPtyLabel(ptyId, label);
+      return { ptyId, label };
+    },
+    true,
+  ),
+
   // ── Tasks ────────────────────────────────────────────────────────
   route('GET', 'tasks', (r) => {
     return getTasksWithWorkspaces(requireProject(r.query));
@@ -351,13 +408,7 @@ const routes: Route[] = [
     (r) => {
       const project = requireProject(r.query);
       const num = requireInt(r.segments[1], 'Task number');
-      // A sandboxed session may read only its own task, never an arbitrary one.
-      if (r.auth.scope === 'sandbox') {
-        const ctx = getPtyTaskContext(r.auth.ptyId);
-        if (!ctx || ctx.projectPath !== project || ctx.taskId !== num) {
-          throw new HttpError(403, 'Sandboxed sessions may only read their own task');
-        }
-      }
+      assertOwnTaskIfSandboxed(r, project, num);
       return getTaskWithWorkspace(project, num);
     },
     false,
@@ -455,6 +506,108 @@ const routes: Route[] = [
       if (typeof r.body.mergeTarget !== 'string') throw new HttpError(400, 'Missing mergeTarget in body');
       return setTaskMergeTarget(project, num, r.body.mergeTarget);
     },
+    true,
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/comments',
+    async (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      return (await getTaskComments(project)).filter((c) => c.taskNumber === num);
+    },
+    false,
+    'sandbox',
+  ),
+
+  route(
+    'POST',
+    'tasks/:number/comments',
+    (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      if (typeof r.body.body !== 'string') throw new HttpError(400, 'Missing body in body');
+      const author = typeof r.body.author === 'string' && r.body.author.trim() ? r.body.author : 'cli';
+      return addTaskComment(project, num, r.body.body, author);
+    },
+    true,
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/review',
+    (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      return taskReview(project, num);
+    },
+    false,
+    'sandbox',
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/reviews',
+    async (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      const task = await getTaskWithWorkspace(project, num);
+      if (!task) throw new HttpError(404, `Task ${num} not found`);
+      return task.worktreePath ? listReviews(task.worktreePath) : [];
+    },
+    false,
+    'sandbox',
+  ),
+
+  route(
+    'GET',
+    'tasks/:number/notes',
+    (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      assertOwnTaskIfSandboxed(r, project, num);
+      return taskNotes(project, num);
+    },
+    false,
+    'sandbox',
+  ),
+
+  route(
+    'DELETE',
+    'tasks/:number/notes/:id',
+    async (r) => {
+      const project = requireProject(r.query);
+      const num = requireInt(r.segments[1], 'Task number');
+      const id = r.segments[3];
+      const { notes } = await taskNotes(project, num);
+      if (!notes.some((n) => n.id === id)) throw new HttpError(404, `Note ${id} not found on task ${num}`);
+      return discardNote(id);
+    },
+    true,
+  ),
+
+  route(
+    'DELETE',
+    'tasks/:number/comments/:id',
+    (r) => deleteTaskComment(requireProject(r.query), requireInt(r.segments[3], 'Comment id')),
+    true,
+  ),
+
+  route(
+    'POST',
+    'tasks/:number/archive',
+    (r) => archiveTask(requireProject(r.query), requireInt(r.segments[1], 'Task number')),
+    true,
+  ),
+
+  route(
+    'POST',
+    'tasks/:number/unarchive',
+    (r) => unarchiveTask(requireProject(r.query), requireInt(r.segments[1], 'Task number')),
     true,
   ),
 
@@ -908,6 +1061,12 @@ async function handleAsync(req: IncomingMessage, res: ServerResponse, window: Br
       // tell it to re-read global settings and re-apply.
       if (segments[0] === 'themes') {
         typedPush(window, 'cli:theme-changed');
+      }
+
+      // The label lives in the renderer's store; the main process only kept
+      // its copy for reconnects.
+      if (segments[0] === 'sessions' && segments[2] === 'label') {
+        typedPush(window, 'pty:label-changed', result as { ptyId: string; label: string });
       }
 
       // A draft written here belongs to a pull request the renderer may have

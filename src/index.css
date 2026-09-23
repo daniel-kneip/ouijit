@@ -206,6 +206,30 @@ textarea,
   }
 }
 
+/* A city label that just started needing the user. */
+@keyframes city-label-flash {
+  0%,
+  100% {
+    box-shadow: var(--shadow-panel);
+  }
+  20%,
+  60% {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent),
+      var(--shadow-panel);
+  }
+  40%,
+  80% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent),
+      var(--shadow-panel);
+  }
+}
+
+.city-label-flash {
+  animation: city-label-flash 2.4s ease-out 1;
+}
+
 @keyframes sandbox-icon-pulse {
   0%,
   100% {

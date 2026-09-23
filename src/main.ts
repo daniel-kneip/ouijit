@@ -6,7 +6,6 @@ import fixPath from 'fix-path';
 import log from './log';
 import { setLogger, type Logger } from './logger';
 import { setUserDataPath, getDbPath, setCliPath, setDevResourcesRoot } from './paths';
-import { setTrashItem } from './platform';
 import { registerIpcHandlers, cleanupIpc } from './ipc/register';
 import { cancelAllClones } from './services/cloneRegistry';
 import { abortLensRuns } from './lens/runRegistry';
@@ -253,7 +252,6 @@ const createWindow = (): BrowserWindow => {
 app.on('ready', async () => {
   log.initialize(); // Inject preload for renderer IPC bridge
   setLogger(createElectronLogAdapter(log));
-  setTrashItem((p) => shell.trashItem(p));
   appLog.info('app ready', { version: app.getVersion(), userData: app.getPath('userData') });
 
   // Initialize SQLite. In capture mode we skip the legacy-JSON import so

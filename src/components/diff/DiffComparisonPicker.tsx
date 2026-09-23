@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DiffBases } from '../../types';
 import { UNCOMMITTED_BASE, describeDiffComparison, isUncommittedBase } from '../../diffSource';
+import { REVIEW_VERDICT, type Review } from '../../reviews';
 import { MenuPopover, MenuItem, MenuDivider } from '../ui/Menu';
 import { Tooltip } from '../ui/Tooltip';
 import { SegmentedGroup, segmentBase, segmentQuiet } from '../ui/SegmentedGroup';
@@ -18,9 +19,16 @@ interface DiffComparisonPickerProps {
   defaultBase: string | null;
   mainBranch: string | null;
   branch: string | null;
+  /** Reviews already handed over, newest first: each pins what it was taken of. */
+  reviews?: readonly Review[];
 }
 
 const NO_BASES: DiffBases = { refs: [], upstream: null, defaultRemote: null, lastFetch: null };
+
+/** Enough to get back to the pass before last; older ones are history, not a comparison. */
+const MAX_REVIEW_ROWS = 3;
+
+type PinnedReview = Review & { snapshotRef: string; state: 'accepted' | 'changes_requested' };
 
 /**
  * Picks what the diff is taken against. Uncommitted changes are listed as one
@@ -35,6 +43,7 @@ export function DiffComparisonPicker({
   defaultBase,
   mainBranch,
   branch,
+  reviews = [],
 }: DiffComparisonPickerProps) {
   const [open, setOpen] = useState(false);
   const [bases, setBases] = useState<DiffBases>(NO_BASES);
@@ -63,6 +72,11 @@ export function DiffComparisonPicker({
   const matches = useMemo(() => (query ? searchDiffBases(bases.refs, query, branch) : []), [bases.refs, query, branch]);
 
   const isRemote = (ref: string | null) => bases.refs.some((r) => r.ref === ref && r.remote !== null);
+  const pinned = useMemo(
+    () =>
+      reviews.filter((r): r is PinnedReview => r.snapshotRef !== null && r.state !== 'open').slice(0, MAX_REVIEW_ROWS),
+    [reviews],
+  );
   const uncommitted = isUncommittedBase(base, branch);
 
   const fetchBase = useCallback(
@@ -192,6 +206,17 @@ export function DiffComparisonPicker({
                 selected={uncommitted}
                 onClick={() => choose(UNCOMMITTED_BASE)}
               />
+              {/* What is left to read after a pass: the worktree as it stood
+                  when that review was opened. */}
+              {pinned.map((review) => (
+                <MenuItem
+                  key={review.id}
+                  label={`Since review ${review.seq}`}
+                  hint={review.seq === pinned[0].seq ? 'your last review' : REVIEW_VERDICT[review.state]}
+                  selected={review.snapshotRef === base}
+                  onClick={() => choose(review.snapshotRef)}
+                />
+              ))}
               {groups.roles.length > 0 && <MenuDivider />}
               {groups.roles.map(row)}
               {groups.rest.length > 0 && <MenuDivider />}

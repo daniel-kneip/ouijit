@@ -61,8 +61,8 @@ describe('buildChainMap', () => {
 
 describe('getChainColor / getChainBgColor', () => {
   test('returns valid HSL string', () => {
-    expect(getChainColor(1, 0)).toMatch(/^hsl\(\d+(\.\d+)?, 55%, \d+%\)$/);
-    expect(getChainBgColor(1, 0)).toMatch(/^hsla\(\d+(\.\d+)?, 55%, \d+%, 0\.15\)$/);
+    expect(getChainColor(1, 0)).toMatch(/^hsl\(\d+(\.\d+)?, 78%, \d+%\)$/);
+    expect(getChainBgColor(1, 0)).toMatch(/^hsla\(\d+(\.\d+)?, 78%, \d+%, 0\.15\)$/);
   });
 
   test('deeper depth produces lower lightness', () => {
@@ -74,9 +74,9 @@ describe('getChainColor / getChainBgColor', () => {
     expect(light1).toBeGreaterThan(light2);
   });
 
-  test('lightness has a floor of 30%', () => {
+  test('lightness has a floor of 28%', () => {
     const lightDeep = parseInt(getChainColor(1, 100).match(/(\d+)%\)/)![1]);
-    expect(lightDeep).toBe(30);
+    expect(lightDeep).toBe(28);
   });
 
   test('different root task numbers produce different hues', () => {

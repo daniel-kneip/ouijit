@@ -4,7 +4,6 @@ import type { LensSummary } from '../../lens/config';
 import { DiffFileTree } from '../diff/DiffFileTree';
 import { useGithubStore } from '../../stores/githubStore';
 import { isSectionViewed } from '../../github/viewedSections';
-import { Icon } from '../terminal/Icon';
 import { usePullRequestSignals } from '../../hooks/usePullRequestSignals';
 import { AnalysisRailDot } from '../diff/AnalysisChip';
 import { LensPicker } from '../diff/LensPicker';
@@ -59,7 +58,7 @@ export const PullRequestRail = memo(function PullRequestRail({
     return counts;
   }, [detail.threads]);
 
-  const trailing = (path: string, hunks?: number, section = path) => {
+  const trailing = (path: string, hunks?: number) => {
     const count = unresolvedByPath.get(path);
     // How much of a file a part of the change claims, when it is not all of it.
     const share =
@@ -77,9 +76,6 @@ export const PullRequestRail = memo(function PullRequestRail({
             {count}
           </span>
         ) : null}
-        {isSectionViewed(viewed, viewedParts, section, path) && (
-          <Icon name="check" className="shrink-0 w-3 h-3 text-accent/70" />
-        )}
       </>
     );
   };
@@ -110,8 +106,9 @@ export const PullRequestRail = memo(function PullRequestRail({
         files={files}
         lens={{ groups: lens.shown, collapsed, onCollapsedChange: setGroupCollapsed }}
         onFileClick={onSelect}
-        renderFileTrailing={(file, hunks, section) => trailing(file.path, hunks, section)}
+        renderFileTrailing={(file, hunks) => trailing(file.path, hunks)}
         activeSection={activeSection}
+        isViewed={(path, section) => isSectionViewed(viewed, viewedParts, section, path)}
         revealing={revealing}
       />
     </div>

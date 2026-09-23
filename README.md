@@ -84,12 +84,13 @@ Also in the box: a multi-project home view, a configurable projects folder, `git
 - [Codex](https://github.com/openai/codex)
 - [Pi](https://pi.dev)
 - [OpenCode](https://opencode.ai)
+- [Kiro CLI](https://kiro.dev/cli/) — including the v3 early-access engine (`kiro-cli --v3`)
 
 To request support for another harness, [open an issue](https://github.com/ouijit/ouijit/issues/new).
 
 ## CLI
 
-Every terminal Ouijit opens has the `ouijit` command on PATH, and the supported harnesses learn it automatically. So you shape the app by asking your agent: it can file follow-up tasks, move its own card, set up hooks, stage review comments, switch themes, or open panels beside itself. The CLI is what makes those requests work:
+Every terminal Ouijit opens has the `ouijit` command on PATH, and the supported harnesses learn it automatically: their system prompt gets a guide on how to work in Ouijit (name the terminal, read the ticket, comment when waiting, hand over to review, read the review notes) and the full CLI. Any other harness finds that guide at `$OUIJIT_CLI_REFERENCE` to pass along in its start hook, and `ouijit guide` prints it. So you shape the app by asking your agent: it can file follow-up tasks, move its own card, set up hooks, stage review comments, switch themes, or open panels beside itself. The CLI is what makes those requests work:
 
 ```bash
 # "file a task for the flaky login test"
@@ -98,6 +99,10 @@ ouijit task create "Fix flaky login test"
 ouijit task set-status 5 in_review
 # "run claude on every task I start"
 ouijit hook set start --command 'claude "$OUIJIT_TASK_DESCRIPTION"'
+# "note on the ticket why you are waiting"
+ouijit task comment "Waiting for the API key from ops"
+# "read the review notes I left on your diff"
+ouijit task notes --text
 # "leave a review comment on PR 116"
 ouijit pr draft add 116 --file src/api.ts --line 88 --body "throws when the token is missing"
 # "switch to dracula"

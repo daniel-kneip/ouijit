@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { terminalInstances } from './terminalReact';
 import { addProjectTerminal, renameTerminal, startRunner } from './terminalActions';
 import { completeTask } from '../../services/taskCompletion';
+import { archiveTasks, deleteTasks } from '../../services/taskArchive';
 import { Icon } from './Icon';
 import { TagInput } from './TagInput';
 import { TerminalHeaderView, TerminalHeaderName } from './TerminalHeaderView';
@@ -21,6 +22,7 @@ import { openTaskInEditor, openWorktreeInEditor } from '../../services/openInEdi
 import { openPullRequestInPanel, createPullRequestForTask } from '../../services/githubTaskActions';
 import { BranchFromTaskDialog } from '../dialogs/BranchFromTaskDialog';
 import { describeDiffComparison, filesInDiff } from '../../diffSource';
+import { buildChainMap, getChainColor } from '../../utils/taskChain';
 
 const EMPTY_TAGS: string[] = [];
 const EMPTY_PANELS: TerminalPanel[] = [];
@@ -88,6 +90,12 @@ export const TerminalHeader = memo(function TerminalHeader({
 
   const availableSandboxProviders = useProjectStore((s) => s.availableSandboxProviders);
   const task = useProjectStore((s) => (taskId != null ? s.tasks.find((t) => t.taskNumber === taskId) : undefined));
+  const tasks = useProjectStore((s) => s.tasks);
+  const taskColor = useMemo(() => {
+    if (taskId == null) return null;
+    const info = buildChainMap(tasks).get(taskId);
+    return info ? getChainColor(info.rootTaskNumber, info.depth) : null;
+  }, [tasks, taskId]);
   const githubEnabled = useExperimentalStore((s) => s.flagsByProject[projectPath]?.github ?? false);
 
   const contextMenuItems = useMemo((): ContextMenuEntry[] => {
@@ -124,11 +132,8 @@ export const TerminalHeader = memo(function TerminalHeader({
           useProjectStore.getState().loadTasks(projectPath);
         },
         completeToDone: task ? () => void completeTask({ projectPath, task }) : undefined,
-        trash: async () => {
-          await window.api.task.trash(projectPath, taskId!);
-          useProjectStore.getState().loadTasks(projectPath);
-          useProjectStore.getState().addToast('Task moved to trash', 'success');
-        },
+        archive: () => void archiveTasks(projectPath, [taskId!]),
+        remove: () => deleteTasks(projectPath, [taskId!]),
       };
 
       items.push(openInEntry(availableSandboxProviders, hasWorktree, actions));
@@ -249,7 +254,16 @@ export const TerminalHeader = memo(function TerminalHeader({
       }}
     />
   ) : (
-    <TerminalHeaderName label={label} lastOscTitle={lastOscTitle} />
+    <>
+      {taskColor && (
+        <span
+          className="inline-block w-2 h-2 rounded-full shrink-0"
+          style={{ background: taskColor }}
+          title={task ? `#${task.taskNumber} ${task.name}` : undefined}
+        />
+      )}
+      <TerminalHeaderName label={label} lastOscTitle={lastOscTitle} />
+    </>
   );
 
   const tagsContent =

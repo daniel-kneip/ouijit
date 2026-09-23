@@ -285,6 +285,7 @@ export function PullRequestDetailView({
               order={fileOrder}
               groups={lens.shown}
               revealing={revealing}
+              onJumpTo={scrollToFile}
             />
           )}
         </div>

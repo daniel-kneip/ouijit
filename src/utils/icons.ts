@@ -11,6 +11,7 @@ import alignCenterVertical from '@phosphor-icons/core/assets/regular/align-cente
 import alignLeft from '@phosphor-icons/core/assets/regular/align-left.svg?raw';
 import alignRight from '@phosphor-icons/core/assets/regular/align-right.svg?raw';
 import alignTop from '@phosphor-icons/core/assets/regular/align-top.svg?raw';
+import appWindow from '@phosphor-icons/core/assets/regular/app-window.svg?raw';
 import archive from '@phosphor-icons/core/assets/regular/archive.svg?raw';
 import arrowCounterClockwise from '@phosphor-icons/core/assets/regular/arrow-counter-clockwise.svg?raw';
 import arrowLeft from '@phosphor-icons/core/assets/regular/arrow-left.svg?raw';
@@ -20,10 +21,12 @@ import arrowsIn from '@phosphor-icons/core/assets/regular/arrows-in.svg?raw';
 import arrowsOut from '@phosphor-icons/core/assets/regular/arrows-out.svg?raw';
 import arrowsOutLineHorizontal from '@phosphor-icons/core/assets/regular/arrows-out-line-horizontal.svg?raw';
 import arrowsOutLineVertical from '@phosphor-icons/core/assets/regular/arrows-out-line-vertical.svg?raw';
+import arrowsInLineVertical from '@phosphor-icons/core/assets/regular/arrows-in-line-vertical.svg?raw';
 import binoculars from '@phosphor-icons/core/assets/regular/binoculars.svg?raw';
 import bug from '@phosphor-icons/core/assets/regular/bug.svg?raw';
 import arrowElbowDownLeft from '@phosphor-icons/core/assets/regular/arrow-elbow-down-left.svg?raw';
 import caretDown from '@phosphor-icons/core/assets/regular/caret-down.svg?raw';
+import caretUp from '@phosphor-icons/core/assets/regular/caret-up.svg?raw';
 import command from '@phosphor-icons/core/assets/regular/command.svg?raw';
 import control from '@phosphor-icons/core/assets/regular/control.svg?raw';
 import dotsSixVertical from '@phosphor-icons/core/assets/regular/dots-six-vertical.svg?raw';
@@ -45,6 +48,7 @@ import folderOpen from '@phosphor-icons/core/assets/regular/folder-open.svg?raw'
 import folderPlus from '@phosphor-icons/core/assets/regular/folder-plus.svg?raw';
 import gear from '@phosphor-icons/core/assets/regular/gear.svg?raw';
 import globeSimple from '@phosphor-icons/core/assets/regular/globe-simple.svg?raw';
+import mapTrifold from '@phosphor-icons/core/assets/regular/map-trifold.svg?raw';
 import gitBranch from '@phosphor-icons/core/assets/regular/git-branch.svg?raw';
 import gitFork from '@phosphor-icons/core/assets/regular/git-fork.svg?raw';
 import gridFour from '@phosphor-icons/core/assets/regular/grid-four.svg?raw';
@@ -102,6 +106,7 @@ export const iconMap: Record<string, string> = {
   'align-left': alignLeft,
   'align-right': alignRight,
   'align-top': alignTop,
+  'app-window': appWindow,
   archive: archive,
   'arrow-counter-clockwise': arrowCounterClockwise,
   'arrow-left': arrowLeft,
@@ -111,10 +116,12 @@ export const iconMap: Record<string, string> = {
   'arrows-out': arrowsOut,
   'arrows-out-line-horizontal': arrowsOutLineHorizontal,
   'arrows-out-line-vertical': arrowsOutLineVertical,
+  'arrows-in-line-vertical': arrowsInLineVertical,
   binoculars: binoculars,
   bug: bug,
   'arrow-elbow-down-left': arrowElbowDownLeft,
   'caret-down': caretDown,
+  'caret-up': caretUp,
   command: command,
   control: control,
   'dots-six-vertical': dotsSixVertical,
@@ -136,6 +143,7 @@ export const iconMap: Record<string, string> = {
   'folder-plus': folderPlus,
   gear: gear,
   'globe-simple': globeSimple,
+  'map-trifold': mapTrifold,
   'git-branch': gitBranch,
   'git-diff': gitDiff,
   'git-fork': gitFork,

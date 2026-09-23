@@ -33,6 +33,7 @@ import type {
 } from './github/types';
 import type { LensInput } from './lens/config';
 import type { SaveDiffNoteInput } from './diffNotes';
+import type { StartReviewInput } from './reviews';
 import type { DiffLensTarget } from './lens/worktreeSubject';
 import type { LensChangedPayload } from './lens/subjectKeys';
 
@@ -162,11 +163,21 @@ contextBridge.exposeInMainWorld('api', {
     setStatus: (projectPath: string, taskNumber: number, status: TaskStatus) =>
       typedInvoke('task:set-status', projectPath, taskNumber, status),
     delete: (projectPath: string, taskNumber: number) => typedInvoke('task:delete', projectPath, taskNumber),
-    trash: (projectPath: string, taskNumber: number) => typedInvoke('task:trash', projectPath, taskNumber),
+    archive: (projectPath: string, taskNumber: number) => typedInvoke('task:archive', projectPath, taskNumber),
+    unarchive: (projectPath: string, taskNumber: number) => typedInvoke('task:unarchive', projectPath, taskNumber),
+    getArchived: (projectPath: string) => typedInvoke('task:get-archived', projectPath),
+    comments: (projectPath: string) => typedInvoke('task:comments', projectPath),
+    addComment: (projectPath: string, taskNumber: number, body: string) =>
+      typedInvoke('task:comment-add', projectPath, taskNumber, body),
+    updateComment: (projectPath: string, id: number, body: string) =>
+      typedInvoke('task:comment-update', projectPath, id, body),
+    deleteComment: (projectPath: string, id: number) => typedInvoke('task:comment-delete', projectPath, id),
     setMergeTarget: (projectPath: string, taskNumber: number, mergeTarget: string) =>
       typedInvoke('task:set-merge-target', projectPath, taskNumber, mergeTarget),
     setName: (projectPath: string, taskNumber: number, name: string) =>
       typedInvoke('task:set-name', projectPath, taskNumber, name),
+    workspaceFile: (projectPath: string, taskNumber: number, worktreePath?: string) =>
+      typedInvoke('task:workspace-file', projectPath, taskNumber, worktreePath),
     setDescription: (projectPath: string, taskNumber: number, description: string) =>
       typedInvoke('task:set-description', projectPath, taskNumber, description),
     reorder: (projectPath: string, taskNumber: number, newStatus: TaskStatus, targetIndex: number) =>
@@ -185,6 +196,18 @@ contextBridge.exposeInMainWorld('api', {
     get: (projectPath: string) => typedInvoke('hooks:get', projectPath),
     save: (projectPath: string, hook: ScriptHook) => typedInvoke('hooks:save', projectPath, hook),
     delete: (projectPath: string, hookType: HookType) => typedInvoke('hooks:delete', projectPath, hookType),
+  },
+  harness: {
+    list: () => typedInvoke('harness:list'),
+    create: (name: string) => typedInvoke('harness:create', name),
+    rename: (id: string, name: string) => typedInvoke('harness:rename', id, name),
+    delete: (id: string) => typedInvoke('harness:delete', id),
+    saveHook: (id: string, hook: ScriptHook) => typedInvoke('harness:save-hook', id, hook),
+    deleteHook: (id: string, hookType: HookType) => typedInvoke('harness:delete-hook', id, hookType),
+    setForProject: (projectPath: string, harnessId: string | null) =>
+      typedInvoke('harness:set-for-project', projectPath, harnessId),
+    setUsageCommand: (id: string, command: string | null) => typedInvoke('harness:set-usage-command', id, command),
+    usage: () => typedInvoke('harness:usage'),
   },
 
   scripts: {
@@ -239,6 +262,7 @@ contextBridge.exposeInMainWorld('api', {
 
   health: {
     check: () => typedInvoke('health:check'),
+    memory: () => typedInvoke('health:memory'),
     onUpdate: (callback: (status: import('./healthCheck').HealthStatus) => void) => typedListen('health', callback),
   },
 
@@ -248,6 +272,9 @@ contextBridge.exposeInMainWorld('api', {
   onShellUnsupported: (callback: (info: { shell: string }) => void) => typedListen('shell-unsupported', callback),
 
   onWhatsNew: (callback: (info: { version: string; notes: string }) => void) => typedListen('whats-new', callback),
+
+  onPtyLabelChanged: (callback: (payload: { ptyId: string; label: string }) => void) =>
+    typedListen('pty:label-changed', callback),
 
   onCliChange: (
     callback: (payload: { project: string; action: string; resource: string; message?: string; ts: number }) => void,
@@ -404,6 +431,19 @@ contextBridge.exposeInMainWorld('api', {
     save: (input: SaveDiffNoteInput) => typedInvoke('diff-notes:save', input),
     discard: (id: string) => typedInvoke('diff-notes:discard', id),
     clear: (worktreePath: string) => typedInvoke('diff-notes:clear', worktreePath),
+  },
+
+  reviews: {
+    current: (worktreePath: string) => typedInvoke('review:current', worktreePath),
+    list: (worktreePath: string) => typedInvoke('review:list', worktreePath),
+    get: (id: string) => typedInvoke('review:get', id),
+    start: (input: StartReviewInput) => typedInvoke('review:start', input),
+    retarget: (id: string, base: string | null) => typedInvoke('review:retarget', id, base),
+    viewed: (id: string) => typedInvoke('review:viewed', id),
+    markViewed: (id: string, path: string, viewed: boolean) => typedInvoke('review:mark-viewed', id, path, viewed),
+    handOver: (id: string, state: 'accepted' | 'changes_requested', summary: string | null) =>
+      typedInvoke('review:hand-over', id, state, summary),
+    abandon: (id: string) => typedInvoke('review:abandon', id),
   },
 
   analysis: {

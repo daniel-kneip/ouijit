@@ -1,11 +1,13 @@
 import { useEffect, useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { useProjectStore } from '../stores/projectStore';
+import { useProjectStore, type TerminalLayout } from '../stores/projectStore';
 import { useTerminalStore, getTerminalIndexByStackPosition, STACK_PAGE_SIZE } from '../stores/terminalStore';
 import { useCanvasStore, persistCanvas } from '../stores/canvasStore';
 import { useExperimentalStore } from '../stores/experimentalStore';
 import { TerminalCardStack } from './terminal/TerminalCardStack';
 import { TerminalCanvas, syncCanvasWithTerminals } from './canvas/TerminalCanvas';
+import { CityMap } from './citymap/CityMap';
+import { useCityMapStore } from '../stores/cityMapStore';
 import { KanbanBoard } from './kanban/KanbanBoard';
 import { ProjectSettingsPanel } from './scripts/ProjectSettingsPanel';
 import { PullRequestsPanel } from './github/PullRequestsPanel';
@@ -42,6 +44,9 @@ function getActivePtyId(projectPath: string): string | undefined {
   if (layout === 'canvas') {
     return getCanvasSelectedPtyId(projectPath);
   }
+  if (layout === 'map') {
+    return useCityMapStore.getState().openPtyId[projectPath] ?? undefined;
+  }
   // Stack mode
   const store = useTerminalStore.getState();
   const terms = store.terminalsByProject[projectPath] ?? [];
@@ -57,6 +62,9 @@ export function ProjectView() {
   const terminalLayout = useProjectStore((s) => s.terminalLayout);
   const canvasEnabled = useExperimentalStore((s) =>
     projectPath ? (s.flagsByProject[projectPath]?.canvas ?? false) : false,
+  );
+  const cityMapEnabled = useExperimentalStore((s) =>
+    projectPath ? (s.flagsByProject[projectPath]?.cityMap ?? false) : false,
   );
   const githubEnabled = useExperimentalStore((s) =>
     projectPath ? (s.flagsByProject[projectPath]?.github ?? false) : false,
@@ -116,11 +124,16 @@ export function ProjectView() {
         return;
       }
 
-      // Cmd+L — toggle terminal layout (stack / canvas) — only when canvas is enabled
-      if (key === 'l' && canvasEnabled) {
+      // Cmd+L — cycle the terminal layouts that are switched on
+      if (key === 'l' && (canvasEnabled || cityMapEnabled)) {
         e.preventDefault();
         e.stopPropagation();
-        useProjectStore.getState().toggleTerminalLayout();
+        const layouts: TerminalLayout[] = ['stack'];
+        if (canvasEnabled) layouts.push('canvas');
+        if (cityMapEnabled) layouts.push('map');
+        const store = useProjectStore.getState();
+        const next = layouts[(layouts.indexOf(store.terminalLayout) + 1) % layouts.length];
+        store.setTerminalLayout(next);
         return;
       }
 
@@ -230,14 +243,14 @@ export function ProjectView() {
 
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [projectPath, canvasEnabled]);
+  }, [projectPath, canvasEnabled, cityMapEnabled]);
 
-  // Force layout back to stack if the canvas flag gets disabled while active
+  // Force layout back to stack if its flag gets disabled while active
   useEffect(() => {
-    if (!canvasEnabled && terminalLayout === 'canvas') {
+    if ((!canvasEnabled && terminalLayout === 'canvas') || (!cityMapEnabled && terminalLayout === 'map')) {
       useProjectStore.getState().setTerminalLayout('stack');
     }
-  }, [canvasEnabled, terminalLayout]);
+  }, [canvasEnabled, cityMapEnabled, terminalLayout]);
 
   // Same guard for the flagged panels — turning a flag off must not leave the
   // user stranded on a panel whose toggle has just disappeared.
@@ -347,6 +360,9 @@ export function ProjectView() {
   const renderTerminals = () => {
     if (canvasEnabled && terminalLayout === 'canvas') {
       return <TerminalCanvas projectPath={projectPath} />;
+    }
+    if (cityMapEnabled && terminalLayout === 'map') {
+      return <CityMap projectPath={projectPath} />;
     }
     return <TerminalCardStack projectPath={projectPath} />;
   };

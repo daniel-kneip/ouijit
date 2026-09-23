@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import type { ChangedFile, FileDiff } from '../../types';
 import { useTerminalStore } from '../../stores/terminalStore';
+import { useProjectStore } from '../../stores/projectStore';
 import {
   useUIStore,
   DIFF_FILE_LIST_DEFAULT_WIDTH,
@@ -10,8 +11,10 @@ import {
 import { terminalInstances, refreshTerminalGitStatus } from '../terminal/terminalReact';
 import { DiffFileTree, treeFileOrder } from './DiffFileTree';
 import { DiffFileSection } from './DiffFileSection';
+import { WHOLE_FILE_CONTEXT } from './expandDiff';
 import { DeferredMount } from './DeferredMount';
 import { scrollToSection, fileSelector } from './scrollToSection';
+import { sectionAfter } from './documentOrder';
 import { useLensReveal } from './lensReveal';
 import { useDiffSlices } from './diffSlice';
 import { ResizeHandle } from '../common/ResizeHandle';
@@ -23,6 +26,8 @@ import { InlineCommentBox, InlineCommentCard } from './InlineCommentBox';
 import { DiffNotesIsland } from './DiffNotesIsland';
 import { DiffComparisonPicker } from './DiffComparisonPicker';
 import { useDiffNotes } from './useDiffNotes';
+import { useReview } from './useReview';
+import { ReviewControl } from './ReviewControl';
 import { useProjectLenses } from './useProjectLenses';
 import { useLensSession } from './useLensSession';
 import { worktreeSubjectKey } from '../../lens/subjectKeys';
@@ -48,6 +53,7 @@ interface DiffPanelProps {
 }
 
 const NOTE_HINT = 'Kept with this worktree until you hand it to the agent.';
+const REVIEW_NOTE_HINT = 'Goes to the agent with the review, once you hand that over.';
 
 /** Uncommitted and branch diffs for a terminal's worktree. */
 export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, onClose }: DiffPanelProps) {
@@ -95,6 +101,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
   // Keyed by worktree, not by panel or session, so notes survive the panel
   // being closed and reopened mid-review.
   const notes = useDiffNotes(gitPath, filesFingerprint);
+  const review = useReview(gitPath, projectPath, base, branch);
 
   // Against the project repo, not the worktree: the history is shared, and
   // diff paths are repo-relative either way.
@@ -139,16 +146,42 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
     if (inst) refreshTerminalGitStatus(inst);
   }, [ptyId]);
 
-  useBatchedDiffs(
-    files,
-    filesFingerprint,
-    (file) => {
+  const readDiff = useCallback(
+    (file: ChangedFile, contextLines?: number) => {
       const against = baseToReadAgainst(base, file.status);
       return against
-        ? window.api.worktree.getFileDiff(gitPath, against, file.path, file.oldPath)
-        : window.api.getFileDiff(gitPath, file.path, undefined, file.status === '?');
+        ? window.api.worktree.getFileDiff(gitPath, against, file.path, file.oldPath, contextLines)
+        : window.api.getFileDiff(gitPath, file.path, contextLines, file.status === '?');
     },
-    setDiffs,
+    [gitPath, base],
+  );
+  useBatchedDiffs(files, filesFingerprint, readDiff, setDiffs);
+
+  // Read once per file and kept: a note written on an unfolded line takes its
+  // snippet from here, since the hunks alone do not hold that line.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const fullDiffs = useRef(new Map<string, Promise<FileDiff | null>>());
+  const fullDiffValues = useRef(new Map<string, FileDiff | null>());
+  useEffect(() => {
+    fullDiffs.current = new Map();
+    fullDiffValues.current = new Map();
+  }, [filesFingerprint]);
+  const loadFullDiff = useCallback(
+    (path: string) => {
+      let loading = fullDiffs.current.get(path);
+      if (!loading) {
+        const file = filesRef.current.find((f) => f.path === path);
+        loading = file ? readDiff(file, WHOLE_FILE_CONTEXT) : Promise.resolve(null);
+        loading = loading.then((full) => {
+          fullDiffValues.current.set(path, full);
+          return full;
+        });
+        fullDiffs.current.set(path, loading);
+      }
+      return loading;
+    },
+    [readDiff],
   );
 
   const lenses = useProjectLenses(projectPath);
@@ -174,6 +207,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
     scrollToSection(contentRef.current, fileSelector(path, group));
   }, []);
 
+  const noteHint = review.review ? REVIEW_NOTE_HINT : NOTE_HINT;
   const { setComposingAt, setEditingId } = notes;
   const startNote = useCallback(
     (path: string, anchor: DiffLineAnchor) => {
@@ -200,7 +234,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
                 initialBody={note.body}
                 placeholder="Note for the agent…"
                 saveLabel="Update note"
-                hint={NOTE_HINT}
+                hint={noteHint}
                 onSave={(body) => notes.save({ id: note.id, path, line: note.line, side: note.side, body })}
                 onCancel={() => notes.setEditingId(null)}
                 onDiscard={() => notes.discard(note.id)}
@@ -218,7 +252,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
             <InlineCommentBox
               placeholder="Note for the agent…"
               saveLabel="Add note"
-              hint={NOTE_HINT}
+              hint={noteHint}
               // The snippet is read on save, not per render: it walks the file
               // and nothing displays it.
               onSave={(body) =>
@@ -227,7 +261,9 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
                   line: composing.line,
                   startLine: composing.startLine,
                   side: composing.side,
-                  snippet: blockAt(diffsRef.current.get(path), composing),
+                  snippet:
+                    blockAt(diffsRef.current.get(path), composing) ??
+                    blockAt(fullDiffValues.current.get(path), composing),
                   body,
                 })
               }
@@ -237,7 +273,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
         </div>
       );
     },
-    [notes],
+    [notes, noteHint],
   );
 
   const hasNotes = notes.notes.length > 0 || notes.composingAt !== null;
@@ -272,9 +308,30 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
   const revealing = useLensReveal(lens.landed, contentRef);
   const sliceFor = useDiffSlices();
 
-  const toggleFolded = useCallback((section: string, next: boolean) => {
-    setFolded((prev) => toggleIn(prev, section, next));
-  }, []);
+  // Folding a file takes its height out from above the reader, so the next one
+  // is put where the folded one was rather than wherever the shift left it.
+  const document = useRef({ order, groups: lens.shown });
+  document.current = { order, groups: lens.shown };
+  // Under a review the mark is the review's, so it is still there after the
+  // window changes; every part of a file folds with it, since what was read is
+  // the file. Without one it lives and dies with the panel, as it always has.
+  const underReview = review.review !== null;
+  const { markViewed } = review;
+  const toggleFolded = useCallback(
+    (section: string, next: boolean, path: string) => {
+      if (underReview) markViewed(path, next);
+      else setFolded((prev) => toggleIn(prev, section, next));
+      if (!next) return;
+      const following = sectionAfter(document.current.order, document.current.groups, section);
+      if (following) scrollToFile(following.path, following.group);
+    },
+    [scrollToFile, underReview, markViewed],
+  );
+  const viewedPaths = review.viewed;
+  const isFolded = useCallback(
+    (path: string, section: string) => (underReview ? viewedPaths.has(path) : folded.has(section)),
+    [underReview, viewedPaths, folded],
+  );
 
   const toggleGroup = useCallback((id: string, next: boolean) => {
     setCollapsed((prev) => toggleIn(prev, id, next));
@@ -304,7 +361,12 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
       <DeferredMount
         key={section}
         dataPath={file.path}
-        estimatedHeight={estimateFileHeight(diff, changes.additions + changes.deletions, 1, folded.has(section))}
+        estimatedHeight={estimateFileHeight(
+          diff,
+          changes.additions + changes.deletions,
+          1,
+          isFolded(file.path, section),
+        )}
       >
         <DiffFileSection
           path={file.path}
@@ -318,9 +380,11 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
           renderBelowLine={hasNotes ? renderBelowLine : undefined}
           markLine={spans.length > 0 ? markLine : undefined}
           headerRight={analysisChips?.get(file.path)}
-          collapsed={folded.has(section)}
+          collapsed={isFolded(file.path, section)}
           sectionId={section}
           onCollapsedChange={toggleFolded}
+          collapseLabel={underReview ? 'Read' : 'Collapse'}
+          loadFullDiff={loadFullDiff}
         />
       </DeferredMount>
     );
@@ -349,6 +413,7 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
             lens={{ groups: lens.shown, collapsed, onCollapsedChange: toggleGroup }}
             onFileClick={scrollToFile}
             renderFileTrailing={analysisSignals ? railTrailing : undefined}
+            isViewed={isFolded}
             revealing={revealing}
           />
         </div>
@@ -379,6 +444,17 @@ export function DiffPanel({ ptyId, projectPath, fullWidth, onToggleFullWidth, on
             defaultBase={instance?.mergeTarget ?? gitFileStatus?.mainBranch ?? null}
             mainBranch={gitFileStatus?.mainBranch ?? null}
             branch={branch}
+            reviews={review.past}
+          />
+          <ReviewControl
+            session={review}
+            fileCount={files.length}
+            ptyId={ptyId}
+            onHandedOver={(verdict) =>
+              useProjectStore
+                .getState()
+                .addToast(`Review handed over · ${verdict}. The agent reads it with \`ouijit task review\`.`, 'success')
+            }
           />
           {/* Without `min-w-0` a flex item will not shrink below its content,
               and this one wraps to three lines instead of truncating. */}

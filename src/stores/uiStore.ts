@@ -47,6 +47,16 @@ interface UIStoreState {
   editorHookQueue: EditorHookRequest[];
   diffFileListCollapsed: boolean;
   diffFileListWidth: number;
+  cityMapSidebarWidth: number;
+  cityMapDrawerWidth: number;
+  cityMapDrawerMode: CityMapDrawerMode;
+  /** Space left free under the terminal drawer, per mode, so its prompt line sits where the eye rests. */
+  cityMapDrawerGap: Record<CityMapDrawerMode, number>;
+  /** The details panel folded away, leaving only a tab to bring it back. */
+  cityMapInspectorCollapsed: boolean;
+  /** Cranes, smoke and clouds moving on the map; off, every city is a still. */
+  cityMapMotion: boolean;
+  cityMapSidebarGroup: CityMapSidebarGroup;
 }
 
 interface UIStoreActions {
@@ -67,6 +77,13 @@ interface UIStoreActions {
   resolveEditorHook: (id: number, hook: ScriptHook | null) => void;
   setDiffFileListCollapsed: (collapsed: boolean) => void;
   setDiffFileListWidth: (width: number) => void;
+  setCityMapSidebarWidth: (width: number) => void;
+  setCityMapDrawerWidth: (width: number) => void;
+  setCityMapDrawerMode: (mode: CityMapDrawerMode) => void;
+  setCityMapDrawerGap: (mode: CityMapDrawerMode, gap: number) => void;
+  setCityMapInspectorCollapsed: (collapsed: boolean) => void;
+  setCityMapMotion: (moving: boolean) => void;
+  setCityMapSidebarGroup: (group: CityMapSidebarGroup) => void;
 }
 
 type UIStore = UIStoreState & UIStoreActions;
@@ -74,6 +91,33 @@ type UIStore = UIStoreState & UIStoreActions;
 export const DIFF_FILE_LIST_DEFAULT_WIDTH = 220;
 export const DIFF_FILE_LIST_MIN_WIDTH = 120;
 export const DIFF_FILE_LIST_MAX_WIDTH = 500;
+
+export const CITY_MAP_SIDEBAR_DEFAULT_WIDTH = 240;
+export const CITY_MAP_SIDEBAR_MIN_WIDTH = 180;
+export const CITY_MAP_SIDEBAR_MAX_WIDTH = 480;
+
+export type CityMapSidebarGroup = 'status' | 'district';
+
+export const CITY_MAP_DRAWER_DEFAULT_WIDTH = 680;
+export const CITY_MAP_DRAWER_MIN_WIDTH = 420;
+export const CITY_MAP_DRAWER_MAX_WIDTH = 1600;
+
+function clampCityMapDrawerWidth(width: number): number {
+  return Math.max(CITY_MAP_DRAWER_MIN_WIDTH, Math.min(CITY_MAP_DRAWER_MAX_WIDTH, Math.round(width)));
+}
+
+export type CityMapDrawerMode = 'side' | 'window';
+
+export const CITY_MAP_DRAWER_MAX_GAP = 4000;
+export const CITY_MAP_DRAWER_DEFAULT_GAP: Record<CityMapDrawerMode, number> = { side: 0, window: 320 };
+
+function clampCityMapDrawerGap(gap: number): number {
+  return Math.max(0, Math.min(CITY_MAP_DRAWER_MAX_GAP, Math.round(gap)));
+}
+
+function clampCityMapSidebarWidth(width: number): number {
+  return Math.max(CITY_MAP_SIDEBAR_MIN_WIDTH, Math.min(CITY_MAP_SIDEBAR_MAX_WIDTH, Math.round(width)));
+}
 
 function clampFileListWidth(width: number): number {
   return Math.max(DIFF_FILE_LIST_MIN_WIDTH, Math.min(DIFF_FILE_LIST_MAX_WIDTH, Math.round(width)));
@@ -91,6 +135,13 @@ export const useUIStore = create<UIStore>()((set, get) => ({
   editorHookQueue: [],
   diffFileListCollapsed: false,
   diffFileListWidth: DIFF_FILE_LIST_DEFAULT_WIDTH,
+  cityMapSidebarWidth: CITY_MAP_SIDEBAR_DEFAULT_WIDTH,
+  cityMapDrawerWidth: CITY_MAP_DRAWER_DEFAULT_WIDTH,
+  cityMapDrawerMode: 'side',
+  cityMapDrawerGap: { ...CITY_MAP_DRAWER_DEFAULT_GAP },
+  cityMapInspectorCollapsed: false,
+  cityMapMotion: true,
+  cityMapSidebarGroup: 'status',
 
   setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
 
@@ -151,20 +202,86 @@ export const useUIStore = create<UIStore>()((set, get) => ({
     set({ diffFileListWidth: clamped });
     void window.api.globalSettings.set('ui:diff-file-list-width', String(clamped));
   },
+
+  setCityMapSidebarWidth: (width) => {
+    const clamped = clampCityMapSidebarWidth(width);
+    set({ cityMapSidebarWidth: clamped });
+    void window.api.globalSettings.set('ui:city-map-sidebar-width', String(clamped));
+  },
+
+  setCityMapDrawerWidth: (width) => {
+    const clamped = clampCityMapDrawerWidth(width);
+    set({ cityMapDrawerWidth: clamped });
+    void window.api.globalSettings.set('ui:city-map-drawer-width', String(clamped));
+  },
+
+  setCityMapDrawerMode: (mode) => {
+    set({ cityMapDrawerMode: mode });
+    void window.api.globalSettings.set('ui:city-map-drawer-mode', mode);
+  },
+
+  setCityMapDrawerGap: (mode, gap) => {
+    const clamped = clampCityMapDrawerGap(gap);
+    set((s) => ({ cityMapDrawerGap: { ...s.cityMapDrawerGap, [mode]: clamped } }));
+    void window.api.globalSettings.set(`ui:city-map-drawer-gap-${mode}`, String(clamped));
+  },
+
+  setCityMapInspectorCollapsed: (collapsed) => {
+    set({ cityMapInspectorCollapsed: collapsed });
+    void window.api.globalSettings.set('ui:city-map-inspector-collapsed', collapsed ? '1' : '0');
+  },
+
+  setCityMapMotion: (moving) => {
+    set({ cityMapMotion: moving });
+    void window.api.globalSettings.set('ui:city-map-motion', moving ? '1' : '0');
+  },
+
+  setCityMapSidebarGroup: (group) => {
+    set({ cityMapSidebarGroup: group });
+    void window.api.globalSettings.set('ui:city-map-sidebar-group', group);
+  },
 }));
 
 export async function hydrateUIPreferences(): Promise<void> {
-  const [pinned, collapsed, width] = await Promise.all([
-    window.api.globalSettings.get('ui:sidebar-pinned'),
-    window.api.globalSettings.get('ui:diff-file-list-collapsed'),
-    window.api.globalSettings.get('ui:diff-file-list-width'),
-  ]);
+  const [pinned, collapsed, width, mapWidth, drawerWidth, drawerMode, sideGap, windowGap, inspector, motion, mapGroup] =
+    await Promise.all([
+      window.api.globalSettings.get('ui:sidebar-pinned'),
+      window.api.globalSettings.get('ui:diff-file-list-collapsed'),
+      window.api.globalSettings.get('ui:diff-file-list-width'),
+      window.api.globalSettings.get('ui:city-map-sidebar-width'),
+      window.api.globalSettings.get('ui:city-map-drawer-width'),
+      window.api.globalSettings.get('ui:city-map-drawer-mode'),
+      window.api.globalSettings.get('ui:city-map-drawer-gap-side'),
+      window.api.globalSettings.get('ui:city-map-drawer-gap-window'),
+      window.api.globalSettings.get('ui:city-map-inspector-collapsed'),
+      window.api.globalSettings.get('ui:city-map-motion'),
+      window.api.globalSettings.get('ui:city-map-sidebar-group'),
+    ]);
 
   const next: Partial<UIStoreState> = {};
   if (pinned === '0' || pinned === '1') next.sidebarPinned = pinned === '1';
   if (collapsed === '0' || collapsed === '1') next.diffFileListCollapsed = collapsed === '1';
   const parsedWidth = Number(width);
   if (width && Number.isFinite(parsedWidth)) next.diffFileListWidth = clampFileListWidth(parsedWidth);
+  const parsedMapWidth = Number(mapWidth);
+  if (mapWidth && Number.isFinite(parsedMapWidth)) next.cityMapSidebarWidth = clampCityMapSidebarWidth(parsedMapWidth);
+  const parsedDrawerWidth = Number(drawerWidth);
+  if (drawerWidth && Number.isFinite(parsedDrawerWidth)) {
+    next.cityMapDrawerWidth = clampCityMapDrawerWidth(parsedDrawerWidth);
+  }
+  if (drawerMode === 'side' || drawerMode === 'window') next.cityMapDrawerMode = drawerMode;
+  const gaps = { ...CITY_MAP_DRAWER_DEFAULT_GAP };
+  for (const [mode, raw] of [
+    ['side', sideGap],
+    ['window', windowGap],
+  ] as const) {
+    const parsed = Number(raw);
+    if (raw && Number.isFinite(parsed)) gaps[mode] = clampCityMapDrawerGap(parsed);
+  }
+  next.cityMapDrawerGap = gaps;
+  if (inspector === '0' || inspector === '1') next.cityMapInspectorCollapsed = inspector === '1';
+  if (motion === '0' || motion === '1') next.cityMapMotion = motion === '1';
+  if (mapGroup === 'status' || mapGroup === 'district') next.cityMapSidebarGroup = mapGroup;
 
   useUIStore.setState(next);
 }

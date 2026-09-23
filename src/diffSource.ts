@@ -5,6 +5,7 @@
  */
 
 import type { ChangedFile, GitFileStatus } from './git';
+import { reviewSeqOfBase } from './reviews';
 
 /** How many files of one change are rendered. Shared with the pull request view. */
 export const MAX_DIFF_FILES = 300;
@@ -31,11 +32,15 @@ export function baseToReadAgainst(base: string | null, status: ChangedFile['stat
 
 /** How a comparison reads in the panel's chip and on the terminal's diff button. */
 export function describeDiffComparison(base: string | null, branch: string | null): string {
+  const seq = reviewSeqOfBase(base);
+  if (seq !== null) return `Since review ${seq}`;
   return isUncommittedBase(base, branch) ? 'Uncommitted changes' : `vs ${base}`;
 }
 
 /** The same comparison mid-sentence, for the heading the agent is handed. */
 export function diffSubject(base: string | null, branch: string | null): string {
+  const seq = reviewSeqOfBase(base);
+  if (seq !== null) return `the changes since review ${seq}`;
   return isUncommittedBase(base, branch) ? 'the uncommitted changes' : `the changes against ${base}`;
 }
 

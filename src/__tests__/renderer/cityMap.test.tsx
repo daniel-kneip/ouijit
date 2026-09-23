@@ -1,0 +1,390 @@
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+
+import { CityMap } from '../../components/citymap/CityMap';
+import { useAppStore } from '../../stores/appStore';
+import { useProjectStore } from '../../stores/projectStore';
+import { useTerminalStore, DEFAULT_DISPLAY_STATE, type TerminalDisplayState } from '../../stores/terminalStore';
+import { useCityMapStore } from '../../stores/cityMapStore';
+import { useUIStore } from '../../stores/uiStore';
+import { snapToCells } from '../../components/citymap/cityGeometry';
+import type { Project, TaskWithWorkspace } from '../../types';
+
+vi.mock('electron-log/renderer', () => ({
+  default: { scope: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
+}));
+vi.mock('../../components/terminal/terminalActions', () => ({
+  addProjectTerminal: vi.fn().mockResolvedValue(true),
+  reconnectOrphanedSessions: vi.fn().mockResolvedValue(undefined),
+  closeProjectTerminal: vi.fn(),
+  renameTerminal: vi.fn(),
+  openWorktreeEditor: vi.fn(),
+}));
+vi.mock('../../components/terminal/terminalReact', () => ({
+  terminalInstances: new Map(),
+}));
+// The drawer hosts the real header and body in the app; here only that it
+// opens on the right terminal is the map's own behaviour.
+vi.mock('../../components/terminal/TerminalHeader', () => ({
+  TerminalHeader: ({ ptyId }: { ptyId: string }) => <div data-testid="drawer-header">{ptyId}</div>,
+}));
+vi.mock('../../components/terminal/TerminalBody', () => ({
+  TerminalBody: ({ ptyId }: { ptyId: string }) => <div data-testid="drawer-body">{ptyId}</div>,
+}));
+
+const project: Project = { path: '/work/alpha', name: 'Alpha' };
+
+function display(over: Partial<TerminalDisplayState> & { ptyId: string }): TerminalDisplayState {
+  return { ...DEFAULT_DISPLAY_STATE, projectPath: project.path, ...over } as TerminalDisplayState;
+}
+
+function task(over: Partial<TaskWithWorkspace> & { taskNumber: number }): TaskWithWorkspace {
+  return { name: `Task ${over.taskNumber}`, status: 'in_progress', createdAt: '2026-07-01T00:00:00.000Z', ...over };
+}
+
+beforeEach(() => {
+  // jsdom draws nothing: the map's canvas stays blank and its observer inert.
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(null) as never;
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as never;
+
+  useCityMapStore.setState({ byProject: {}, openPtyId: {}, selection: {} });
+  useAppStore.setState({ projects: [project], activeView: 'project', activeProjectPath: project.path });
+  useProjectStore.setState({
+    tasks: [
+      task({
+        taskNumber: 7,
+        name: 'Seven',
+        prompt: 'Wire the kiro flags',
+        worktreePath: '/wt/seven-7',
+        branch: 'seven-7',
+      }),
+      task({ taskNumber: 9, name: 'Nine', status: 'in_review' }),
+      task({ taskNumber: 11, name: 'Eleven', status: 'todo' }),
+      task({ taskNumber: 12, name: 'Twelve', status: 'done' }),
+    ],
+    availableSandboxProviders: [],
+    toasts: [],
+  });
+  useTerminalStore.setState({
+    terminalsByProject: { [project.path]: ['alpha-1', 'alpha-7', 'alpha-7b'] },
+    displayStates: {
+      'alpha-1': display({ ptyId: 'alpha-1', label: 'Loose shell' }),
+      'alpha-7': display({ ptyId: 'alpha-7', label: 'Wire kiro flags', taskId: 7, summaryType: 'ready' }),
+      'alpha-7b': display({ ptyId: 'alpha-7b', lastOscTitle: 'Fix hook tests', taskId: 7, summaryType: 'thinking' }),
+    },
+    activeIndices: { [project.path]: 0 },
+  });
+  useUIStore.setState({ cityMapInspectorCollapsed: false, cityMapMotion: true });
+  vi.mocked(window.api.globalSettings.get).mockResolvedValue(undefined as never);
+  vi.mocked(window.api.globalSettings.set).mockClear();
+});
+
+describe('the city map', () => {
+  test('founds a city per task, a site per task terminal, and opens the terminal behind a site', async () => {
+    vi.mocked(window.api.harness.usage).mockResolvedValue([
+      {
+        harnessId: 'h1',
+        name: 'Claude',
+        reading: { used: 12_000, limit: 200_000, unit: 'tokens' },
+        at: new Date().toISOString(),
+      },
+      { harnessId: 'h2', name: 'Kiro', error: 'Exited with 1', at: new Date().toISOString() },
+    ]);
+    render(<CityMap projectPath={project.path} />);
+
+    // Every harness with a usage command reports at the top of the map.
+    expect((await screen.findByTestId('harness-usage-h1')).textContent).toBe('Claude12k / 200k');
+    expect(screen.getByTestId('harness-usage-h2').textContent).toBe('Kirounavailable');
+
+    // Every task gets a city, listed under its status; the loose shell is counted, not placed.
+    await screen.findByTestId('city-row-7');
+    const sidebar = screen.getByLabelText('Cities');
+    for (const n of [7, 9, 11, 12]) expect(within(sidebar).getByTestId(`city-row-${n}`)).toBeTruthy();
+    expect(sidebar.textContent).toContain('1 terminal outside any ticket');
+    expect(sidebar.textContent).toContain('waiting for you');
+
+    await waitFor(() => {
+      const plot = useCityMapStore.getState().byProject[project.path]?.cities[7];
+      expect(plot?.lots).toEqual({ 'alpha-7': 0, 'alpha-7b': 1 });
+    });
+    // Two cities never share a lot on the map.
+    const cities = useCityMapStore.getState().byProject[project.path].cities;
+    const positions = Object.values(cities).map((c) => `${c.pos.x},${c.pos.y}`);
+    expect(new Set(positions).size).toBe(4);
+
+    // A site that needs the user is called out on the city's label.
+    expect(screen.getByTestId('city-alert-waiting').textContent).toBe('1');
+    expect(screen.queryByTestId('city-alert-error')).toBeNull();
+
+    // The list counts a city's terminals; picking the city unfolds them, and one of them opens its terminal.
+    expect(screen.getByTestId('city-count-7').textContent).toContain('2');
+    expect(screen.queryByTestId('city-count-9')).toBeNull();
+    expect(screen.queryByTestId('sidebar-site-alpha-7b')).toBeNull();
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    expect(screen.getByTestId('sidebar-site-alpha-7b').textContent).toContain('Fix hook tests');
+    fireEvent.click(screen.getByTestId('sidebar-site-alpha-7b'));
+    expect((await screen.findByTestId('terminal-drawer')).textContent).toContain('alpha-7b');
+
+    // The drawer docks to the side or floats as a window, either leaving room under it, and remembers both.
+    expect(screen.getByTestId('terminal-drawer').dataset.mode).toBe('side');
+    fireEvent.click(screen.getByLabelText('Show terminal as a window'));
+    expect(screen.getByTestId('terminal-drawer').dataset.mode).toBe('window');
+    expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-drawer-mode', 'window');
+    fireEvent.keyDown(screen.getByLabelText('Space under the terminal'), { key: 'ArrowUp' });
+    expect(useUIStore.getState().cityMapDrawerGap.window).toBe(336);
+    expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-drawer-gap-window', '336');
+    expect(useUIStore.getState().cityMapDrawerGap.side).toBe(0);
+    fireEvent.click(screen.getByLabelText('Dock terminal to the side'));
+    expect(screen.getByTestId('terminal-drawer').dataset.mode).toBe('side');
+
+    // Going to a city puts the city in focus: the drawer closes instead of staying on the last terminal.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    expect(screen.queryByTestId('terminal-drawer')).toBeNull();
+
+    // The city's inspector shows the ticket, its comments and its sites; the newest comment sits on the label.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    const inspector = await screen.findByTestId('city-inspector');
+    expect((within(inspector).getByLabelText('Ticket name') as HTMLInputElement).value).toBe('Seven');
+    expect(inspector.textContent).toContain('Wire the kiro flags');
+    expect(screen.queryByTestId('city-note-7')).toBeNull();
+    vi.mocked(window.api.task.comments).mockResolvedValue([
+      { id: 1, taskNumber: 7, body: 'Waiting for the API key from ops', createdAt: '2026-07-02T00:00:00.000Z' },
+    ]);
+    fireEvent.change(within(inspector).getByLabelText('New comment'), {
+      target: { value: 'Waiting for the API key from ops' },
+    });
+    fireEvent.keyDown(within(inspector).getByLabelText('New comment'), { key: 'Enter', metaKey: true, ctrlKey: true });
+    await waitFor(() =>
+      expect(window.api.task.addComment).toHaveBeenCalledWith(project.path, 7, 'Waiting for the API key from ops'),
+    );
+    await waitFor(() => expect(screen.getByTestId('city-note-7').textContent).toContain('Waiting for the API key'));
+    expect(within(inspector).getByTestId('comment-1').textContent).toContain('Waiting for the API key from ops');
+    expect(within(inspector).getByTestId('site-row-alpha-7').textContent).toContain('Waiting for you');
+    expect(within(inspector).getByTestId('site-row-alpha-7b').textContent).toContain('Fix hook tests');
+    expect(within(inspector).getByTestId('site-row-alpha-7b').textContent).toContain('Agent working');
+
+    // A site opens its terminal in the drawer; hiding the drawer keeps the selection.
+    fireEvent.click(screen.getByTestId('site-row-alpha-7b'));
+    const drawer = await screen.findByTestId('terminal-drawer');
+    expect(drawer.textContent).toContain('alpha-7b');
+    expect(screen.getByTestId('site-inspector')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Hide terminal'));
+    expect(screen.queryByTestId('terminal-drawer')).toBeNull();
+
+    // Positions and lots persist under the project.
+    await waitFor(() => {
+      const saved = vi
+        .mocked(window.api.globalSettings.set)
+        .mock.calls.filter(([key]) => key === 'citymap:/work/alpha')
+        .at(-1);
+      expect(saved).toBeDefined();
+      const state = JSON.parse(saved![1] as string);
+      expect(Object.keys(state.cities).sort()).toEqual(['11', '12', '7', '9']);
+      expect(state.cities[7].lots).toEqual({ 'alpha-7': 0, 'alpha-7b': 1 });
+    });
+
+    // A terminal the selected city gains opens in the drawer by itself.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    useTerminalStore.getState().addTerminal(project.path, 'alpha-7c', {
+      label: 'Fresh agent',
+      taskId: 7,
+      summaryType: 'thinking',
+    });
+    await waitFor(() => expect(screen.getByTestId('terminal-drawer').textContent).toContain('alpha-7c'));
+    fireEvent.click(screen.getByLabelText('Hide terminal'));
+    useTerminalStore.getState().removeTerminal('alpha-7c');
+
+    // A terminal that finished and closed leaves a building; one closed mid-work frees its lot.
+    fireEvent.click(screen.getByTestId('city-row-7'));
+    fireEvent.click(await screen.findByTestId('site-row-alpha-7b'));
+    useTerminalStore.getState().updateDisplay('alpha-7b', { summaryType: 'success' });
+    await waitFor(() => expect(screen.getByTestId('site-inspector').textContent).toContain('Finished'));
+    useTerminalStore.getState().removeTerminal('alpha-7b');
+    useTerminalStore.getState().removeTerminal('alpha-7');
+    await waitFor(() => {
+      const plot = useCityMapStore.getState().byProject[project.path].cities[7];
+      expect(plot.lots).toEqual({});
+      expect(plot.built).toEqual([1]);
+    });
+  });
+
+  test('a dragged city lands where the pointer let go, and stays there', async () => {
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('city-row-7');
+    await waitFor(() => expect(useCityMapStore.getState().byProject[project.path]?.cities[7]).toBeDefined());
+    const canvas = screen.getByLabelText('Map of tasks as cities');
+    const start = useCityMapStore.getState().byProject[project.path].cities[7].pos;
+
+    // The stubbed observer leaves the canvas at 0×0, so screen (0,0) is the
+    // camera centre, which the first city is founded on.
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0 });
+      Object.defineProperty(event, 'offsetX', { value: x });
+      Object.defineProperty(event, 'offsetY', { value: y });
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      canvas.dispatchEvent(event);
+    };
+    pointer('pointerdown', 0, 0);
+    pointer('pointermove', 45, 18);
+    pointer('pointermove', 90, 36);
+    pointer('pointerup', 90, 36);
+
+    // Cities land on the cell lattice, so the drop point snaps.
+    const zoom = useCityMapStore.getState().byProject[project.path].viewport.zoom;
+    const moved = useCityMapStore.getState().byProject[project.path].cities[7].pos;
+    expect(moved).toEqual(snapToCells({ x: start.x + 90 / zoom, y: start.y + 36 / zoom }));
+    expect(moved).not.toEqual(start);
+    await waitFor(() => {
+      const saved = vi
+        .mocked(window.api.globalSettings.set)
+        .mock.calls.filter(([key]) => key === 'citymap:/work/alpha')
+        .at(-1);
+      expect(JSON.parse(saved![1] as string).cities[7].pos).toEqual(moved);
+    });
+  });
+
+  test('a district names an area and takes its cities along when dragged', async () => {
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('city-row-7');
+    await waitFor(() => expect(useCityMapStore.getState().byProject[project.path]?.cities[7]).toBeDefined());
+    const cityPos = useCityMapStore.getState().byProject[project.path].cities[7].pos;
+    const district = useCityMapStore.getState().addDistrict(project.path, cityPos);
+    useCityMapStore.getState().setSelection(project.path, { type: 'district', id: district.id });
+
+    const inspector = await screen.findByTestId('district-inspector');
+    expect((within(inspector).getByLabelText('District name') as HTMLInputElement).value).toBe('District 1');
+    expect(inspector.textContent).toContain('Cities inside 1');
+    fireEvent.change(within(inspector).getByLabelText('District name'), { target: { value: 'Payments' } });
+    fireEvent.blur(within(inspector).getByLabelText('District name'));
+    expect(screen.getByTestId(`district-label-${district.id}`).textContent).toContain('Payments');
+
+    // Grab the district beside the city (the canvas is 0×0, so screen is the camera centre) and drag.
+    const canvas = screen.getByLabelText('Map of tasks as cities');
+    const zoom = useCityMapStore.getState().byProject[project.path].viewport.zoom;
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0 });
+      Object.defineProperty(event, 'offsetX', { value: x });
+      Object.defineProperty(event, 'offsetY', { value: y });
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      canvas.dispatchEvent(event);
+    };
+    const otherPos = useCityMapStore.getState().byProject[project.path].cities[9].pos;
+    const grabX = (cityPos.x + 300) * zoom;
+    pointer('pointerdown', grabX, 0);
+    pointer('pointermove', grabX + 45, 0);
+    pointer('pointermove', grabX + 90, 0);
+    pointer('pointerup', grabX + 90, 0);
+
+    const state = useCityMapStore.getState().byProject[project.path];
+    const landed = snapToCells({ x: district.x + 90 / zoom, y: district.y });
+    const delta = { x: landed.x - district.x, y: landed.y - district.y };
+    expect(state.districts[0]).toMatchObject({ x: landed.x, y: landed.y });
+    expect(state.cities[7].pos).toEqual({ x: cityPos.x + delta.x, y: cityPos.y + delta.y });
+    expect(delta.x).toBeGreaterThan(0);
+    // Other cities stay put.
+    expect(state.cities[9].pos).toEqual(otherPos);
+  });
+
+  test('a saved map comes back with its cities, roads, districts and viewport', async () => {
+    const saved = {
+      viewport: { x: 100, y: 0, zoom: 1 },
+      cities: {
+        7: { pos: { x: 0, y: 0 }, lots: {}, built: [] },
+        9: { pos: { x: 600, y: 300 }, lots: {}, built: [] },
+      },
+      roads: [{ id: 'r1', from: 7, to: 9 }],
+      districts: [{ id: 'd1', name: 'Payments', x: -400, y: -300, w: 800, h: 600, hue: 28, terrain: 'marsh' }],
+    };
+    vi.mocked(window.api.globalSettings.get).mockImplementation(async (key: string) =>
+      key === 'citymap:/work/alpha' ? JSON.stringify(saved) : undefined,
+    );
+
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('district-label-d1');
+    const state = useCityMapStore.getState().byProject[project.path];
+    expect(state.cities[9].pos).toEqual({ x: 600, y: 300 });
+    expect(state.roads).toEqual(saved.roads);
+    expect(screen.getByTestId('district-label-d1').textContent).toContain('Payments');
+    // The camera is the saved one: with a 0×0 canvas, screen x = (world x − camera x) · zoom.
+    await waitFor(() => expect(screen.getByTestId('city-label-7').style.left).toBe('-100px'));
+
+    // #9 waits for #7 over the road, which is in progress; the note sits on the road.
+    expect(screen.getByTestId('city-blocked-9').textContent).toContain('#7');
+    expect(screen.queryByTestId('city-blocked-7')).toBeNull();
+    useCityMapStore.getState().updateRoad(project.path, 'r1', { note: 'blocked until the PR merges' });
+    expect((await screen.findByTestId('road-label-r1')).textContent).toBe('blocked until the PR merges');
+
+    // Grouping by district lists the cities inside it under its name.
+    fireEvent.click(screen.getByTestId('sidebar-group-district'));
+    const sidebar = screen.getByLabelText('Cities');
+    await waitFor(() => expect(sidebar.textContent).toContain('Payments'));
+    expect(sidebar.textContent).toContain('No district');
+    expect(screen.getByTestId('fit-all')).toBeTruthy();
+    expect(screen.getByTestId('minimap')).toBeTruthy();
+
+    // The map can be held still; the states then read from colour and icon alone.
+    const motion = screen.getByTestId('motion-toggle');
+    expect(motion.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(motion);
+    expect(useUIStore.getState().cityMapMotion).toBe(false);
+    expect(motion.textContent).toContain('off');
+    expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-motion', '0');
+  });
+
+  test('a status change on the map goes through the board’s transition, hooks included', async () => {
+    render(<CityMap projectPath={project.path} />);
+    await screen.findByTestId('city-row-11');
+    vi.mocked(window.api.task.setStatus).mockClear();
+    vi.mocked(window.api.hooks.get).mockClear();
+
+    fireEvent.click(screen.getByTestId('city-row-11'));
+    const inspector = await screen.findByTestId('city-inspector');
+    fireEvent.change(within(inspector).getByLabelText('Status'), { target: { value: 'in_progress' } });
+
+    await waitFor(() => expect(window.api.task.setStatus).toHaveBeenCalledWith(project.path, 11, 'in_progress'));
+    // A bare status write never asks for hooks; the transition does, to run the start hook.
+    await waitFor(() => expect(window.api.hooks.get).toHaveBeenCalledWith(project.path));
+  });
+
+  test('a focused city sits in the middle of what the panels leave visible, and follows them', async () => {
+    // Reduced motion lands the camera at once, so the label position is the answer.
+    const matchMedia = window.matchMedia;
+    window.matchMedia = (query: string) => ({ ...matchMedia(query), matches: query.includes('reduced-motion') });
+    try {
+      render(<CityMap projectPath={project.path} />);
+      await screen.findByTestId('city-row-7');
+      // With a 0×0 canvas, a label's left is (world x − camera x) · zoom: zero when centred on the canvas.
+      const left = () => parseFloat(screen.getByTestId('city-label-7').style.left);
+
+      // Picking the city opens the details in the panel (680px plus its margin over the right edge), so the city moves half that left.
+      fireEvent.click(screen.getByTestId('city-row-7'));
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
+
+      // Folding the details away gives the width back; the tab brings them back.
+      fireEvent.click(screen.getByLabelText('Hide details'));
+      expect(screen.queryByTestId('city-inspector')).toBeNull();
+      expect(window.api.globalSettings.set).toHaveBeenCalledWith('ui:city-map-inspector-collapsed', '1');
+      await waitFor(() => expect(left()).toBeCloseTo(0, 0));
+      fireEvent.click(screen.getByTestId('show-inspector'));
+      expect(screen.getByTestId('city-inspector')).toBeTruthy();
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
+
+      // The terminal takes the same panel; hiding it leaves the details in it.
+      act(() => useCityMapStore.getState().setOpenPty(project.path, 'alpha-7'));
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
+      act(() => useCityMapStore.getState().setOpenPty(project.path, null));
+      await waitFor(() => expect(left()).toBeCloseTo(-346, 0));
+
+      // Nothing over the map: the city is in the middle of the canvas.
+      act(() => useCityMapStore.getState().setSelection(project.path, null));
+      await waitFor(() => expect(left()).toBeCloseTo(0, 0));
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
+});

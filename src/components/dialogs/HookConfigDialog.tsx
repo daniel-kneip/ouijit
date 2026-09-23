@@ -49,10 +49,21 @@ interface HookConfigDialogProps {
   projectPath: string;
   hookType: HookType;
   existingHook?: ScriptHook;
+  /** Name of the harness `existingHook` comes from, when the project has not set its own. */
+  inheritedFrom?: string;
+  /** Where the hook is written; the project's own hooks when omitted. */
+  target?: { harnessId: string; harnessName: string };
   onClose: (result: { saved: boolean; hook?: ScriptHook } | null) => void;
 }
 
-export function HookConfigDialog({ projectPath, hookType, existingHook, onClose }: HookConfigDialogProps) {
+export function HookConfigDialog({
+  projectPath,
+  hookType,
+  existingHook,
+  inheritedFrom,
+  target,
+  onClose,
+}: HookConfigDialogProps) {
   const labels = HOOK_LABELS[hookType];
   const isRunHook = hookType === 'run';
 
@@ -84,29 +95,55 @@ export function HookConfigDialog({ projectPath, hookType, existingHook, onClose 
 
     if (!trimmed) {
       // Empty command = delete hook
-      await window.api.hooks.delete(projectPath, hookType);
+      if (target) await window.api.harness.deleteHook(target.harnessId, hookType);
+      else await window.api.hooks.delete(projectPath, hookType);
       dismiss({ saved: true });
       return;
     }
 
+    // An inherited hook's id belongs to the harness row; the override gets its own.
     const hook: ScriptHook = {
-      id: existingHook?.id ?? `hook-${Date.now()}`,
+      id: existingHook && !inheritedFrom ? existingHook.id : `hook-${Date.now()}`,
       type: hookType,
       name: labels.title,
       command: trimmed,
       ...(isRunHook && { restartIfRunning }),
     };
 
-    await window.api.hooks.save(projectPath, hook);
+    if (target) await window.api.harness.saveHook(target.harnessId, hook);
+    else await window.api.hooks.save(projectPath, hook);
 
     useProjectStore.getState().addToast(`${labels.title} saved`, 'success');
     dismiss({ saved: true, hook });
-  }, [command, projectPath, hookType, existingHook, labels, isRunHook, restartIfRunning, dismiss]);
+  }, [
+    command,
+    projectPath,
+    hookType,
+    existingHook,
+    inheritedFrom,
+    target,
+    labels,
+    isRunHook,
+    restartIfRunning,
+    dismiss,
+  ]);
 
   return (
     <DialogOverlay visible={visible} onDismiss={() => dismiss(null)}>
       <h2 className="text-lg font-semibold text-text-primary mb-4 text-center">{labels.title}</h2>
       <p className="text-sm text-text-secondary leading-snug -mt-2 mb-4">{labels.description}</p>
+      {target && (
+        <p className="text-xs text-text-tertiary leading-snug -mt-2 mb-4">
+          Part of the <span className="text-text-secondary">{target.harnessName}</span> harness. Every project using it
+          picks this up unless it sets its own.
+        </p>
+      )}
+      {inheritedFrom && !target && (
+        <p className="text-xs text-text-tertiary leading-snug -mt-2 mb-4">
+          Currently from the <span className="text-text-secondary">{inheritedFrom}</span> harness. Saving keeps a
+          project-only version; an empty command goes back to the harness.
+        </p>
+      )}
 
       <div className="mb-6">
         <div className="flex flex-col gap-1">

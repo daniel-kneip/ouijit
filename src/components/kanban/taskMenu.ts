@@ -25,7 +25,8 @@ export interface TaskMenuActions {
    * plain status write.
    */
   completeToDone?: () => void;
-  trash: () => void;
+  archive: () => void;
+  remove: () => void;
 }
 
 /**
@@ -83,9 +84,9 @@ export function githubEntries(
   return [{ label: 'Create pull request', icon: 'git-pull-request', onClick: actions.createPullRequest }];
 }
 
-/** "Move to ▸" — the four columns, then a danger Trash. */
+/** "Move to ▸" — the four columns, then Archive and a danger Delete. */
 export function moveToEntry(
-  actions: Pick<TaskMenuActions, 'setStatus' | 'completeToDone' | 'trash'>,
+  actions: Pick<TaskMenuActions, 'setStatus' | 'completeToDone' | 'archive' | 'remove'>,
 ): ContextMenuEntry {
   return {
     label: 'Move to',
@@ -95,7 +96,8 @@ export function moveToEntry(
       { label: STATUS_LABELS.in_review, onClick: () => actions.setStatus('in_review') },
       { label: STATUS_LABELS.done, onClick: actions.completeToDone ?? (() => actions.setStatus('done')) },
       { separator: true },
-      { label: 'Trash', icon: 'trash', danger: true, onClick: actions.trash },
+      { label: 'Archive', icon: 'archive', onClick: actions.archive },
+      { label: 'Delete…', icon: 'trash', danger: true, onClick: actions.remove },
     ],
   };
 }

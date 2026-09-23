@@ -112,10 +112,17 @@ const mockApi = {
     getByNumber: vi.fn().mockResolvedValue(null),
     setStatus: vi.fn().mockResolvedValue({ success: true }),
     delete: vi.fn().mockResolvedValue({ success: true }),
-    trash: vi.fn().mockResolvedValue({ success: true }),
+    archive: vi.fn().mockResolvedValue({ success: true }),
+    unarchive: vi.fn().mockResolvedValue({ success: true }),
+    getArchived: vi.fn().mockResolvedValue([]),
+    comments: vi.fn().mockResolvedValue([]),
+    addComment: vi.fn().mockResolvedValue({ success: true }),
+    updateComment: vi.fn().mockResolvedValue({ success: true }),
+    deleteComment: vi.fn().mockResolvedValue({ success: true }),
     setMergeTarget: vi.fn().mockResolvedValue({ success: true }),
     setSandboxed: vi.fn().mockResolvedValue({ success: true }),
     setName: vi.fn().mockResolvedValue({ success: true }),
+    workspaceFile: vi.fn().mockResolvedValue(null),
     setDescription: vi.fn().mockResolvedValue({ success: true }),
     reorder: vi.fn().mockResolvedValue({ success: true }),
     // A test that spawns into the path this returns should mock it itself.
@@ -126,6 +133,17 @@ const mockApi = {
     get: vi.fn().mockResolvedValue({}),
     save: vi.fn().mockResolvedValue({ success: true }),
     delete: vi.fn().mockResolvedValue({ success: true }),
+  },
+  harness: {
+    list: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue({ id: 'h1', name: 'Harness', hooks: {} }),
+    rename: vi.fn().mockResolvedValue({ success: true }),
+    delete: vi.fn().mockResolvedValue({ success: true }),
+    saveHook: vi.fn().mockResolvedValue({ success: true }),
+    deleteHook: vi.fn().mockResolvedValue({ success: true }),
+    setForProject: vi.fn().mockResolvedValue({ success: true }),
+    setUsageCommand: vi.fn().mockResolvedValue({ success: true }),
+    usage: vi.fn().mockResolvedValue([]),
   },
   scripts: {
     getAll: vi.fn().mockResolvedValue([]),
@@ -175,6 +193,7 @@ const mockApi = {
     set: vi.fn().mockResolvedValue({ success: true }),
   },
   health: {
+    memory: vi.fn().mockResolvedValue({ processes: [], main: {}, ptys: 0, system: {} }),
     // A machine with every agent on it, so a test that renders the lens
     // settings is not also a test about what is installed.
     check: vi.fn().mockResolvedValue({
@@ -213,6 +232,17 @@ const mockApi = {
     save: vi.fn().mockResolvedValue(undefined),
     discard: vi.fn().mockResolvedValue({ success: true }),
     clear: vi.fn().mockResolvedValue({ success: true }),
+  },
+  reviews: {
+    current: vi.fn().mockResolvedValue(null),
+    list: vi.fn().mockResolvedValue([]),
+    get: vi.fn().mockResolvedValue(null),
+    start: vi.fn().mockResolvedValue(null),
+    retarget: vi.fn().mockResolvedValue(undefined),
+    viewed: vi.fn().mockResolvedValue([]),
+    markViewed: vi.fn().mockResolvedValue(undefined),
+    handOver: vi.fn().mockResolvedValue(null),
+    abandon: vi.fn().mockResolvedValue({ success: true }),
   },
   github: {
     availability: vi.fn().mockResolvedValue({ available: false, reason: 'flag-off' }),
