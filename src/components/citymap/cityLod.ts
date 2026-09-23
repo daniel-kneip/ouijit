@@ -1,6 +1,7 @@
 import { CITY_HALF_H, CITY_HALF_W } from './cityGeometry';
 import { drawCity, type DrawCity, type MapTokens } from './drawCity';
 import { canvasCaches, releaseCanvas } from './canvasMemory';
+import { sketchTilesReady } from './sketchTiles';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -38,6 +39,7 @@ export class CityBitmaps {
       city.weather,
       t.night ? 'n' : 'd',
       t.lit ? 'l' : 'u',
+      sketchTilesReady() ? 's' : '',
     ].join('|');
     let entry = this.cache.get(city.taskNumber);
     if (!entry || entry.key !== key) {

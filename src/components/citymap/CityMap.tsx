@@ -1,3 +1,4 @@
+import log from 'electron-log/renderer';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { terminalMatchesTag, useTerminalStore } from '../../stores/terminalStore';
@@ -93,11 +94,14 @@ import {
   type DrawCity,
   type MapTokens,
 } from './drawCity';
+import { loadSketchTiles } from './sketchTiles';
 import { DetailLayer, TerrainLayer } from './drawTerrain';
 import { CITY_BITMAP_ZOOM, CityBitmaps } from './cityLod';
 import { type Area, motionAreas } from './motionAreas';
 import { HarnessUsageBar } from './HarnessUsageBar';
 import { cellKey, daylightTint, roadRoute, routeCells, windowsLit } from './terrain';
+
+const cityMapLog = log.scope('cityMap');
 
 const EMPTY_IDS: string[] = [];
 const EMPTY_ROADS: Road[] = [];
@@ -752,6 +756,19 @@ function useMapSurface(input: MapSurfaceInput) {
   useEffect(() => {
     dirty.current = true;
   }, [cities, roads, districts, selection, linking, wantsMotion]);
+
+  useEffect(() => {
+    let live = true;
+    loadSketchTiles().then(
+      () => {
+        if (live) dirty.current = true;
+      },
+      (err: unknown) => cityMapLog.warn('City map tiles did not load; drawing the plain map', err),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (linking == null) return;

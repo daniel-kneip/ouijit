@@ -10,6 +10,7 @@ import {
   cityLayout,
   hash2,
   type Biome,
+  type CityCell,
   type CityPresence,
   type CityStyle,
   type Culture,
@@ -19,6 +20,7 @@ import {
   type Weather,
 } from './cityGeometry';
 import { isWater, routeCells } from './terrain';
+import { SKETCH_BLOCK, drawTile, sketchTilesReady } from './sketchTiles';
 
 export interface MapTokens {
   ground: string;
@@ -797,6 +799,73 @@ function drawPin(
   ctx.textBaseline = 'alphabetic';
 }
 
+const SKETCH_ROOFS: Record<Culture, { shapes: string[]; colours: string[]; beige: number }> = {
+  modern: { shapes: ['slant'], colours: ['Purple', 'Green'], beige: 0.3 },
+  oldtown: { shapes: ['gable', 'gable', 'church'], colours: ['Brown', 'Purple'], beige: 0.3 },
+  mediterranean: { shapes: ['rounded', 'point'], colours: ['Beige', 'Brown'], beige: 0.8 },
+  nordic: { shapes: ['gable', 'slant'], colours: ['Green', 'Brown'], beige: 0 },
+  pagoda: { shapes: ['point', 'rounded'], colours: ['Purple', 'Green'], beige: 0.5 },
+  adobe: { shapes: [], colours: [], beige: 1 },
+};
+
+const pick = <T>(list: readonly T[], u: number): T => list[Math.min(list.length - 1, Math.floor(u * list.length))];
+
+/** How the sprites are toned for the theme and for a city whose work is done. */
+function sketchFilter(t: MapTokens, faded: boolean): string {
+  const parts = [];
+  if (faded) parts.push('saturate(0.3)', t.night ? 'brightness(0.7)' : 'brightness(1.08)');
+  else if (t.night) parts.push('brightness(0.62)', 'saturate(0.85)');
+  return parts.join(' ') || 'none';
+}
+
+function sketchBuilding(ctx: Ctx, culture: Culture, x: number, y: number, storeys: number, seed: number): void {
+  const blocks = storeys <= 2 ? 1 : 2;
+  if (culture === 'adobe') {
+    for (let b = 1; b <= blocks; b++) drawTile(ctx, 'desert/building_center_N', x, y, b);
+    if (seed > 0.4) drawTile(ctx, seed > 0.7 ? 'desert/dome_N' : 'desert/dome_small_N', x, y, blocks + 1);
+    return;
+  }
+  const style = SKETCH_ROOFS[culture];
+  const u = (k: number) => hash2(Math.floor(seed * 1e6) + k * 131, k);
+  const beige = u(1) < style.beige ? 'Beige' : '';
+  const facing = u(2) < 0.5 ? 'N' : 'E';
+  for (let b = 1; b <= blocks; b++) {
+    const face =
+      b === 1
+        ? pick(['door', 'doorWindows', 'windows', 'window'], u(3))
+        : pick(['windows', 'window', 'center'], u(3 + b));
+    drawTile(ctx, `town/building_${face}${beige}_${facing}`, x, y, b);
+  }
+  const shape = pick(style.shapes, u(8));
+  const oriented = shape === 'gable' || shape === 'slant' ? facing : 'N';
+  drawTile(ctx, `town/roof_${shape}${pick(style.colours, u(9))}_${oriented}`, x, y, blocks + 1);
+}
+
+function sketchPlant(ctx: Ctx, biome: Biome, culture: Culture, x: number, y: number, many: boolean): void {
+  if (biome === 'desert' || biome === 'tropical') drawTile(ctx, 'desert/tree_N', x, y, 1);
+  else if (biome === 'tundra' || biome === 'forest' || culture === 'nordic')
+    drawTile(ctx, many ? 'town/tree_pineLarge_N' : 'town/tree_pine_N', x, y, 1);
+  else drawTile(ctx, many ? 'town/tree_multiple_N' : 'town/tree_single_N', x, y, 1);
+}
+
+/** The city's ground as a slab of tiles, roads worn into it, outlined in the task colour. */
+function sketchGround(ctx: Ctx, city: DrawCity, cells: readonly CityCell[]): void {
+  const sand = city.style.biome === 'desert' || city.style.culture === 'adobe';
+  const mid = (N - 1) / 2;
+  for (const cell of cells) {
+    const { x, y } = cellCenter(cell.i, cell.j);
+    if (cell.type === 'road') {
+      if (cell.i === mid && cell.j === mid) drawTile(ctx, 'town/grass_pathCrossing_N', x, y);
+      else drawTile(ctx, `town/grass_path_${cell.j === mid ? 'N' : 'E'}`, x, y);
+    } else if (cell.type === 'lot') drawTile(ctx, 'town/dirt_center_N', x, y);
+    else drawTile(ctx, sand ? 'desert/grass_center_N' : 'town/grass_center_N', x, y);
+  }
+  ctx.strokeStyle = city.color;
+  ctx.lineWidth = 2.5;
+  diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
+  ctx.stroke();
+}
+
 /** Painted a few times a second while `animate` is on; at `time` 0 and off, a still that any bitmap can keep. */
 export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, animate = false): void {
   const { cells, slots } = cityLayout(city.taskNumber);
@@ -809,10 +878,16 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
   const snow = snowy(biome, city.season);
   const shade = (hex: string, dark: number, light = 0) =>
     faded ? tone(hex, 0.2, light) : tone(hex, 1, t.night ? dark : 0);
+  const sketch = !blueprint && sketchTilesReady();
   ctx.save();
   ctx.translate(city.pos.x, city.pos.y);
+  const order = [...cells].sort((a, b) => a.i + a.j - (b.i + b.j));
 
-  if (blueprint) {
+  if (sketch) {
+    ctx.filter = sketchFilter(t, faded);
+    sketchGround(ctx, city, order);
+    ctx.filter = 'none';
+  } else if (blueprint) {
     ctx.fillStyle = withAlpha(city.color, 0.12);
     diamond(ctx, 0, 0, CITY_HALF_W, CITY_HALF_H);
     ctx.fill();
@@ -845,7 +920,6 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
   const siteBySlot = new Map(city.sites.map((s) => [s.slot, s]));
   const builtBySlot = new Set(city.built);
   const slotByCell = new Map(slots.map((s, idx) => [`${s.i},${s.j}`, { idx, slot: s }]));
-  const order = [...cells].sort((a, b) => a.i + a.j - (b.i + b.j));
 
   for (const cell of order) {
     const { x, y } = cellCenter(cell.i, cell.j);
@@ -869,6 +943,7 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
       continue;
     }
 
+    if (sketch && cell.type === 'road') continue;
     if (cell.type === 'road') {
       ctx.fillStyle = faded ? tone('#9aa39c', 0.1, t.night ? -25 : 10) : tone('#a9b0a4', 1, t.night ? -30 : 0);
       diamond(ctx, x, y, TW, TH);
@@ -889,6 +964,15 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
       else yard(ctx, t, x, y, seed);
       continue;
     }
+    if (sketch && (cell.type === 'building' || cell.type === 'park' || (built && here))) {
+      ctx.filter = sketchFilter(t, faded);
+      if (built && here) sketchBuilding(ctx, culture, x, y, here.slot.storeys, seed);
+      else if (cell.type === 'building') sketchBuilding(ctx, culture, x, y, cell.storeys, seed);
+      else if (cell.type === 'park') sketchPlant(ctx, biome, culture, x, y, cell.trees > 1);
+      ctx.filter = 'none';
+      continue;
+    }
+    if (sketch && cell.type === 'lot') continue;
     if (built && here) {
       drawBuilding(ctx, t, x, y, TW * 0.7, TH * 0.7, STOREY * here.slot.storeys, here.slot.wall, {
         ...opts,
@@ -937,26 +1021,27 @@ export function drawCity(ctx: Ctx, t: MapTokens, city: DrawCity, time = 0, anima
     }
   }
 
+  const lift = sketch ? SKETCH_BLOCK * 2 : 0;
   if (city.presence === 'review') {
     ctx.fillStyle = t.review;
     ctx.globalAlpha = 0.25;
     diamond(ctx, 0, 0, TW, TH);
     ctx.fill();
     ctx.globalAlpha = 1;
-    flag(ctx, t, 0, 2, 44, t.review);
+    flag(ctx, t, 0, 2, 44 + lift, t.review);
     // The magnifier sits still: a city moves while an agent is at work on it, and a
     // review waits for a person. It also keeps the city out of the motion frames.
     ctx.strokeStyle = t.review;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(14, -52, 5, 0, Math.PI * 2);
+    ctx.arc(14, -52 - lift, 5, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(18, -48);
-    ctx.lineTo(23, -43);
+    ctx.moveTo(18, -48 - lift);
+    ctx.lineTo(23, -43 - lift);
     ctx.stroke();
   } else if (city.presence === 'settled') {
-    flag(ctx, t, 0, 2, 36, t.done);
+    flag(ctx, t, 0, 2, 36 + lift, t.done);
   } else if (blueprint) {
     ctx.fillStyle = '#8a6a48';
     ctx.fillRect(-1, -18, 2, 18);
