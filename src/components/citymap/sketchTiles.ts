@@ -78,10 +78,17 @@ function opaqueBox(img: HTMLImageElement): { x: number; y: number; w: number; h:
   return x1 < x0 ? { x: 0, y: 0, w: 1, h: 1 } : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
+function fetchImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`could not load ${url}`));
+    img.src = url;
+  });
+}
+
 async function load(name: string, url: string): Promise<void> {
-  const img = new Image();
-  img.src = url;
-  await img.decode();
+  const img = await fetchImage(url);
   const crop = opaqueBox(img);
   const levels: HTMLCanvasElement[] = [];
   let source: CanvasImageSource = img;
@@ -114,17 +121,39 @@ async function load(name: string, url: string): Promise<void> {
   });
 }
 
+/** A few hundred requests at once lose some of them against the dev server, so they queue. */
+const PARALLEL = 8;
+
+async function loadAll(entries: readonly [string, string][]): Promise<string[]> {
+  const failed: string[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < entries.length) {
+      const [path, url] = entries[next++];
+      try {
+        await load(spriteName(path), url);
+      } catch {
+        failed.push(path);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: PARALLEL }, worker));
+  return failed;
+}
+
 /**
- * Decodes every tile and resolves with the paths of any that would not load;
- * the map draws its own shapes until this settles, and leaves those out after.
+ * Loads every tile, trying again once for any that failed, and resolves with
+ * the paths of those that still would not; the map draws its own shapes
+ * until this settles, and leaves those out after.
  */
 export function loadSketchTiles(): Promise<string[]> {
-  loading ??= Promise.allSettled(Object.entries(urls).map(([path, url]) => load(spriteName(path), url))).then(
-    (results) => {
-      settled = true;
-      return Object.keys(urls).filter((_, k) => results[k].status === 'rejected');
-    },
-  );
+  loading ??= (async () => {
+    const entries = Object.entries(urls);
+    const failed = new Set(await loadAll(entries));
+    const missing = failed.size ? await loadAll(entries.filter(([path]) => failed.has(path))) : [];
+    settled = true;
+    return missing;
+  })();
   return loading;
 }
 
