@@ -12,7 +12,7 @@ import {
   type Ground,
   type TerrainCell,
 } from './terrain';
-import { SKETCH_BLOCK, drawTile, sketchTilesReady } from './sketchTiles';
+import { SKETCH_BLOCK, drawTile, hasTile, sketchTilesReady } from './sketchTiles';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -295,9 +295,15 @@ const ZONE_SET: Record<DistrictTerrain, string> = {
   salt: 'terrain-salt',
 };
 
+const GROUND_VARIANTS = 5;
+
+/** One of the set's flat tiles, redrawn variants included where the set has them, in one of four turns. */
 function groundTile(cell: TerrainCell, s: number, u: number, water: boolean): string {
+  const base = `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N`;
+  const pick = Math.floor(hash2(s * 11 + 3, u * 5 + 7) * (GROUND_VARIANTS + 1));
+  const variant = pick && hasTile(`${base}_v${pick}`) ? `${base}_v${pick}` : base;
   const turn = Math.floor(hash2(s * 7 + 1, u * 13 + 5) * 4);
-  return `${tileSet(cell)}/${water ? 'water' : 'grass'}_center_N${turn ? `~${turn}` : ''}`;
+  return turn ? `${variant}~${turn}` : variant;
 }
 
 function tileSet(cell: TerrainCell): string {

@@ -1,0 +1,84 @@
+{
+ "sheet": "terrain-lava.png",
+ "key": "#FF00FF",
+ "size": [
+  1424,
+  1078
+ ],
+ "cell": [
+  256,
+  352
+ ],
+ "tiles": [
+  {
+   "name": "grass_center_N_v1",
+   "ref": "grass_center_N",
+   "section": "GROUND: five variants of the flat ground",
+   "x": 24,
+   "y": 194
+  },
+  {
+   "name": "grass_center_N_v2",
+   "ref": "grass_center_N",
+   "section": "GROUND: five variants of the flat ground",
+   "x": 304,
+   "y": 194
+  },
+  {
+   "name": "grass_center_N_v3",
+   "ref": "grass_center_N",
+   "section": "GROUND: five variants of the flat ground",
+   "x": 584,
+   "y": 194
+  },
+  {
+   "name": "grass_center_N_v4",
+   "ref": "grass_center_N",
+   "section": "GROUND: five variants of the flat ground",
+   "x": 864,
+   "y": 194
+  },
+  {
+   "name": "grass_center_N_v5",
+   "ref": "grass_center_N",
+   "section": "GROUND: five variants of the flat ground",
+   "x": 1144,
+   "y": 194
+  },
+  {
+   "name": "water_center_N_v1",
+   "ref": "water_center_N",
+   "section": "WATER: five variants of the still water",
+   "x": 24,
+   "y": 668
+  },
+  {
+   "name": "water_center_N_v2",
+   "ref": "water_center_N",
+   "section": "WATER: five variants of the still water",
+   "x": 304,
+   "y": 668
+  },
+  {
+   "name": "water_center_N_v3",
+   "ref": "water_center_N",
+   "section": "WATER: five variants of the still water",
+   "x": 584,
+   "y": 668
+  },
+  {
+   "name": "water_center_N_v4",
+   "ref": "water_center_N",
+   "section": "WATER: five variants of the still water",
+   "x": 864,
+   "y": 668
+  },
+  {
+   "name": "water_center_N_v5",
+   "ref": "water_center_N",
+   "section": "WATER: five variants of the still water",
+   "x": 1144,
+   "y": 668
+  }
+ ]
+}

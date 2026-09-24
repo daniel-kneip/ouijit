@@ -12,6 +12,8 @@ super-resolution model over each first, and keeps the result in
 ~/.cache/ouijit-tilesheets so a second cut does not pay for it again.
 A terrain's full ground and water tiles lose the rim of their top face and
 come in four turns, `~1` to `~3` beside the first.
+A tile with a `ref` in the manifest is a variant, fitted to and treated as
+that original.
 Prints the tiles whose outline still differs from the original's.
 """
 import json, os, sys, glob, collections
@@ -150,19 +152,20 @@ for jf in sorted(glob.glob(f'{SRC}/*.json')):
     for t in m['tiles']:
         night = (t['section'] or '').startswith('NIGHT')
         name = t['name']
+        original = t.get('ref', name)
         pad_y, pad_x = round(20 * sy), round(8 * sx)
         x0 = max(0, round(t['x'] * sx) - pad_x); y0 = max(0, round(t['y'] * sy) - pad_y)
         x1 = round((t['x'] + W) * sx) + pad_x; y1 = round((t['y'] + H) * sy) + pad_y
         rgba = isolate(key(sheet[y0:y1, x0:x1], ground), W * sx, H * sy)
-        ref = reference(slug, name)
+        ref = reference(slug, original)
         if rgba is None: report.append((slug, 'night' if night else 'day', name, 0.0)); continue
         top = int(np.nonzero((rgba[..., 3] > 100).any(axis=1))[0][0])
         rgba[top + round((bbox(ref)[3] - bbox(ref)[1]) * sy * 1.04):, :, 3] = 0
         big = Image.fromarray(rgba, 'RGBA').convert('RGBa').resize(
             (round(rgba.shape[1] / sx), round(rgba.shape[0] / sy)), Image.LANCZOS).convert('RGBA')
-        placed = fit(np.asarray(big), ref, name.startswith(DECO))
+        placed = fit(np.asarray(big), ref, original.startswith(DECO))
         suffix = '@night' if night else ''
-        if slug.startswith('terrain-') and name in SEAMLESS:
+        if slug.startswith('terrain-') and original in SEAMLESS:
             for n, block in enumerate(seamless(Image.fromarray(placed, 'RGBA'))):
                 save(block, f'{OUT}/{slug}/{name}{f"~{n}" if n else ""}{suffix}.webp')
         else:
