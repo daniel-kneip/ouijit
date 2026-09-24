@@ -760,7 +760,8 @@ function useMapSurface(input: MapSurfaceInput) {
   useEffect(() => {
     let live = true;
     loadSketchTiles().then(
-      () => {
+      (missing) => {
+        if (missing.length) cityMapLog.warn(`${missing.length} city map tiles did not load`, missing.slice(0, 5));
         if (live) dirty.current = true;
       },
       (err: unknown) => cityMapLog.warn('City map tiles did not load; drawing the plain map', err),

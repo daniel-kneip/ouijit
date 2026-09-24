@@ -35,9 +35,13 @@ const SCALE_Y = TH / GRID_HALF_H;
 export const SKETCH_BLOCK = BLOCK_PX * SCALE_Y;
 
 interface Sprite {
-  /** Largest first, each half the one before. */
+  /** Drawn from when zoomed in; the browser holds its decoded pixels and may drop them. */
+  image: HTMLImageElement;
+  /** The opaque part of `image`, in its own pixels. */
+  crop: { x: number; y: number; w: number; h: number };
+  /** Half the crop and smaller, each half the one before. */
   levels: HTMLCanvasElement[];
-  /** The box below in the 256×352 frame, however large the image was drawn. */
+  /** The opaque part in the 256×352 frame, however large the image was drawn. */
   x: number;
   y: number;
   w: number;
@@ -45,7 +49,8 @@ interface Sprite {
 }
 
 const sprites = new Map<string, Sprite>();
-let loading: Promise<void> | null = null;
+let loading: Promise<string[]> | null = null;
+let settled = false;
 
 function opaqueBox(img: HTMLImageElement): { x: number; y: number; w: number; h: number } {
   const probe = document.createElement('canvas');
@@ -77,45 +82,54 @@ async function load(name: string, url: string): Promise<void> {
   const img = new Image();
   img.src = url;
   await img.decode();
-  const box = opaqueBox(img);
+  const crop = opaqueBox(img);
   const levels: HTMLCanvasElement[] = [];
   let source: CanvasImageSource = img;
-  let sx = box.x;
-  let sy = box.y;
-  let w = box.w;
-  let h = box.h;
-  let from = { w, h };
-  for (;;) {
+  let from = crop;
+  for (
+    let w = Math.round(crop.w / 2), h = Math.round(crop.h / 2);
+    w >= 12;
+    w = Math.round(w / 2), h = Math.round(h / 2)
+  ) {
     const level = document.createElement('canvas');
     level.width = w;
-    level.height = h;
+    level.height = Math.max(1, h);
     const lctx = level.getContext('2d');
-    if (!lctx) return;
+    if (!lctx) break;
     lctx.imageSmoothingQuality = 'high';
-    lctx.drawImage(source, sx, sy, from.w, from.h, 0, 0, w, h);
+    lctx.drawImage(source, from.x, from.y, from.w, from.h, 0, 0, level.width, level.height);
     levels.push(level);
-    if (w <= 24) break;
     source = level;
-    sx = 0;
-    sy = 0;
-    from = { w, h };
-    w = Math.max(1, Math.round(w / 2));
-    h = Math.max(1, Math.round(h / 2));
+    from = { x: 0, y: 0, w: level.width, h: level.height };
   }
   const unit = FRAME_W / img.naturalWidth;
-  sprites.set(name, { levels, x: box.x * unit, y: box.y * unit, w: box.w * unit, h: box.h * unit });
+  sprites.set(name, {
+    image: img,
+    crop,
+    levels,
+    x: crop.x * unit,
+    y: crop.y * unit,
+    w: crop.w * unit,
+    h: crop.h * unit,
+  });
 }
 
-/** Resolves once every tile is decoded; the map draws its own shapes until then. */
-export function loadSketchTiles(): Promise<void> {
-  loading ??= Promise.all(Object.entries(urls).map(([path, url]) => load(spriteName(path), url))).then(
-    (): void => undefined,
+/**
+ * Decodes every tile and resolves with the paths of any that would not load;
+ * the map draws its own shapes until this settles, and leaves those out after.
+ */
+export function loadSketchTiles(): Promise<string[]> {
+  loading ??= Promise.allSettled(Object.entries(urls).map(([path, url]) => load(spriteName(path), url))).then(
+    (results) => {
+      settled = true;
+      return Object.keys(urls).filter((_, k) => results[k].status === 'rejected');
+    },
   );
   return loading;
 }
 
 export function sketchTilesReady(): boolean {
-  return sprites.size > 0 && sprites.size === Object.keys(urls).length;
+  return settled && sprites.size > 0;
 }
 
 export function hasTile(name: string): boolean {
@@ -133,18 +147,15 @@ export function drawTile(ctx: Ctx, name: string, cx: number, cy: number, level =
   const h = sprite.h * SCALE_Y;
   const m = ctx.getTransform();
   const onScreen = w * Math.hypot(m.a, m.b);
-  let pick = sprite.levels[0];
-  for (const level of sprite.levels) {
-    if (level.width < onScreen) break;
-    pick = level;
+  const x = cx + (sprite.x - FACE_X) * SCALE_X;
+  const y = cy - level * SKETCH_BLOCK + (sprite.y - FACE_Y) * SCALE_Y;
+  let pick: HTMLCanvasElement | undefined;
+  for (const candidate of sprite.levels) {
+    if (candidate.width < onScreen) break;
+    pick = candidate;
   }
-  ctx.drawImage(
-    pick,
-    cx + (sprite.x - FACE_X) * SCALE_X,
-    cy - level * SKETCH_BLOCK + (sprite.y - FACE_Y) * SCALE_Y,
-    w,
-    h,
-  );
+  if (pick) ctx.drawImage(pick, x, y, w, h);
+  else ctx.drawImage(sprite.image, sprite.crop.x, sprite.crop.y, sprite.crop.w, sprite.crop.h, x, y, w, h);
 }
 
 canvasCaches.add({
